@@ -23,6 +23,15 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- Align ALL Jackson artifacts. Pekko's jackson serializer needs a newer
+                 jackson-core than the project default, so pin one consistent version. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>2.21.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -90,7 +99,6 @@
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
             <artifactId>jackson-module-scala_${scala.binary.version}</artifactId>
-            <version>${jackson.version}</version>
         </dependency>
 
         <dependency>
