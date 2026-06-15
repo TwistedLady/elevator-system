@@ -18,3 +18,8 @@ dist/
 
 # OS
 .DS_Store
+
+# Terraform (keep .tf and the lock file; ignore state + downloaded providers)
+.terraform/
+*.tfstate
+*.tfstate.*
