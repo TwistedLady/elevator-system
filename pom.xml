@@ -1,0 +1,68 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>pl.feelcodes.elevator</groupId>
+    <artifactId>elevator</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>elevator</name>
+
+    <properties>
+        <project.version>1.0-SNAPSHOT</project.version>
+        <!-- Java -->
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Scala -->
+        <scala.version>3.3.3</scala.version>
+        <scala.binary.version>3</scala.binary.version>
+
+        <!-- Pekko -->
+        <pekko.version>1.3.0</pekko.version>
+        <pekko.persistence.jdbc.version>1.2.0</pekko.persistence.jdbc.version>
+        <pekko.kafka.version>1.1.0</pekko.kafka.version>
+        <pekko.projection.version>1.1.0</pekko.projection.version>
+
+        <!-- Kafka -->
+        <kafka.version>3.7.0</kafka.version>
+
+        <!-- Logging -->
+        <slf4j.version>2.0.13</slf4j.version>
+        <logback.version>1.4.14</logback.version>
+
+        <!-- Testing -->
+        <scalatest.version>3.2.18</scalatest.version>
+
+        <!-- Jackson -->
+        <jackson.version>2.16.2</jackson.version>
+
+        <!-- Build plugins -->
+        <scala.maven.plugin.version>4.9.2</scala.maven.plugin.version>
+        <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+    </properties>
+
+    <modules>
+        <module>elevator--common</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>3.2.5</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
