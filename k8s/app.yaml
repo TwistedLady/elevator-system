@@ -1,0 +1,26 @@
+# The Pekko brain. No inbound HTTP, so no Service — it only talks to Kafka.
+# One replica: single-node cluster + in-memory journal (state resets on restart).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elevator-app
+  template:
+    metadata:
+      labels:
+        app: elevator-app
+    spec:
+      containers:
+        - name: elevator-app
+          image: elevator-app:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: elevator-app-config   # injects ELEVATOR_KAFKA_* as env vars
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }

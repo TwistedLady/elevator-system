@@ -1,0 +1,42 @@
+# The Spring edge. Has a Service so you can reach POST /api/order and the monitor.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elevator-api
+  template:
+    metadata:
+      labels:
+        app: elevator-api
+    spec:
+      containers:
+        - name: elevator-api
+          image: elevator-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: elevator-api-config    # injects SPRING_KAFKA_* + topics
+          readinessProbe:                      # "is it ready for traffic?"
+            httpGet: { path: /api/elevator, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elevator-api
+spec:
+  selector:
+    app: elevator-api
+  ports:
+    - port: 8080
+      targetPort: 8080
