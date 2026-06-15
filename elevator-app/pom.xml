@@ -44,7 +44,7 @@
             <version>${scala.version}</version>
         </dependency>
 
-        <!-- Pekko: typed actors, cluster sharding, event-sourced persistence -->
+        <!-- Pekko: actors, cluster sharding, event-sourced persistence -->
         <dependency>
             <groupId>org.apache.pekko</groupId>
             <artifactId>pekko-actor-typed_${scala.binary.version}</artifactId>
@@ -56,6 +56,41 @@
         <dependency>
             <groupId>org.apache.pekko</groupId>
             <artifactId>pekko-persistence-typed_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-serialization-jackson_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-slf4j_${scala.binary.version}</artifactId>
+        </dependency>
+
+        <!-- Pekko streams + Kafka connector (the consumer that pulls orders) -->
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-stream_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-connectors-kafka_${scala.binary.version}</artifactId>
+            <version>${pekko.kafka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+
+        <!-- JSON for Kafka payloads -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.module</groupId>
+            <artifactId>jackson-module-scala_${scala.binary.version}</artifactId>
+            <version>${jackson.version}</version>
         </dependency>
 
         <dependency>
@@ -99,6 +134,42 @@
                 <configuration>
                     <scalaVersion>${scala.version}</scalaVersion>
                 </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <classpathScope>runtime</classpathScope>
+                    <mainClass>pl.feelcodes.elevator.app.ElevatorApp</mainClass>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>${maven.shade.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>pl.feelcodes.elevator.app.ElevatorApp</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>reference.conf</resource>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
