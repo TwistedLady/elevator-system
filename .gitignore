@@ -1,0 +1,20 @@
+# Maven / build output
+target/
+
+# Node / Angular
+node_modules/
+.angular/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Runtime / logs
+.run/
+*.log
+**/demo-snapshots/
+
+# OS
+.DS_Store
