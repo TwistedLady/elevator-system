@@ -1,0 +1,18 @@
+spring:
+  mvc:
+    log-request-details: true
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: elevator-api
+elevator:
+  command-topic: elevator-commands
+  state-topic: elevator-state
+logging:
+  level:
+    org.springframework: INFO
