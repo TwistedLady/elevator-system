@@ -44,7 +44,7 @@
     </properties>
 
     <modules>
-        <module>elevator--common</module>
+        <module>elevator-common</module>
         <module>elevator-app</module>
         <module>elevator-api</module>
     </modules>

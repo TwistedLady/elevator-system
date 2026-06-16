@@ -16,7 +16,7 @@ import org.apache.pekko.stream.KillSwitches
 import org.apache.pekko.stream.scaladsl.{Flow, Keep}
 import org.apache.pekko.util.Timeout
 import pl.feelcodes.elevator.app.actors.Coordinator
-import pl.feelcodes.elevator.common.dto.{ElevatorAtDto, OrderElevatorAtDto}
+import pl.feelcodes.elevator.common.dto.{ElevatorStateDto, ElevatorOrderDto}
 
 import java.util.Properties
 
@@ -56,7 +56,7 @@ object Kafka {
     val toCoordinator: Flow[CommittableMessage[String, Array[Byte]], CommittableOffset, ?] =
       Flow[CommittableMessage[String, Array[Byte]]]
         .mapAsync(1) { msg =>
-          val dto = Json.decode(msg.record.value(), classOf[OrderElevatorAtDto])
+          val dto = Json.decode(msg.record.value(), classOf[ElevatorOrderDto])
           val coordinator = coordinatorProvider(dto.elevatorName)
 
           coordinator
@@ -93,7 +93,7 @@ object Kafka {
 /** Publishes confirmed elevator state to the `elevator-state` topic so the Spring API
   * (and anything else) can monitor movement. Keyed by elevator name. */
 final class StatePublisher(producer: KafkaProducer[String, String], topic: String) {
-  def publish(dto: ElevatorAtDto): Unit =
+  def publish(dto: ElevatorStateDto): Unit =
     producer.send(new ProducerRecord[String, String](topic, dto.elevatorName, Json.encode(dto)))
 }
 

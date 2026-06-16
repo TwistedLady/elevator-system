@@ -10,20 +10,20 @@ import pl.feelcodes.elevator.common.core.*
 import scala.concurrent.duration.*
 
 object Controller {
-  val TypeKey: EntityTypeKey[Msg] = EntityTypeKey[Msg]("Controller")
+  val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Controller")
 
-  sealed trait Msg
+  sealed trait Command
 
-  final case class ToProcess(request: OrderElevator) extends Msg
+  final case class ToProcess(request: ElevatorOrder) extends Command
 
-  final case class ConfirmProcessed(elevator: Elevator, orderWithCommand: OrderElevatorCommand) extends Msg
+  final case class ConfirmProcessed(elevator: Elevator, orderWithCommand: OrderElevatorCommand) extends Command
 
-  case object Tick extends Msg
+  case object Tick extends Command
 
 
   sealed trait Event
 
-  final case class RequestAdded(request: OrderElevator) extends Event
+  final case class RequestAdded(request: ElevatorOrder) extends Event
 
   final case class WaitingSet(waiting: Boolean) extends Event
 
@@ -33,21 +33,21 @@ object Controller {
   final case class State(waiting: Boolean,
                          elevatorName: ElevatorName,
                          elevatorState: ElevatorState,
-                         requests: Set[OrderElevator])
+                         requests: Set[ElevatorOrder])
 
   def apply(elevatorName: String,
-            operatorProvider: (elevatorId: String) => EntityRef[Operator.Msg]): Behavior[Msg] =
+            operatorProvider: (elevatorName: String) => EntityRef[Operator.Command]): Behavior[Command] =
     Behaviors.withTimers { timers =>
       timers.startTimerAtFixedRate(Tick, 500.millis)
 
-      EventSourcedBehavior[Msg, Event, State](
+      EventSourcedBehavior[Command, Event, State](
         persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
         emptyState = State(
           waiting = false,
           elevatorName = elevatorName,
           elevatorState = ElevatorState(
-            direction = Direction.UP,
-            motion = Motion.STOPPED,
+            direction = Direction.Up,
+            motion = Motion.Stopped,
             floor = Floor(0)
           ),
           requests = Set.empty
