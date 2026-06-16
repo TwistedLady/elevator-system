@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * from the Kafka elevator-state topic. Read by the monitor endpoint.
  */
 @Component
-public class StateStore {
+class StateStore {
 
     private final Map<String, String> latestByElevator = new ConcurrentHashMap<>();
 

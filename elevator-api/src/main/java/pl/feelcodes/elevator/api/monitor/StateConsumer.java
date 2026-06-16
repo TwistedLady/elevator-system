@@ -24,7 +24,7 @@ import java.util.UUID;
  * on a daemon thread — no extra framework, easy to reason about.
  */
 @Component
-public class StateConsumer {
+class StateConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(StateConsumer.class);
 
