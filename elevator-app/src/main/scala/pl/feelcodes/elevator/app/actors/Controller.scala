@@ -12,13 +12,20 @@ import scala.concurrent.duration.*
 object Controller {
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Controller")
 
+  // --- public protocol: what other actors are allowed to send ---
   sealed trait Command
 
-  final case class ToProcess(request: ElevatorOrder) extends Command
+  final case class AddRequest(request: ElevatorOrder) extends Command
 
-  final case class ConfirmProcessed(elevator: Elevator, orderWithCommand: OrderElevatorCommand) extends Command
+  // --- internal protocol: timer ticks + the Operator's report-back.
+  //     private[app] hides it from outside the module, while staying reachable
+  //     by the composition root that wires the Operator's `report` port. ---
+  private[app] sealed trait Internal extends Command
 
-  case object Tick extends Command
+  private[app] case object Tick extends Internal
+
+  private[app] final case class MoveExecuted(state: ElevatorState,
+                                             orderWithCommand: OrderElevatorCommand) extends Internal
 
 
   sealed trait Event
@@ -45,25 +52,16 @@ object Controller {
         emptyState = State(
           waiting = false,
           elevatorName = elevatorName,
-          elevatorState = ElevatorState(
-            direction = Direction.Up,
-            motion = Motion.Stopped,
-            floor = Floor(0)
-          ),
+          elevatorState = ElevatorState(Direction.Up, Motion.Stopped, Floor(0)),
           requests = Set.empty
         ),
         commandHandler = (state, msg) =>
           msg match
-            case ToProcess(request) =>
+            case AddRequest(request) =>
               if state.requests.exists(_.tag == request.tag) then Effect.none
               else Effect.persist(RequestAdded(request))
 
-            case ConfirmProcessed(elevator, orderWithCommand) =>
-              val newState = ElevatorState(
-                direction = elevator.direction(),
-                motion = elevator.motion(),
-                floor = elevator.floor()
-              )
+            case MoveExecuted(newState, orderWithCommand) =>
               Effect.persist(
                 WaitingSet(false),
                 ElevatorStateUpdated(newState, orderWithCommand)
@@ -72,21 +70,15 @@ object Controller {
             case Tick =>
               if state.waiting || state.requests.isEmpty then Effect.none
               else
-                val elevator = Elevator.fast(state.elevatorName)(state.elevatorState)
-
                 val next = Policy.next(
                   orders = state.requests,
-                  floor = elevator.floor(),
-                  direction = elevator.direction()
+                  floor = state.elevatorState.floor,
+                  direction = state.elevatorState.direction
                 )
-
-                val operator = operatorProvider.apply(elevator.name)
-
                 Effect
                   .persist(WaitingSet(true))
                   .thenRun { s =>
-                    val elevator = Elevator.fast(s.elevatorName)(s.elevatorState)
-                    operator ! Operator.Do(elevator, next)
+                    operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, next)
                   }
         ,
         eventHandler = (state, evt) =>

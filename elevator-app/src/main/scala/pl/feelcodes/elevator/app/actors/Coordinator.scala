@@ -52,7 +52,7 @@ object Coordinator {
             .persist(Accepted(dto.tag, dto.elevatorName, dto.floor))
             .thenRun { _ =>
               val controller = controllerProvider(elevatorName)
-              controller ! Controller.ToProcess(ElevatorOrder(dto.tag, Floor(dto.floor)))
+              controller ! Controller.AddRequest(ElevatorOrder(dto.tag, Floor(dto.floor)))
               replyTo ! Ack.Ok
             }
   }

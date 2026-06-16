@@ -20,7 +20,10 @@ object ElevatorApp extends App {
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
 
         sharding.init(Entity(Operator.TypeKey) { _ =>
-          Operator(controllerProvider, statePublisher.publish)
+          Operator(
+            publish = statePublisher.publish,
+            report = (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc)
+          )
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
           Controller(e.entityId, operatorProvider)

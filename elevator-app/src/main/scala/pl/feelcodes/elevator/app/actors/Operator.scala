@@ -2,44 +2,45 @@ package pl.feelcodes.elevator.app.actors
 
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
-import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
-import pl.feelcodes.elevator.app.actors.Controller.ConfirmProcessed
+import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityTypeKey
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
 
 object Operator {
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Operator")
 
-
   sealed trait Command
 
-  case class Do(elevator: Elevator,
-                orderWithCommand: OrderElevatorCommand) extends Command
+  /** Run one move. Carries plain data only (name + state + order/command) — never the
+    * Elevator/Engine, so the message serializes cleanly across nodes. */
+  final case class Move(elevatorName: String,
+                        state: ElevatorState,
+                        orderWithCommand: OrderElevatorCommand) extends Command
 
-  def apply(controllerProvider: (elevatorName: String) => EntityRef[Controller.Command],
-            publish: ElevatorStateDto => Unit): Behavior[Command] =
-    running(controllerProvider, publish)
-
-  private def running(controllerProvider: (elevatorName: String) => EntityRef[Controller.Command],
-                      publish: ElevatorStateDto => Unit): Behavior[Command] =
+  /** The Operator depends on no other actor. It is handed two ports:
+    *   - `publish`: emit the new state to Kafka
+    *   - `report` : hand the result back to whoever asked
+    * Both hide the collaborator behind a narrow function (a facade). */
+  def apply(publish: ElevatorStateDto => Unit,
+            report: (String, ElevatorState, OrderElevatorCommand) => Unit): Behavior[Command] =
     Behaviors.receive { (ctx, msg) =>
       msg match
-        case Do(elevator, command) =>
-          val next = elevator.move(command.command)
+        case Move(elevatorName, state, orderWithCommand) =>
+          val moved = Elevator.fast(elevatorName)(state).move(orderWithCommand.command)
+          val newState = ElevatorState(moved.direction(), moved.motion(), moved.floor())
 
           // Make every floor change observable: emit current state to Kafka.
           publish(ElevatorStateDto(
-            tag = command.order.tag,
-            elevatorName = next.name,
-            direction = next.direction().toString,
-            motion = next.motion().toString,
-            floor = next.floor().num
+            tag = orderWithCommand.order.tag,
+            elevatorName = elevatorName,
+            direction = newState.direction.toString,
+            motion = newState.motion.toString,
+            floor = newState.floor.num
           ))
 
-          controllerProvider.apply(next.name)
-            ! ConfirmProcessed(next, command)
+          report(elevatorName, newState, orderWithCommand)
 
-          ctx.log.info(s" [${next.name}]:${next.floor().num}  >>>   ${command.order.floor.num}")
-          running(controllerProvider, publish)
+          ctx.log.info(s" [$elevatorName]:${newState.floor.num}  >>>   ${orderWithCommand.order.floor.num}")
+          Behaviors.same
     }
 }
