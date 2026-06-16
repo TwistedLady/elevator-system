@@ -23,15 +23,7 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Align ALL Jackson artifacts. Pekko's jackson serializer needs a newer
-                 jackson-core than the project default, so pin one consistent version. -->
-            <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>2.21.0</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
+            <!-- Jackson is aligned project-wide by the root pom (jackson-bom ${jackson.version}). -->
         </dependencies>
     </dependencyManagement>
 
@@ -101,15 +93,15 @@
             <artifactId>jackson-module-scala_${scala.binary.version}</artifactId>
         </dependency>
 
+        <!-- slf4j + logback versions come from the spring-boot-dependencies BOM
+             (imported in the root pom), so classic and core always match. -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
         </dependency>
 
         <dependency>
@@ -125,46 +117,23 @@
         </dependency>
     </dependencies>
 
+    <!-- Plugin versions, scala executions/config and the scalatest run come from the
+         parent's pluginManagement; only app-specific config (exec, shade) lives here. -->
     <build>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <version>${scala.maven.plugin.version}</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>compile</goal>
-                            <goal>testCompile</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <scalaVersion>${scala.version}</scalaVersion>
-                </configuration>
             </plugin>
 
             <plugin>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
-                <version>2.2.0</version>
-                <configuration>
-                    <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>test</id>
-                        <goals>
-                            <goal>test</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.3</version>
                 <configuration>
                     <classpathScope>runtime</classpathScope>
                     <mainClass>pl.feelcodes.elevator.app.ElevatorApp</mainClass>
@@ -174,7 +143,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>${maven.shade.plugin.version}</version>
                 <executions>
                     <execution>
                         <phase>package</phase>

@@ -1,5 +1,5 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>pl.feelcodes.elevator</groupId>
     <artifactId>elevator</artifactId>
@@ -8,39 +8,42 @@
     <name>elevator</name>
 
     <properties>
-        <project.version>1.0-SNAPSHOT</project.version>
         <!-- Java -->
-        <java.version>17</java.version>
+        <java.version>21</java.version>
+        <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Scala -->
-        <scala.version>3.3.3</scala.version>
+        <scala.version>3.3.4</scala.version>
         <scala.binary.version>3</scala.binary.version>
 
         <!-- Pekko -->
         <pekko.version>1.3.0</pekko.version>
-        <pekko.persistence.jdbc.version>1.2.0</pekko.persistence.jdbc.version>
         <pekko.kafka.version>1.1.0</pekko.kafka.version>
-        <pekko.projection.version>1.1.0</pekko.projection.version>
 
-        <!-- Kafka -->
+        <!-- Kafka (kept in step with the broker image in docker-compose.demo.yml) -->
         <kafka.version>3.7.0</kafka.version>
 
-        <!-- Logging -->
-        <slf4j.version>2.0.13</slf4j.version>
-        <logback.version>1.4.14</logback.version>
+        <!-- Spring Boot -->
+        <spring.boot.version>3.4.4</spring.boot.version>
+
+        <!-- Jackson: pinned here and imported BEFORE spring-boot-dependencies so this
+             single version wins across every module (including the Spring side). -->
+        <jackson.version>2.21.0</jackson.version>
+
+        <!-- Other libraries -->
+        <lombok.version>1.18.34</lombok.version>
 
         <!-- Testing -->
-        <scalatest.version>3.2.18</scalatest.version>
-
-        <!-- Jackson -->
-        <jackson.version>2.16.2</jackson.version>
+        <scalatest.version>3.2.19</scalatest.version>
 
         <!-- Build plugins -->
         <scala.maven.plugin.version>4.9.2</scala.maven.plugin.version>
-        <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
-        <maven.compiler.source>${java.version}</maven.compiler.source>
-        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <scalatest.maven.plugin.version>2.2.0</scalatest.maven.plugin.version>
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
+        <maven.shade.plugin.version>3.6.0</maven.shade.plugin.version>
+        <exec.maven.plugin.version>3.6.3</exec.maven.plugin.version>
     </properties>
 
     <modules>
@@ -51,13 +54,8 @@
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>3.2.5</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
+            <!-- Jackson first: an imported BOM declared earlier wins, so this overrides
+                 whatever Jackson version Spring Boot would otherwise pull in. -->
             <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
@@ -65,6 +63,90 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                </plugin>
+
+                <!-- Scala compile/test-compile, shared by every Scala module. -->
+                <plugin>
+                    <groupId>net.alchim31.maven</groupId>
+                    <artifactId>scala-maven-plugin</artifactId>
+                    <version>${scala.maven.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>compile</goal>
+                                <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <args>
+                            <arg>-release:${java.version}</arg>
+                        </args>
+                    </configuration>
+                </plugin>
+
+                <!-- ScalaTest suites aren't JUnit, so Surefire never runs them. -->
+                <plugin>
+                    <groupId>org.scalatest</groupId>
+                    <artifactId>scalatest-maven-plugin</artifactId>
+                    <version>${scalatest.maven.plugin.version}</version>
+                    <configuration>
+                        <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>test</id>
+                            <goals>
+                                <goal>test</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${maven.shade.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec.maven.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring.boot.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 </project>
