@@ -14,15 +14,19 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Scala -->
-        <scala.version>3.3.4</scala.version>
+        <!-- Match the scala3-library Pekko ${pekko.version} is built against, else
+             the direct dep downgrades the stdlib under Pekko (enforcer convergence). -->
+        <scala.version>3.3.7</scala.version>
         <scala.binary.version>3</scala.binary.version>
 
         <!-- Pekko -->
         <pekko.version>1.3.0</pekko.version>
         <pekko.kafka.version>1.1.0</pekko.kafka.version>
 
-        <!-- Kafka (kept in step with the broker image in docker-compose.demo.yml) -->
-        <kafka.version>3.7.0</kafka.version>
+        <!-- Kafka (kept in step with the broker image in docker-compose.demo.yml).
+             3.8.1 is what pekko-connectors-kafka ${pekko.kafka.version} pulls; pinning
+             lower downgrades it (enforcer requireUpperBoundDeps). -->
+        <kafka.version>3.8.1</kafka.version>
 
         <!-- Spring Boot -->
         <spring.boot.version>3.4.4</spring.boot.version>
@@ -42,8 +46,10 @@
         <scalatest.maven.plugin.version>2.2.0</scalatest.maven.plugin.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
+        <maven.failsafe.plugin.version>3.5.2</maven.failsafe.plugin.version>
         <maven.shade.plugin.version>3.6.0</maven.shade.plugin.version>
         <exec.maven.plugin.version>3.6.3</exec.maven.plugin.version>
+        <maven.enforcer.plugin.version>3.5.0</maven.enforcer.plugin.version>
     </properties>
 
     <modules>
@@ -90,6 +96,12 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire.plugin.version}</version>
+                </plugin>
+                <!-- Runs *IT integration tests in the verify phase, kept out of `mvn test`. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven.failsafe.plugin.version}</version>
                 </plugin>
 
                 <!-- Scala compile/test-compile, shared by every Scala module. -->
@@ -146,7 +158,45 @@
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring.boot.version}</version>
                 </plugin>
+
+                <!-- Fails the build on dependency conflicts / wrong JDK or Maven. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${maven.enforcer.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>enforce</id>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <requireMavenVersion>
+                                        <version>[3.8,)</version>
+                                    </requireMavenVersion>
+                                    <requireJavaVersion>
+                                        <version>${java.version}</version>
+                                    </requireJavaVersion>
+                                    <!-- A nearer dep must not silently downgrade a farther one.
+                                         (dependencyConvergence is intentionally NOT used: a Pekko +
+                                         Spring + Kafka graph mixes Scala patch levels, and nearest-wins
+                                         already resolves safely once no downgrade is allowed.) -->
+                                    <requireUpperBoundDeps/>
+                                </rules>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <!-- Inherited by every module so the enforcer runs project-wide. -->
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
 </project>

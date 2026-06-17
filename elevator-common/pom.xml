@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>
-            <artifactId>scala3-library_3</artifactId>
+            <artifactId>scala3-library_${scala.binary.version}</artifactId>
             <version>${scala.version}</version>
         </dependency>
         <dependency>

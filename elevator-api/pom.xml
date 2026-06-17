@@ -37,9 +37,11 @@
             <artifactId>reactor-kafka</artifactId>
         </dependency>
 
+        <!-- Pinned to ${kafka.version} to match elevator-app and the broker image. -->
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
         </dependency>
 
         <dependency>
@@ -49,7 +51,7 @@
 
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-scala_3</artifactId>
+            <artifactId>jackson-module-scala_${scala.binary.version}</artifactId>
         </dependency>
 
         <dependency>
@@ -64,6 +66,19 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Testcontainers (versions from the spring-boot-dependencies BOM) for the
+             broker-backed *IT integration tests run under failsafe. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -75,6 +90,30 @@
                     <execution>
                         <goals>
                             <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- *IT tests (Testcontainers) run on `mvn verify`, not `mvn test`. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <!-- Use the unpacked classes, not the (Spring Boot repackaged) jar, so the
+                         @SpringBootApplication class is on the integration-test classpath. -->
+                    <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+                    <systemPropertyVariables>
+                        <!-- Docker Engine 25+ rejects docker-java's default negotiation (API 1.32);
+                             pin Testcontainers' client to a supported version. -->
+                        <api.version>1.44</api.version>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
                         </goals>
                     </execution>
                 </executions>
