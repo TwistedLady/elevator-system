@@ -1,7 +1,7 @@
 //! Terminal app for the elevator system.
 //!
 //! Three subcommands:
-//!   monitor   — live-tail the elevator-state topic in a table
+//!   monitor   — live building chart; order inline by typing "<elevator> <floor>"
 //!   order     — send one order (an elevator to a floor)
 //!   simulate  — fire a bulk load of random orders (load simulator)
 
@@ -27,10 +27,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Live-tail elevator state in a table.
+    /// Live building chart; type "<elevator> <floor>" + Enter to order inline.
     Monitor {
         #[arg(long, env = "STATE_TOPIC", default_value = "elevator-state")]
         topic: String,
+        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
+        command_topic: String,
     },
     /// Send one order: an elevator to a floor.
     Order {
@@ -65,7 +67,9 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Monitor { topic } => monitor::run(&cli.brokers, &topic),
+        Command::Monitor { topic, command_topic } => {
+            monitor::run(&cli.brokers, &topic, &command_topic)
+        }
         Command::Order { elevator, floor, topic } => {
             sender::send_one(&cli.brokers, &topic, &elevator, floor)
         }

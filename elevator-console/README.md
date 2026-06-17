@@ -30,11 +30,21 @@ Start the demo broker (from `elevator-system/`):
 docker compose -p elevator-demo -f docker-compose.demo.yml up -d
 ```
 
-### Monitor — live state table
+### Monitor — live building chart + inline ordering
 
 ```bash
 cargo run -- monitor
 ```
+
+Shows a live floor-by-floor chart of every elevator. To order without leaving the
+monitor, type `<elevator> <floor>` and press Enter:
+
+```
+lift-01 7      # send lift-01 to floor 7
+lift-02 0      # send lift-02 to the ground floor
+```
+
+It survives backend/Kafka restarts — the chart stays up and reconnects automatically.
 
 ### Order — send one order
 
