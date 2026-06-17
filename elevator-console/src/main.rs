@@ -1,75 +1,80 @@
-use std::collections::BTreeMap;
-use std::io::Write;
-use std::time::Duration;
+//! Terminal app for the elevator system.
+//!
+//! Three subcommands:
+//!   monitor   — live-tail the elevator-state topic in a table
+//!   order     — send one order (an elevator to a floor)
+//!   simulate  — fire a bulk load of random orders (load simulator)
 
-use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{BaseConsumer, Consumer};
-use rdkafka::Message;
-use serde::Deserialize;
+mod monitor;
+mod sender;
 
-#[derive(Debug, Clone, Deserialize)]
-struct ElevatorState {
-    #[serde(rename = "elevatorName")]
-    elevator_name: String,
-    direction: String,
-    motion: String,
-    floor: i32,
+use clap::{Parser, Subcommand};
+
+/// Error type shared across the app. `Send + Sync` so it can cross thread boundaries
+/// (the simulator returns it from worker threads).
+pub type BoxErr = Box<dyn std::error::Error + Send + Sync>;
+
+#[derive(Parser)]
+#[command(name = "elevator-console", about = "Monitor elevators and send orders over Kafka")]
+struct Cli {
+    /// Kafka bootstrap servers.
+    #[arg(long, env = "KAFKA_BOOTSTRAP", default_value = "localhost:9092", global = true)]
+    brokers: String,
+
+    #[command(subcommand)]
+    command: Command,
 }
 
-fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| default.to_string())
+#[derive(Subcommand)]
+enum Command {
+    /// Live-tail elevator state in a table.
+    Monitor {
+        #[arg(long, env = "STATE_TOPIC", default_value = "elevator-state")]
+        topic: String,
+    },
+    /// Send one order: an elevator to a floor.
+    Order {
+        /// Elevator name (used as the Kafka message key).
+        #[arg(long)]
+        elevator: String,
+        /// Target floor.
+        #[arg(long)]
+        floor: i32,
+        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
+        topic: String,
+    },
+    /// Fire a bulk load of random orders (load simulator).
+    Simulate {
+        /// Total number of orders to send.
+        #[arg(long, default_value_t = 10_000)]
+        count: u64,
+        /// Producer threads, each with its own connection.
+        #[arg(long, default_value_t = 4)]
+        threads: u64,
+        /// Elevators to spread orders across (comma-separated).
+        #[arg(long, value_delimiter = ',', default_value = "alpha,beta,gamma")]
+        elevators: Vec<String>,
+        /// Highest floor to request; orders pick a floor in 0..=max-floor.
+        #[arg(long, default_value_t = 10)]
+        max_floor: i32,
+        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
+        topic: String,
+    },
 }
 
 fn main() {
-    let brokers = env_or("KAFKA_BOOTSTRAP", "localhost:9092");
-    let topic = env_or("STATE_TOPIC", "elevator-state");
-    let group = format!("elevator-console-{}", std::process::id());
-
-    let consumer: BaseConsumer = ClientConfig::new()
-        .set("bootstrap.servers", &brokers)
-        .set("group.id", &group)
-        .set("auto.offset.reset", "earliest")
-        .set("enable.auto.commit", "false")
-        .create()
-        .expect("failed to create Kafka consumer");
-
-    consumer
-        .subscribe(&[&topic])
-        .expect("failed to subscribe to topic");
-
-    eprintln!("Monitoring '{topic}' at {brokers} (Ctrl-C to quit)…");
-
-    let mut latest: BTreeMap<String, ElevatorState> = BTreeMap::new();
-
-    loop {
-        match consumer.poll(Duration::from_millis(500)) {
-            None => {} // nothing this tick
-            Some(Ok(msg)) => {
-                if let Some(payload) = msg.payload() {
-                    match serde_json::from_slice::<ElevatorState>(payload) {
-                        Ok(state) => {
-                            latest.insert(state.elevator_name.clone(), state);
-                            render(&latest);
-                        }
-                        Err(e) => eprintln!("skipping unparseable message: {e}"),
-                    }
-                }
-            }
-            Some(Err(e)) => eprintln!("kafka error: {e}"),
+    let cli = Cli::parse();
+    let result = match cli.command {
+        Command::Monitor { topic } => monitor::run(&cli.brokers, &topic),
+        Command::Order { elevator, floor, topic } => {
+            sender::send_one(&cli.brokers, &topic, &elevator, floor)
         }
+        Command::Simulate { count, threads, elevators, max_floor, topic } => {
+            sender::simulate(&cli.brokers, &topic, count, threads, &elevators, max_floor)
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("error: {e}");
+        std::process::exit(1);
     }
-}
-
-fn render(latest: &BTreeMap<String, ElevatorState>) {
-    print!("\x1b[2J\x1b[H"); // clear screen + cursor home
-    println!("🛗  Elevator monitor — {} elevator(s)\n", latest.len());
-    println!("{:<16} {:>6}  {:<10} {:<8}", "ELEVATOR", "FLOOR", "DIRECTION", "MOTION");
-    println!("{}", "-".repeat(46));
-    for s in latest.values() {
-        println!(
-            "{:<16} {:>6}  {:<10} {:<8}",
-            s.elevator_name, s.floor, s.direction, s.motion
-        );
-    }
-    std::io::stdout().flush().ok();
 }
