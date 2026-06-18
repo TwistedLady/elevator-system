@@ -42,6 +42,7 @@ monitor, type `<elevator> <floor>` and press Enter:
 ```
 lift-01 7      # send lift-01 to floor 7
 lift-02 0      # send lift-02 to the ground floor
+sim 60         # fire 60 random orders across the elevators on screen
 ```
 
 It survives backend/Kafka restarts — the chart stays up and reconnects automatically.

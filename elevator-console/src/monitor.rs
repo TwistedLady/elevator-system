@@ -6,8 +6,9 @@
 //! Ordering: a background thread reads "<elevator> <floor>" lines from stdin and sends
 //! the order, while the main thread keeps consuming state and drawing the chart.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rdkafka::config::ClientConfig;
@@ -30,9 +31,15 @@ struct ElevatorState {
     floor: i32,
 }
 
+/// Floors used by the `sim` command when generating random orders.
+const SIM_MAX_FLOOR: i32 = 15;
+
 pub fn run(brokers: &str, state_topic: &str, command_topic: &str) -> Result<(), BoxErr> {
-    // Read orders from the keyboard in the background so the chart keeps refreshing.
-    spawn_order_input(brokers.to_string(), command_topic.to_string());
+    // Elevator names seen so far, shared with the input thread so `sim` targets real cars.
+    let known: Arc<Mutex<BTreeSet<String>>> = Arc::new(Mutex::new(BTreeSet::new()));
+
+    // Read orders/commands from the keyboard in the background so the chart keeps refreshing.
+    spawn_order_input(brokers.to_string(), command_topic.to_string(), Arc::clone(&known));
 
     // State survives reconnects, so the chart stays on screen during an outage.
     let mut latest: BTreeMap<String, ElevatorState> = BTreeMap::new();
@@ -40,15 +47,21 @@ pub fn run(brokers: &str, state_topic: &str, command_topic: &str) -> Result<(), 
 
     // Outer loop = reconnect loop; inner consume_loop only returns on setup failure.
     loop {
-        if let Err(e) = consume_loop(brokers, state_topic, &mut latest) {
+        if let Err(e) = consume_loop(brokers, state_topic, &mut latest, &known) {
             eprintln!("monitor: connection issue ({e}); retrying in 2s…");
             std::thread::sleep(Duration::from_secs(2));
         }
     }
 }
 
-/// Background reader: each "<elevator> <floor>" line becomes an order.
-fn spawn_order_input(brokers: String, command_topic: String) {
+/// Background reader. Recognises two commands:
+///   `<elevator> <floor>`  → one order
+///   `sim <count>`         → `<count>` random orders across the known elevators
+fn spawn_order_input(
+    brokers: String,
+    command_topic: String,
+    known: Arc<Mutex<BTreeSet<String>>>,
+) {
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
@@ -57,32 +70,55 @@ fn spawn_order_input(brokers: String, command_topic: String) {
                 Err(_) => break, // stdin closed
             };
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.is_empty() {
-                continue;
-            }
-            if parts.len() != 2 {
-                eprintln!("order usage: <elevator> <floor>   e.g.  lift-01 7");
-                continue;
-            }
-            let elevator = parts[0];
-            let floor: i32 = match parts[1].parse() {
-                Ok(f) => f,
-                Err(_) => {
-                    eprintln!("floor must be a number");
-                    continue;
-                }
-            };
-            if let Err(e) = crate::sender::send_one(&brokers, &command_topic, elevator, floor) {
-                eprintln!("order failed: {e}");
+            match parts.as_slice() {
+                [] => {}
+                [cmd, n] if cmd.eq_ignore_ascii_case("sim") => match n.parse::<u64>() {
+                    Ok(count) => {
+                        let elevators = elevator_pool(&known);
+                        let threads = count.clamp(1, 4);
+                        if let Err(e) = crate::sender::simulate(
+                            &brokers,
+                            &command_topic,
+                            count,
+                            threads,
+                            &elevators,
+                            SIM_MAX_FLOOR,
+                        ) {
+                            eprintln!("sim failed: {e}");
+                        }
+                    }
+                    Err(_) => eprintln!("sim usage: sim <count>   e.g.  sim 60"),
+                },
+                [elevator, floor] => match floor.parse::<i32>() {
+                    Ok(f) => {
+                        if let Err(e) = crate::sender::send_one(&brokers, &command_topic, elevator, f)
+                        {
+                            eprintln!("order failed: {e}");
+                        }
+                    }
+                    Err(_) => eprintln!("floor must be a number"),
+                },
+                _ => eprintln!("type:  <elevator> <floor>   or   sim <count>"),
             }
         }
     });
+}
+
+/// Elevators for `sim` to target: those seen so far, or a default 8 if none yet.
+fn elevator_pool(known: &Arc<Mutex<BTreeSet<String>>>) -> Vec<String> {
+    let set = known.lock().unwrap_or_else(|e| e.into_inner());
+    if set.is_empty() {
+        (1..=8).map(|i| format!("lift-{i:02}")).collect()
+    } else {
+        set.iter().cloned().collect()
+    }
 }
 
 fn consume_loop(
     brokers: &str,
     topic: &str,
     latest: &mut BTreeMap<String, ElevatorState>,
+    known: &Arc<Mutex<BTreeSet<String>>>,
 ) -> Result<(), BoxErr> {
     // Fresh group per run + earliest => replay the whole topic and rebuild current state.
     let group = format!("elevator-console-{}", std::process::id());
@@ -105,6 +141,9 @@ fn consume_loop(
             Some(Ok(msg)) => {
                 if let Some(payload) = msg.payload() {
                     if let Ok(state) = serde_json::from_slice::<ElevatorState>(payload) {
+                        if let Ok(mut k) = known.lock() {
+                            k.insert(state.elevator_name.clone());
+                        }
                         latest.insert(state.elevator_name.clone(), state);
                         dirty = true;
                     }
@@ -159,7 +198,7 @@ fn render(latest: &BTreeMap<String, ElevatorState>, topic: &str, brokers: &str) 
         }
     }
 
-    println!("\norder ▸ type  <elevator> <floor>  then Enter   (e.g.  lift-01 7)");
+    println!("\norder ▸  <elevator> <floor>   |   sim <count>   |   Enter   (e.g.  lift-01 7  ·  sim 60)");
     std::io::stdout().flush().ok();
 }
 
