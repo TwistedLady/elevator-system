@@ -13,6 +13,19 @@ spring:
 elevator:
   command-topic: elevator-commands
   state-topic: elevator-state
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics   # keep it tight; not "*"
+  endpoint:
+    health:
+      probes:
+        enabled: true                  # adds /health/liveness and /health/readiness
+      show-details: always             # switch to when_authorized once security is added
+      group:
+        readiness:
+          include: readinessState,kafka  # broker must be reachable to be "ready"
 logging:
   level:
     org.springframework: INFO
