@@ -34,24 +34,66 @@ struct ElevatorState {
 /// Floors used by the `sim` command when generating random orders.
 const SIM_MAX_FLOOR: i32 = 15;
 
-pub fn run(brokers: &str, state_topic: &str, command_topic: &str) -> Result<(), BoxErr> {
+/// Backend (elevator-api) health as seen via its actuator endpoint.
+#[derive(Clone, Copy)]
+enum Backend {
+    Unknown,
+    Up,
+    Down,
+}
+
+pub fn run(
+    brokers: &str,
+    state_topic: &str,
+    command_topic: &str,
+    health_url: &str,
+) -> Result<(), BoxErr> {
     // Elevator names seen so far, shared with the input thread so `sim` targets real cars.
     let known: Arc<Mutex<BTreeSet<String>>> = Arc::new(Mutex::new(BTreeSet::new()));
 
     // Read orders/commands from the keyboard in the background so the chart keeps refreshing.
     spawn_order_input(brokers.to_string(), command_topic.to_string(), Arc::clone(&known));
 
+    // Poll the api's actuator health in the background.
+    let backend: Arc<Mutex<Backend>> = Arc::new(Mutex::new(Backend::Unknown));
+    spawn_health_poll(health_url.to_string(), Arc::clone(&backend));
+
     // State survives reconnects, so the chart stays on screen during an outage.
     let mut latest: BTreeMap<String, ElevatorState> = BTreeMap::new();
-    render(&latest, state_topic, brokers);
+    render(&latest, state_topic, brokers, read_backend(&backend));
 
     // Outer loop = reconnect loop; inner consume_loop only returns on setup failure.
     loop {
-        if let Err(e) = consume_loop(brokers, state_topic, &mut latest, &known) {
+        if let Err(e) = consume_loop(brokers, state_topic, &mut latest, &known, &backend) {
             eprintln!("monitor: connection issue ({e}); retrying in 2s…");
             std::thread::sleep(Duration::from_secs(2));
         }
     }
+}
+
+/// Poll `health_url` (api actuator) every 3s; 2xx => UP, anything else => DOWN.
+fn spawn_health_poll(health_url: String, backend: Arc<Mutex<Backend>>) {
+    std::thread::spawn(move || {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(2))
+            .timeout_read(Duration::from_secs(2))
+            .build();
+        loop {
+            let status = match agent.get(&health_url).call() {
+                Ok(_) => Backend::Up,                       // 2xx
+                Err(ureq::Error::Status(_, _)) => Backend::Down, // e.g. 503 readiness DOWN
+                Err(_) => Backend::Down,                    // refused / timeout => api down
+            };
+            if let Ok(mut b) = backend.lock() {
+                *b = status;
+            }
+            std::thread::sleep(Duration::from_secs(3));
+        }
+    });
+}
+
+fn read_backend(backend: &Arc<Mutex<Backend>>) -> Backend {
+    backend.lock().map(|b| *b).unwrap_or(Backend::Unknown)
 }
 
 /// Background reader. Recognises two commands:
@@ -119,6 +161,7 @@ fn consume_loop(
     topic: &str,
     latest: &mut BTreeMap<String, ElevatorState>,
     known: &Arc<Mutex<BTreeSet<String>>>,
+    backend: &Arc<Mutex<Backend>>,
 ) -> Result<(), BoxErr> {
     // Fresh group per run + earliest => replay the whole topic and rebuild current state.
     let group = format!("elevator-console-{}", std::process::id());
@@ -153,8 +196,12 @@ fn consume_loop(
             // Transient (broker bounce / rebalance). librdkafka reconnects on its own.
             Some(Err(_)) => {}
         }
-        if dirty && last_draw.elapsed() >= Duration::from_millis(120) {
-            render(latest, topic, brokers);
+        // Redraw on new state (throttled), plus a ~1s heartbeat so the backend health
+        // line refreshes even when no elevators are moving.
+        let dirty_due = dirty && last_draw.elapsed() >= Duration::from_millis(120);
+        let heartbeat = last_draw.elapsed() >= Duration::from_secs(1);
+        if dirty_due || heartbeat {
+            render(latest, topic, brokers, read_backend(backend));
             last_draw = Instant::now();
             dirty = false;
         }
@@ -162,18 +209,24 @@ fn consume_loop(
 }
 
 /// Clear the screen and draw the building chart + an order prompt.
-fn render(latest: &BTreeMap<String, ElevatorState>, topic: &str, brokers: &str) {
+fn render(latest: &BTreeMap<String, ElevatorState>, topic: &str, brokers: &str, backend: Backend) {
     print!("\x1b[2J\x1b[H"); // clear screen + cursor home
 
+    let health = match backend {
+        Backend::Up => "backend: UP",
+        Backend::Down => "backend: DOWN",
+        Backend::Unknown => "backend: …",
+    };
+
     if latest.is_empty() {
-        println!("🛗  Elevator monitor — waiting for state on '{topic}' @ {brokers}…");
+        println!("🛗  Elevator monitor — waiting for state on '{topic}' @ {brokers}…   ·   {health}");
     } else {
         let cars: Vec<&ElevatorState> = latest.values().collect();
         let top = cars.iter().map(|c| c.floor).max().unwrap_or(0).max(0);
         let bottom = cars.iter().map(|c| c.floor).min().unwrap_or(0).min(0);
 
         println!(
-            "🛗  Elevator monitor — {} elevator(s), {} floors\n",
+            "🛗  Elevator monitor — {} elevator(s), {} floors   ·   {health}\n",
             cars.len(),
             top - bottom + 1
         );

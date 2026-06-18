@@ -33,6 +33,9 @@ enum Command {
         topic: String,
         #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
         command_topic: String,
+        /// elevator-api actuator URL polled for backend health.
+        #[arg(long, env = "HEALTH_URL", default_value = "http://localhost:8080/actuator/health/readiness")]
+        health_url: String,
     },
     /// Send one order: an elevator to a floor.
     Order {
@@ -67,8 +70,8 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Monitor { topic, command_topic } => {
-            monitor::run(&cli.brokers, &topic, &command_topic)
+        Command::Monitor { topic, command_topic, health_url } => {
+            monitor::run(&cli.brokers, &topic, &command_topic, &health_url)
         }
         Command::Order { elevator, floor, topic } => {
             sender::send_one(&cli.brokers, &topic, &elevator, floor)
