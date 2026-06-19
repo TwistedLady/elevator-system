@@ -1,7 +1,7 @@
 //! Terminal app for the elevator system.
 //!
 //! Three subcommands:
-//!   monitor   — live building chart; order inline by typing "<elevator> <floor>"
+//!   monitor   — retro TUI: building chart, actuator health, live logs (Tab to switch)
 //!   order     — send one order (an elevator to a floor)
 //!   simulate  — fire a bulk load of random orders (load simulator)
 
@@ -27,15 +27,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Live building chart; type "<elevator> <floor>" + Enter to order inline.
+    /// Retro TUI: building chart, actuator health, and live logs (Tab to switch).
     Monitor {
         #[arg(long, env = "STATE_TOPIC", default_value = "elevator-state")]
         topic: String,
         #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
         command_topic: String,
-        /// elevator-api actuator URL polled for backend health.
-        #[arg(long, env = "HEALTH_URL", default_value = "http://localhost:8080/actuator/health/readiness")]
+        /// elevator-api actuator URL polled for backend health (full /actuator/health).
+        #[arg(long, env = "HEALTH_URL", default_value = "http://localhost:8080/actuator/health")]
         health_url: String,
+        /// elevator-app log file tailed in the Logs view.
+        #[arg(long, default_value = "../.run/app.log")]
+        app_log: String,
+        /// elevator-api log file tailed in the Logs view.
+        #[arg(long, default_value = "../.run/api.log")]
+        api_log: String,
     },
     /// Send one order: an elevator to a floor.
     Order {
@@ -70,8 +76,8 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Monitor { topic, command_topic, health_url } => {
-            monitor::run(&cli.brokers, &topic, &command_topic, &health_url)
+        Command::Monitor { topic, command_topic, health_url, app_log, api_log } => {
+            monitor::run(&cli.brokers, &topic, &command_topic, &health_url, &app_log, &api_log)
         }
         Command::Order { elevator, floor, topic } => {
             sender::send_one(&cli.brokers, &topic, &elevator, floor)

@@ -21,7 +21,13 @@ scripts/demo.sh lift-a 5    # order lift-a to floor 5, then monitor until it arr
 scripts/demo-down.sh        # stop everything
 ```
 
-### Watch it live (animated console chart)
+### Watch it live
+
+The richer option is the **Rust console** (`elevator-console`): a retro TUI with tabs for
+the building chart, floor-over-time, actuator health, and a live log viewer — and you can
+order / bulk-`sim` from inside it. See `elevator-console/README.md`.
+
+The original quick bash chart still works too:
 
 ```bash
 scripts/monitor.sh              # auto-discovers every elevator; Y=floors, X=elevators
@@ -73,3 +79,8 @@ clears the request immediately, so `Policy` never issues the `STOP()` that would
 - Controller uses the **fast** engine so floors advance ~every 500ms (the tick rate) instead of
   the slow engine's deliberate CPU burn.
 - Kafka runs in KRaft mode (no ZooKeeper) under an isolated compose project, `elevator-demo`.
+- **Throughput / backlog:** the Controller serves at most **one order per tick (~500ms)** and
+  does *not* batch multiple orders at the same floor — each stop clears only one. Fire tens of
+  thousands of orders (`sim`) and the lifts grind floor-by-floor through the backlog, appearing
+  "stuck" on busy floors. Batching same-floor orders on arrival is the natural fix (a good
+  exercise — a real lift opens its doors once for everyone on that floor).

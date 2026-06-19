@@ -1,28 +1,73 @@
 # Elevator System
 
-An event-sourced elevator simulator, rebuilt clean as a learning project for the JVM:
-**Scala 3** for the domain, **Apache Pekko** (typed actors, cluster sharding, event
-sourcing) for the runtime, **Apache Kafka** as the command/state bus, and **Spring Boot**
-as the HTTP edge.
+An event-sourced elevator simulator, built as a hands-on lab for **modern distributed
+programming** on (and off) the JVM:
 
-This repository is built up in small, deliberate commits — each one a self-contained step —
-rather than dropped in all at once. Read the history to follow the architecture coming together.
+- **Scala 3** — the pure domain (elevator, floors, scheduling policy)
+- **Apache Pekko** — typed actors, cluster sharding, event sourcing (the runtime)
+- **Apache Kafka** — the command/state bus (log-centric architecture)
+- **Spring Boot** (+ Actuator) — the HTTP edge and health probes
+- **Rust** (ratatui) — a retro terminal console that speaks the same Kafka topics
 
-## Planned shape
+It's grown in small, deliberate commits — read the history to follow the architecture
+coming together.
+
+## Architecture
 
 ```
-HTTP POST ─► Kafka(commands) ─► Coordinator ─► Controller ─► Operator
-                                                   │ each floor move
-HTTP GET  ◄─ monitor ◄─ Kafka(state) ◄─────────────┘
+                  ┌─────────────── elevator-api (Spring) ───────────────┐
+  POST /api/order │                                                      │ ─► Kafka: elevator-commands
+  GET  /api/...   │   REST edge  +  /actuator/health (liveness/readiness)│        │
+                  └──────────────────────▲──────────────────────────────┘        ▼
+                                         │                            Coordinator (idempotent dedup)
+                       Kafka: elevator-state                                       │
+                                         │                            Controller (event-sourced scheduler)
+   ┌──────────────── elevator-console (Rust) ───────────────┐                     │ one move / tick
+   │  TUI: chart · floor-over-time · health · logs           │                    ▼
+   │  send orders · bulk "sim"                               │ ◄─ Kafka: state ◄─ Operator (moves the car)
+   └─────────────────────────────────────────────────────────┘
 ```
 
-| Module                 | Stack  | Role                                            |
-|------------------------|--------|-------------------------------------------------|
-| `elevator-common-core` | Scala 3 | Pure domain: elevator, floors, scheduling policy |
-| `elevator-common-dto`  | Scala 3 | Messages shared across the wire                  |
-| `elevator-app`         | Pekko  | The brain: event-sourced actors                  |
-| `elevator-api`         | Spring | HTTP edge: order an elevator, monitor its state  |
+Both the Spring API and the Rust console are independent clients of the same two Kafka
+topics — the console talks straight to Kafka, the API adds HTTP on top.
 
-## Status
+| Module                 | Stack   | Role                                                                 |
+|------------------------|---------|---------------------------------------------------------------------|
+| `elevator-common-core` | Scala 3 | Pure domain: elevator, floors, scheduling `Policy`                   |
+| `elevator-common-dto`  | Scala 3 | Messages shared across the wire                                     |
+| `elevator-app`         | Pekko   | The brain: event-sourced `Coordinator` / `Controller` / `Operator`  |
+| `elevator-api`         | Spring  | HTTP edge + Actuator health (Kafka readiness check)                 |
+| `elevator-console`     | Rust    | Terminal UI: live chart, floor-over-time, actuator health, log viewer; order + bulk `sim` |
 
-Work in progress — see the commit history for the story so far.
+## Run
+
+```bash
+scripts/demo-up.sh            # Kafka (docker) + elevator-app + elevator-api (host JVMs)
+# then, the rich console:
+cd elevator-console && cargo run -- monitor      # Tab: chart / trend / health / logs
+scripts/demo-down.sh          # stop everything
+```
+
+See **[demo.md](demo.md)** for the scripted demo and endpoints, and
+**[elevator-console/README.md](elevator-console/README.md)** for the console.
+
+## Build
+
+Maven multi-module, Java 21. `mvn package` builds the JVM modules (a `maven-enforcer`
+rule guards dependency convergence). The Rust console is a separate `cargo` build,
+wired in behind `-Pconsole` / `-Dcargo.skip=false` — see the console README.
+
+## Why this project exists
+
+A sandbox for the patterns behind resilient distributed systems — the actor model,
+event sourcing / CQRS, log-centric messaging, idempotency, backpressure, and
+observability — small enough to read in an afternoon, real enough to break on purpose
+and learn from.
+
+## Roadmap
+
+Next step is real **CQRS read-models**: a **Postgres-backed Pekko Projection** that consumes
+the event journal (the `Controller` already tags its `ElevatorStateUpdated` events) and
+maintains durable query tables — replacing the API's in-memory `StateStore` so state
+survives restarts and can be queried with SQL. Further out: a multi-node cluster, a durable
+journal, CRDTs (`distributed-data`), and chaos/fault-injection drills.
