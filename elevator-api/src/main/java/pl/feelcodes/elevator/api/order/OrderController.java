@@ -24,7 +24,7 @@ class OrderController {
         if (dto.getTag() == null) {
             dto.setTag(UUID.randomUUID().toString());
         }
-        log.info("order elevator request: elevator={} floor={} tag={}",
+        log.info("[order]        {} -> floor {} (tag {})",
                 dto.getElevatorName(), dto.getFloor(), dto.getTag());
         // publishing the command is non-blocking; wrap so the endpoint composes reactively
         return Mono.fromCallable(() -> {

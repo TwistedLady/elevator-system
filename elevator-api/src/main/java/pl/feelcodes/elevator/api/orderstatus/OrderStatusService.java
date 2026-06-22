@@ -19,7 +19,8 @@ class OrderStatusService {
                 e.getTag(),
                 e.getElevatorName(),
                 e.getFloor(),
-                e.getStatus(),
-                "DONE".equals(e.getStatus())));
+                e.getCreatedAt(),
+                e.getDoneAt(),
+                e.getStatus()));
     }
 }

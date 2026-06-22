@@ -17,8 +17,8 @@ import scala.concurrent.{ExecutionContext, Future}
 
 /** Read-side (CQRS) order-status view, keyed by order tag. A consumer of the write-side journal,
   * it streams the `Coordinator`'s events by slice and maintains `order_status`:
-  *   - `Accepted`  -> upsert the row with status `ACCEPTED`
-  *   - `Completed` -> flip the row to `DONE`
+  *   - `Accepted`  -> upsert the row with status `PROGRESS` (created_at set)
+  *   - `Completed` -> flip the row to `DONE` (done_at set)
   *
   * The Coordinator is the source of truth for both intake (dedup) and completion, so this view
   * answers "was the order with tag X processed?" consistently with that. Like
@@ -30,15 +30,14 @@ object OrderStatusProjection {
   private val NumberOfInstances = 4
 
   private val UpsertAcceptedSql =
-    """INSERT INTO order_status (tag, elevator_name, floor, status, updated_at)
-      |VALUES ($1, $2, $3, 'ACCEPTED', now())
+    """INSERT INTO order_status (tag, elevator_name, floor, status, created_at)
+      |VALUES ($1, $2, $3, 'PROGRESS', now())
       |ON CONFLICT (tag) DO UPDATE SET
       |  elevator_name = $2,
-      |  floor         = $3,
-      |  updated_at    = now()""".stripMargin
+      |  floor         = $3""".stripMargin
 
   private val MarkDoneSql =
-    "UPDATE order_status SET status = 'DONE', updated_at = now() WHERE tag = $1"
+    "UPDATE order_status SET status = 'DONE', done_at = now() WHERE tag = $1"
 
   /** Wire the projection into the running system. Call once from the composition root. */
   def init(system: ActorSystem[?]): Unit = {

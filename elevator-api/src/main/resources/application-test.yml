@@ -1,5 +1,8 @@
-# TEST profile: human-readable colored console (Spring Boot's default format), INFO level.
+# TEST profile: human-readable console, INFO level.
 logging:
   level:
     pl.feelcodes.elevator: INFO
     org.springframework: INFO
+  # Lean, scannable console line: time, level, short logger, message — no PID/thread/"---" noise.
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level %logger{20} : %msg%n"

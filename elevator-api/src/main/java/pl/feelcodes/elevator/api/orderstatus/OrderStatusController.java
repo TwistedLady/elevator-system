@@ -28,9 +28,15 @@ class OrderStatusController {
 
     @GetMapping(value = "/{tag}", produces = MediaType.APPLICATION_JSON_VALUE)
     Mono<ResponseEntity<OrderStatusDto>> status(@PathVariable("tag") String tag) {
-        log.info("confirm order request: tag={}", tag);
         return orderStatusService.byTag(tag)
+                .doOnNext(o -> log.info("[order-status] {} -> {} (created {}, done {})",
+                        o.tag(), o.status(), o.createDateTime(), o.doneDateTime()))
                 .map(ResponseEntity::ok)
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+                .defaultIfEmpty(ResponseEntity.notFound().build())
+                .doOnNext(resp -> {
+                    if (resp.getStatusCode().is4xxClientError()) {
+                        log.info("[order-status] {} -> NOT FOUND (404)", tag);
+                    }
+                });
     }
 }
