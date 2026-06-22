@@ -93,7 +93,7 @@ Logs while running: `.run/app.log`, `.run/api.log`.
 | `POST` | `/api/order` | Body `{"elevatorName":"lift-a","floor":5}` → publishes a command. `tag` optional (auto UUID). |
 | `GET`  | `/api/elevator/{name}` | Latest known state JSON, or `404` if none seen yet. |
 | `GET`  | `/api/elevator` | JSON array of the latest state of every known elevator (used by `monitor.sh`). |
-| `GET`  | `/api/order/{tag}` | Was the order processed? `{tag,elevatorName,floor,status,processed}` from the `order_status` read-model, or `404` if the tag is unknown. |
+| `GET`  | `/api/order/{tag}` | Was the order processed? `{tag,elevatorId,floor,status,createDateTime,doneDateTime}` (status `PROGRESS`→`DONE`) from the `order_status` read-model, or `404` if the tag is unknown. |
 
 ## A design note worth knowing
 

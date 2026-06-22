@@ -4,6 +4,7 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import pl.feelcodes.elevator.app.actors.*
+import pl.feelcodes.elevator.app.kafka.{OrderConsumer, OrderDedup, StatePublisher}
 import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusProjection}
 
 /** Single-node Pekko app. Events are persisted to Postgres via the reactive R2DBC journal
@@ -36,7 +37,7 @@ object ElevatorApp extends App {
         })
 
         val dedup = OrderDedup(ctx.system.settings.config)
-        Kafka.runKafkaToCoordinator(ctx.system, coordinatorProvider, dedup)
+        OrderConsumer.run(ctx.system, coordinatorProvider, dedup)
 
         // Read-side: project Controller events into the elevator_state_view read-model, and
         // Coordinator events into the order_status read-model (queryable by order tag).

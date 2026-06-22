@@ -46,27 +46,27 @@ One order flows through three actors, each with a single responsibility. There i
 
 ```mermaid
 flowchart TD
-    ord(["order · ElevatorOrderDto<br/>from Kafka: elevator-commands"]) --> coord
+    ord(["order · ElevatorOrderDto<br/>from Kafka: elevator-commands"]) -->|"first-seen only (durable dedup)"| coord
 
-    coord["<b>Coordinator</b> — intake + confirmation<br/><i>event-sourced, one per elevator</i><br/>• dedup by tag (remembers last 10k)<br/>• persist Accepted<br/>• forward new order to Controller<br/>• persist OrderCompleted when the Controller confirms"]
+    coord["<b>Coordinator</b> — intake + confirmation<br/><i>event-sourced, one per elevator</i><br/>• persist Accepted<br/>• group orders by floor, forward to Controller<br/>• persist Completed for every order at a floor<br/>&nbsp;&nbsp;when the Controller reports it Reached"]
     coord -->|AddRequest| ctrl
 
-    ctrl["<b>Controller</b> — scheduler / brain<br/><i>event-sourced, one per elevator</i><br/>• collect pending requests<br/>• tick every 500 ms<br/>• choose next move via Policy<br/>• update car state, drop served floors<br/>• confirm served orders to the Coordinator"]
-    ctrl -->|Move| op
+    ctrl["<b>Controller</b> — scheduler / brain<br/><i>event-sourced, one per elevator</i><br/>• collect pending requests<br/>• tick every 500 ms<br/>• choose next move via Policy<br/>• update car state, drop served floors<br/>• publish new state to Kafka<br/>• tell Operator to Stop when idle"]
+    ctrl -->|"Move / Stop"| op
 
-    op["<b>Operator</b> — execute one move<br/><i>stateless worker</i><br/>• compute new floor / direction / motion<br/>• publish new state to Kafka<br/>• report result back to Controller (only)"]
-    op -->|publish| out[("Kafka: elevator-state")]
-    op -.->|"MoveExecuted (report)"| ctrl
-    ctrl -.->|"Confirm(tag) — order served"| coord
+    op["<b>Operator</b> — execute one move or stop<br/><i>stateless, dumb worker</i><br/>• compute new floor / direction / motion<br/>• report result back to Controller (only)<br/>• makes no decisions, publishes nothing"]
+    ctrl -->|publish| out[("Kafka: elevator-state")]
+    op -.->|"MoveExecuted / Stopped (report)"| ctrl
+    ctrl -.->|"Reached(floor) — orders served"| coord
 ```
 
 | Actor | Responsibility | Tasks |
 |-------|----------------|-------|
-| **Coordinator** | Order intake **and** confirmation (event-sourced, per elevator) | Drop duplicate orders by `tag` (remembers the last 10k); persist an `Accepted` event; forward each new order to the Controller as `AddRequest`; when the Controller confirms an order is served, persist an idempotent `OrderCompleted(tag)` — one per tag, so duplicate submissions are all covered |
-| **Controller** | The per-elevator scheduler / brain (event-sourced, per elevator) | Accumulate pending requests; on a 500 ms `Tick` pick the next move via the pure `Policy`; mark itself "waiting" until the move completes; update the car's state and drop a request once its floor is reached; **tell the Coordinator (`Confirm(tag)`)** when an order is served |
-| **Operator** | Execute one physical move (stateless) | Compute the new floor/direction/motion from the `Policy` command; publish the new `ElevatorState` to Kafka `elevator-state`; report `MoveExecuted` back to the Controller (its only collaborator) |
+| **Coordinator** | Order intake **and** confirmation (event-sourced, per elevator) | Persist an `Accepted` event; group orders by floor and forward each new one to the Controller as `AddRequest`; when the Controller reports a floor `Reached`, persist a `Completed` event for **every** order waiting at that floor. (Duplicate orders are already dropped upstream at the Kafka ingress — see `OrderConsumer` + `OrderDedup`, durable via the `processed_orders` table.) |
+| **Controller** | The per-elevator scheduler / brain (event-sourced, per elevator) | Accumulate pending requests; on a 500 ms `Tick` pick the next move via the pure `Policy`; mark itself "waiting" until the move completes; **own publishing the car's `ElevatorState` to Kafka `elevator-state`**; drop a request once its floor is reached and **tell the Coordinator (`Reached(floor)`)** to confirm every order waiting there; when no requests remain, **tell the Operator to `Stop`** the car |
+| **Operator** | Dumb worker — execute one physical move or stop (stateless) | Compute the new floor/direction/motion from the `Policy` command, or stop the car; report `MoveExecuted` / `Stopped` back to the Controller (its only collaborator). Makes no decisions and publishes nothing |
 | **ElevatorStateProjection** | Read-side CQRS view (see below) | Replay Controller events by slice; UPSERT one row per elevator into `elevator_state_view` |
-| **OrderStatusProjection** | Read-side CQRS view, keyed by order tag | Replay Coordinator events by slice; mark each order `ACCEPTED` then `DONE` in `order_status` (powers `GET /api/order/{tag}`) |
+| **OrderStatusProjection** | Read-side CQRS view, keyed by order tag | Replay Coordinator events by slice; mark each order `PROGRESS` then `DONE` in `order_status` (powers `GET /api/order/{tag}`) |
 
 ### Persistence & read side (CQRS)
 
@@ -99,7 +99,7 @@ Two read paths, two jobs — pick by what the consumer needs:
 |---|---|---|
 | **Online/real-time monitor** (ticking dashboard, console) | **Kafka** `elevator-state` | push-based, sub-second; ephemeral is fine for "now" |
 | **Durable query / snapshot / history** (REST, survives restart) | **projection** `elevator_state_view` | complete & correct even right after a restart; queryable with SQL |
-| **"Was order X processed?"** (by tag) | **projection** `order_status` via `GET /api/order/{tag}` | per-order lifecycle (ACCEPTED → DONE), durable and indexed by tag |
+| **"Was order X processed?"** (by tag) | **projection** `order_status` via `GET /api/order/{tag}` | per-order lifecycle (PROGRESS → DONE), durable and indexed by tag |
 
 Best of both for a live UI: **seed** the initial picture once from `elevator_state_view` (so nothing
 is blank at startup), then **stream** live updates from the Kafka topic.

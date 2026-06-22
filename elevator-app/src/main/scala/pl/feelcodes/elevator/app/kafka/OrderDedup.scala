@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.app
+package pl.feelcodes.elevator.app.kafka
 
 import com.typesafe.config.Config
 import io.r2dbc.pool.{ConnectionPool, ConnectionPoolConfiguration}
