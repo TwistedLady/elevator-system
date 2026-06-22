@@ -73,8 +73,8 @@ final class ControllerRecoveryTests
       val owc = OrderElevatorCommand(order, Command.Go(Direction.Up))
       esTestKit.runCommand(Controller.MoveExecuted(reached, owc))
 
-      // Reaching the floor serves the order — the Controller confirms it to the Coordinator.
-      coordinatorProbe.expectMessage(Coordinator.Confirm("o-1"))
+      // Reaching the floor serves the order — the Controller tells the Coordinator the floor.
+      coordinatorProbe.expectMessage(Coordinator.Reached(3))
 
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached

@@ -35,7 +35,8 @@ object ElevatorApp extends App {
           Coordinator(e.entityId, controllerProvider)
         })
 
-        Kafka.runKafkaToCoordinator(ctx.system, coordinatorProvider)
+        val dedup = OrderDedup(ctx.system.settings.config)
+        Kafka.runKafkaToCoordinator(ctx.system, coordinatorProvider, dedup)
 
         // Read-side: project Controller events into the elevator_state_view read-model, and
         // Coordinator events into the order_status read-model (queryable by order tag).

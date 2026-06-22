@@ -20,7 +20,7 @@ import pl.feelcodes.elevator.common.dto.{ElevatorStateDto, ElevatorOrderDto}
 
 import java.util.Properties
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.*
 
 object Json {
@@ -37,7 +37,8 @@ object Kafka {
                                      commandTopic: String)
 
   def runKafkaToCoordinator(system: ActorSystem[?],
-                            coordinatorProvider: String => EntityRef[Coordinator.Command]): Unit = {
+                            coordinatorProvider: String => EntityRef[Coordinator.Command],
+                            dedup: OrderDedup): Unit = {
     given ActorSystem[?] = system
     given ExecutionContext = system.executionContext
     given Timeout = 3.seconds
@@ -57,11 +58,16 @@ object Kafka {
       Flow[CommittableMessage[String, Array[Byte]]]
         .mapAsync(1) { msg =>
           val dto = Json.decode(msg.record.value(), classOf[ElevatorOrderDto])
-          val coordinator = coordinatorProvider(dto.elevatorName)
 
-          coordinator
-            .ask[Coordinator.Ack](replyTo => Coordinator.Process(dto, replyTo))
-            .map(_ => msg.committableOffset)
+          // Durable dedup at the boundary: claim the tag; forward only first-time orders.
+          dedup.firstSeen(dto.tag).flatMap {
+            case false =>
+              Future.successful(msg.committableOffset) // duplicate, already processed — drop
+            case true =>
+              coordinatorProvider(dto.elevatorName)
+                .ask[Coordinator.Ack](replyTo => Coordinator.Process(dto, replyTo))
+                .map(_ => msg.committableOffset)
+          }
         }
 
     val (killSwitch, done) =
