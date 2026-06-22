@@ -4,7 +4,8 @@ An event-sourced elevator simulator, built as a hands-on lab for **modern distri
 programming** on (and off) the JVM:
 
 - **Scala 3** — the pure domain (elevator, floors, scheduling policy)
-- **Apache Pekko** — typed actors, cluster sharding, event sourcing (the runtime)
+- **Apache Pekko** — typed actors, cluster sharding, event sourcing + projections (the runtime)
+- **PostgreSQL** (reactive **R2DBC**) — durable event journal + a CQRS read-model projection
 - **Apache Kafka** — the command/state bus (log-centric architecture)
 - **Spring Boot** (+ Actuator) — the HTTP edge and health probes
 - **Rust** (ratatui) — a retro terminal console that speaks the same Kafka topics
@@ -31,21 +32,45 @@ coming together.
 Both the Spring API and the Rust console are independent clients of the same two Kafka
 topics — the console talks straight to Kafka, the API adds HTTP on top.
 
+### Persistence & read side (CQRS)
+
+The `Controller` is event-sourced into a durable **R2DBC Postgres journal** (state survives
+restarts, rebuilt by replaying events). A separate **Pekko Projection** reads those events back
+out by slice and maintains a queryable read-model — the write side and read side are different
+concerns, different tables:
+
+```
+  Controller ──persist──► event_journal (Postgres, source of truth)
+                                  │  eventsBySlices  (read-only)
+                                  ▼
+                      ElevatorStateProjection  ──UPSERT──►  elevator_state_view
+                      (ShardedDaemonProcess,                (one row per elevator:
+                       role "read-model",                    floor/direction/motion,
+                       exactly-once offsets)                 queryable with SQL)
+```
+
+Kafka (the `elevator-state` topic) stays as the **live, ephemeral** broadcast for the API cache
+and console; the projection is the **durable, queryable** view derived from the journal.
+
 | Module                 | Stack   | Role                                                                 |
 |------------------------|---------|---------------------------------------------------------------------|
 | `elevator-common-core` | Scala 3 | Pure domain: elevator, floors, scheduling `Policy`                   |
 | `elevator-common-dto`  | Scala 3 | Messages shared across the wire                                     |
-| `elevator-app`         | Pekko   | The brain: event-sourced `Coordinator` / `Controller` / `Operator`  |
+| `elevator-app`         | Pekko   | The brain: event-sourced `Coordinator` / `Controller` / `Operator` + R2DBC journal & read-side projection |
 | `elevator-api`         | Spring  | HTTP edge + Actuator health (Kafka readiness check)                 |
 | `elevator-console`     | Rust    | Terminal UI: live chart, floor-over-time, actuator health, log viewer; order + bulk `sim` |
 
 ## Run
 
 ```bash
-scripts/demo-up.sh            # Kafka (docker) + elevator-app + elevator-api (host JVMs)
+scripts/demo-up.sh            # Kafka + Postgres (docker) + elevator-app + elevator-api (host JVMs)
 # then, the rich console:
 cd elevator-console && cargo run -- monitor      # Tab: chart / trend / health / logs
 scripts/demo-down.sh          # stop everything
+
+# inspect the durable read-model:
+docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
+  "SELECT * FROM elevator_state_view;"
 ```
 
 See **[demo.md](demo.md)** for the scripted demo and endpoints, and
@@ -66,8 +91,12 @@ and learn from.
 
 ## Roadmap
 
-Next step is real **CQRS read-models**: a **Postgres-backed Pekko Projection** that consumes
-the event journal (the `Controller` already tags its `ElevatorStateUpdated` events) and
-maintains durable query tables — replacing the API's in-memory `StateStore` so state
-survives restarts and can be queried with SQL. Further out: a multi-node cluster, a durable
-journal, CRDTs (`distributed-data`), and chaos/fault-injection drills.
+**Done:** durable **R2DBC Postgres journal** (state survives restarts) + a **Pekko Projection**
+maintaining the `elevator_state_view` read-model, with recovery & schema-evolution tests
+(`mvn -pl elevator-app test`).
+
+Next: point the API's read path at the projection (a reactive `GET /elevators` over
+`elevator_state_view`) instead of the in-memory Kafka cache, so HTTP queries are durable and
+restart-safe. Further out: a multi-node cluster (the projection is already role-gated to
+`read-model` nodes), a separate read database, CRDTs (`distributed-data`), and
+chaos/fault-injection drills.

@@ -1,7 +1,9 @@
-# Slim demo infra: a single-node KRaft Kafka (no ZooKeeper, no Oracle, no web).
+# Slim demo infra: a single-node KRaft Kafka + Postgres (no ZooKeeper, no Oracle, no web).
 # Run under an isolated project name so it never collides with the full docker-compose.yml:
 #   docker compose -p elevator-demo -f docker-compose.demo.yml up -d
 # The two JVM apps (elevator-app, elevator-api) run on the host via scripts/demo-up.sh.
+# Postgres backs the Pekko event journal + the read-side projection (elevator_state_view).
+# Schema is created from ./db/init on first start; the named volume `pgdata` survives restarts.
 services:
   kafka:
     image: apache/kafka:3.8.1
@@ -22,3 +24,24 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  postgres:
+    image: postgres:17
+    container_name: elevator-demo-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: elevator
+      POSTGRES_USER: elevator
+      POSTGRES_PASSWORD: elevator        # demo only — use a secret in real deployments
+    volumes:
+      - pgdata:/var/lib/postgresql/data  # persists across container restarts/recreates
+      - ./db/init:/docker-entrypoint-initdb.d:ro  # schema; runs once on a fresh pgdata volume
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U elevator -d elevator"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

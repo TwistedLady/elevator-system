@@ -1,25 +1,42 @@
-# Demo: Pekko + Kafka + Spring, no Oracle
+# Demo: Pekko + Kafka + Spring + Postgres, no Oracle
 
-A working backend (no frontend, no database) that proves the full path:
+A working backend (no frontend) that proves the full path:
 
 ```
 curl POST /api/order
    └─► Kafka topic: elevator-commands
           └─► Coordinator (dedup)  ─►  Controller (scheduling)  ─►  Operator (one floor/step)
-                                                                          │ publishes each move
-   curl GET /api/elevator/{name}  ◄── StateStore ◄── Kafka topic: elevator-state ◄┘
+                       │ persist events                                    │ publishes each move
+                       ▼                                                    ▼
+              R2DBC journal (Postgres)                            Kafka topic: elevator-state
+                       │ eventsBySlices                                     │
+                       ▼                                          curl GET /api/elevator/{name}
+            ElevatorStateProjection                              ◄── StateStore (in-memory cache)
+                       │ UPSERT
+                       ▼
+            elevator_state_view  (durable read-model — query with psql)
 ```
 
-Persistence is Pekko's **in-memory journal** (config swap only — the domain code is unchanged),
-so there is nothing to install but Kafka.
+Persistence is now Pekko's **reactive R2DBC Postgres journal**, so actor state **survives
+restarts** (rebuilt by replaying events), and a projection maintains the durable
+`elevator_state_view` read-model. You need Kafka **and** Postgres — both come up via
+`docker-compose.demo.yml`.
 
 ## Run it
 
 ```bash
-scripts/demo-up.sh          # Kafka (docker) + elevator-app + elevator-api (host JVMs)
+scripts/demo-up.sh          # Kafka + Postgres (docker) + elevator-app + elevator-api (host JVMs)
 scripts/demo.sh lift-a 5    # order lift-a to floor 5, then monitor until it arrives (pass/fail)
 scripts/demo-down.sh        # stop everything
+
+# the durable read-model (survives an app restart, unlike the Kafka cache):
+docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
+  "SELECT elevator_name, floor, direction, motion FROM elevator_state_view;"
 ```
+
+> Schema (journal + projection tables + `elevator_state_view`) is created by the Postgres
+> container from `db/init/` on first start. To recreate it from scratch, wipe the volume:
+> `docker compose -p elevator-demo -f docker-compose.demo.yml down -v`.
 
 ### Watch it live
 
@@ -75,10 +92,17 @@ clears the request immediately, so `Policy` never issues the `STOP()` that would
 
 ## Notes / shortcuts taken (so they're not invisible)
 
-- Single-node Pekko cluster, in-memory journal → **state is lost on restart** (fine for a demo).
+- Single-node Pekko cluster with a **durable R2DBC Postgres journal** → actor state **survives
+  restarts** (rebuilt by replaying events; proven by the recovery tests in `elevator-app`). The
+  single node carries both `write-model` and `read-model` cluster roles, so the projection runs here.
 - Controller uses the **fast** engine so floors advance ~every 500ms (the tick rate) instead of
   the slow engine's deliberate CPU burn.
 - Kafka runs in KRaft mode (no ZooKeeper) under an isolated compose project, `elevator-demo`.
+- **Postgres** backs the Pekko **event journal + the read-side projection** (compose service
+  `postgres`, and `k8s/postgres.yaml` as a StatefulSet with a PVC). Its data lives in the `pgdata`
+  volume so it survives restarts (`psql postgresql://elevator:elevator@localhost:5432/elevator`).
+  The reactive R2DBC Postgres driver is added explicitly — `pekko-persistence-r2dbc` ships only
+  the SPI/pool, not a driver.
 - **Throughput / backlog:** the Controller serves at most **one order per tick (~500ms)** and
   does *not* batch multiple orders at the same floor — each stop clears only one. Fire tens of
   thousands of orders (`sim`) and the lifts grind floor-by-floor through the backlog, appearing

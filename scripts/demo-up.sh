@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bring up the full demo backend: Kafka (docker) + elevator-app + elevator-api (host JVMs).
-# No Oracle. State lives in memory. Usage: scripts/demo-up.sh
+# Bring up the full demo backend: Kafka + Postgres (docker) + elevator-app + elevator-api (host JVMs).
+# Actor state persists in Postgres (R2DBC journal); read-model projection too. Usage: scripts/demo-up.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,7 +12,7 @@ MVN="${MVN:-mvn}"
 APP_JAR="elevator-app/target/elevator-app-1.0-SNAPSHOT.jar"
 API_JAR="elevator-api/target/elevator-api-1.0-SNAPSHOT.jar"
 
-echo "==> 1/4 Starting Kafka (docker compose)…"
+echo "==> 1/4 Starting Kafka + Postgres (docker compose)…"
 docker compose -p elevator-demo -f docker-compose.demo.yml up -d
 
 echo "==> waiting for Kafka on localhost:9092…"
@@ -22,10 +22,21 @@ for i in $(seq 1 60); do
   [ "$i" = "60" ] && { echo "    Kafka did not come up"; exit 1; }
 done
 
+# The app now needs Postgres at boot (R2DBC journal + projection). Wait for it to accept
+# connections (the container also has to finish running ./db/init on a fresh volume).
+echo "==> waiting for Postgres on localhost:5432…"
+for i in $(seq 1 60); do
+  if docker exec elevator-demo-postgres pg_isready -U elevator -d elevator >/dev/null 2>&1; then
+    echo "    Postgres is up."; break
+  fi
+  sleep 1
+  [ "$i" = "60" ] && { echo "    Postgres did not come up"; exit 1; }
+done
+
 echo "==> 2/4 Building jars (skip tests)…"
 "$MVN" -q -DskipTests package
 
-echo "==> 3/4 Launching elevator-app (in-memory journal)…"
+echo "==> 3/4 Launching elevator-app (R2DBC Postgres journal + projection)…"
 java -jar "$APP_JAR" > "$RUN_DIR/app.log" 2>&1 &
 echo $! > "$RUN_DIR/app.pid"
 echo "    pid $(cat "$RUN_DIR/app.pid")  (logs: .run/app.log)"

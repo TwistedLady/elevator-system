@@ -4,9 +4,12 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import pl.feelcodes.elevator.app.actors.*
+import pl.feelcodes.elevator.app.readside.ElevatorStateProjection
 
-/** Single-node Pekko app. No database: state lives in the in-memory journal
-  * (see application.conf). Orders come from Kafka, moves are published back to Kafka. */
+/** Single-node Pekko app. Events are persisted to Postgres via the reactive R2DBC journal
+  * (see application.conf) and projected into the `elevator_state_view` read-model by
+  * [[pl.feelcodes.elevator.app.actors.ElevatorStateProjection]]. Orders come from Kafka,
+  * moves are published back to Kafka. */
 object ElevatorApp extends App {
 
   val system: ActorSystem[Nothing] =
@@ -33,6 +36,10 @@ object ElevatorApp extends App {
         })
 
         Kafka.runKafkaToCoordinator(ctx.system, coordinatorProvider)
+
+        // Read-side: project Controller events into the Postgres read-model.
+        ElevatorStateProjection.init(ctx.system)
+
         Behaviors.empty
       },
       "elevator-cluster"
