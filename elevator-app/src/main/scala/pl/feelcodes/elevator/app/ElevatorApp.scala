@@ -8,7 +8,7 @@ import pl.feelcodes.elevator.app.readside.ElevatorStateProjection
 
 /** Single-node Pekko app. Events are persisted to Postgres via the reactive R2DBC journal
   * (see application.conf) and projected into the `elevator_state_view` read-model by
-  * [[pl.feelcodes.elevator.app.actors.ElevatorStateProjection]]. Orders come from Kafka,
+  * [[pl.feelcodes.elevator.app.readside.ElevatorStateProjection]]. Orders come from Kafka,
   * moves are published back to Kafka. */
 object ElevatorApp extends App {
 

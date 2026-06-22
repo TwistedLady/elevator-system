@@ -52,6 +52,18 @@ concerns, different tables:
 Kafka (the `elevator-state` topic) stays as the **live, ephemeral** broadcast for the API cache
 and console; the projection is the **durable, queryable** view derived from the journal.
 
+### Live vs durable: which source to read?
+
+Two read paths, two jobs — pick by what the consumer needs:
+
+| Consumer need | Read from | Why |
+|---|---|---|
+| **Online/real-time monitor** (ticking dashboard, console) | **Kafka** `elevator-state` | push-based, sub-second; ephemeral is fine for "now" |
+| **Durable query / snapshot / history** (REST, survives restart) | **projection** `elevator_state_view` | complete & correct even right after a restart; queryable with SQL |
+
+Best of both for a live UI: **seed** the initial picture once from `elevator_state_view` (so nothing
+is blank at startup), then **stream** live updates from the Kafka topic.
+
 | Module                 | Stack   | Role                                                                 |
 |------------------------|---------|---------------------------------------------------------------------|
 | `elevator-common-core` | Scala 3 | Pure domain: elevator, floors, scheduling `Policy`                   |
