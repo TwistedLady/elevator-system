@@ -27,7 +27,9 @@ pub fn run(
     app_log: &str,
     api_log: &str,
 ) -> Result<(), BoxErr> {
-    let mut app = App::new(brokers, command_topic);
+    // The api base is the health URL minus the actuator path (e.g. http://localhost:8080).
+    let api_base = health_url.strip_suffix("/actuator/health").unwrap_or(health_url);
+    let mut app = App::new(brokers, command_topic, api_base);
 
     // Kafka state -> channel.
     let (state_tx, state_rx) = mpsc::channel::<ElevatorState>();

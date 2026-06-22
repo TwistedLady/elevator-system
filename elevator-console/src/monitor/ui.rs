@@ -221,7 +221,9 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
 
     let rows = Layout::vertical([
         Constraint::Length(3), // status text
-        Constraint::Length(1), // progress gauge
+        Constraint::Length(1), // "sent" gauge
+        Constraint::Length(1), // labels
+        Constraint::Length(1), // "processed" gauge (verified via the API)
         Constraint::Min(0),    // help
     ])
     .split(inner);
@@ -255,13 +257,34 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
             ]);
             frame.render_widget(info, rows[0]);
 
-            let pct = (sim.ratio() * 100.0).round() as u16;
-            let fill = if sim.finished() { Color::Green } else { Color::Cyan };
-            let gauge = Gauge::default()
-                .gauge_style(Style::new().fg(fill).bg(Color::Black).bold())
-                .ratio(sim.ratio())
-                .label(format!("{sent}/{}  ({pct}%)", sim.total));
-            frame.render_widget(gauge, rows[1]);
+            // "sent" gauge — how many orders reached Kafka.
+            let sent_pct = (sim.ratio() * 100.0).round() as u16;
+            let sent_fill = if sim.finished() { Color::Green } else { Color::Cyan };
+            frame.render_widget(
+                Gauge::default()
+                    .gauge_style(Style::new().fg(sent_fill).bg(Color::Black).bold())
+                    .ratio(sim.ratio())
+                    .label(format!("sent  {sent}/{}  ({sent_pct}%)", sim.total)),
+                rows[1],
+            );
+
+            // "processed" gauge — how many of the checked orders the API confirms are DONE.
+            let done = sim.processed();
+            frame.render_widget(
+                Paragraph::new(
+                    format!("processed (verified via API, sampled up to {} orders):", sim.checked)
+                        .dark_gray(),
+                ),
+                rows[2],
+            );
+            let proc_pct = (sim.processed_ratio() * 100.0).round() as u16;
+            frame.render_widget(
+                Gauge::default()
+                    .gauge_style(Style::new().fg(Color::Magenta).bg(Color::Black).bold())
+                    .ratio(sim.processed_ratio())
+                    .label(format!("done  {done}/{}  ({proc_pct}%)", sim.checked)),
+                rows[3],
+            );
         }
     }
 }

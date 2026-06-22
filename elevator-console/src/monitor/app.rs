@@ -58,6 +58,10 @@ pub struct SimRun {
     pub start: Instant,
     /// Set once when the run finishes, so the elapsed time stops ticking.
     pub elapsed: Option<Duration>,
+    /// How many of the sent orders we verify against the API (capped — see CHECK_CAP).
+    pub checked: u64,
+    /// Orders confirmed processed (status DONE) by the API; bumped by the poller thread.
+    pub processed: Arc<AtomicU64>,
 }
 
 impl SimRun {
@@ -65,12 +69,25 @@ impl SimRun {
         self.sent.load(Ordering::Relaxed)
     }
 
-    /// Fraction done, clamped to 0.0..=1.0 (safe to hand straight to a Gauge).
+    /// Fraction sent, clamped to 0.0..=1.0 (safe to hand straight to a Gauge).
     pub fn ratio(&self) -> f64 {
         if self.total == 0 {
             0.0
         } else {
             (self.sent() as f64 / self.total as f64).clamp(0.0, 1.0)
+        }
+    }
+
+    pub fn processed(&self) -> u64 {
+        self.processed.load(Ordering::Relaxed)
+    }
+
+    /// Fraction of the *checked* orders confirmed processed by the API.
+    pub fn processed_ratio(&self) -> f64 {
+        if self.checked == 0 {
+            0.0
+        } else {
+            (self.processed() as f64 / self.checked as f64).clamp(0.0, 1.0)
         }
     }
 
@@ -83,6 +100,9 @@ impl SimRun {
         self.elapsed.unwrap_or_else(|| self.start.elapsed()).as_secs_f64()
     }
 }
+
+/// Most orders we verify against the API after a sim (one HTTP GET per tag, polled until done).
+const CHECK_CAP: usize = 100;
 
 /// Which backend log the Logs view is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -179,10 +199,12 @@ pub struct App {
     pub should_quit: bool,
     brokers: String,
     command_topic: String,
+    /// Base URL of the elevator-api (e.g. http://localhost:8080), for the order-status check.
+    api_base: String,
 }
 
 impl App {
-    pub fn new(brokers: &str, command_topic: &str) -> Self {
+    pub fn new(brokers: &str, command_topic: &str, api_base: &str) -> Self {
         Self {
             view: View::Chart,
             latest: BTreeMap::new(),
@@ -205,6 +227,7 @@ impl App {
             should_quit: false,
             brokers: brokers.to_string(),
             command_topic: command_topic.to_string(),
+            api_base: api_base.to_string(),
         }
     }
 
@@ -332,15 +355,28 @@ impl App {
         let done = Arc::new(AtomicBool::new(false));
         let (sent_t, done_t) = (Arc::clone(&sent), Arc::clone(&done));
         let threads = count.clamp(1, 4);
+        // Unique per run so a re-run uses fresh tags (not deduped) and shows fresh progress.
+        let run_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         // Spread the run over ~2.5s so the progress bar visibly fills; big runs that take
         // longer than that to send simply ignore the pacing and go full speed.
         let pace = Some(Duration::from_millis(2500));
         std::thread::spawn(move || {
             let _ = crate::sender::run_simulation(
-                &brokers, &topic, count, threads, &pool, SIM_MAX_FLOOR, &sent_t, pace,
+                &brokers, &topic, count, threads, &pool, SIM_MAX_FLOOR, &sent_t, pace, run_id,
             );
             done_t.store(true, Ordering::Relaxed);
         });
+
+        // Verify (up to CHECK_CAP of) the sent orders against the API's order-status endpoint.
+        let tags = crate::sender::sim_tags(run_id, count, threads, CHECK_CAP);
+        let checked = tags.len() as u64;
+        let processed = Arc::new(AtomicU64::new(0));
+        let (processed_t, api_base) = (Arc::clone(&processed), self.api_base.clone());
+        std::thread::spawn(move || poll_processed(&api_base, tags, &processed_t));
+
         self.sim = Some(SimRun {
             total: count,
             elevators,
@@ -348,6 +384,8 @@ impl App {
             done,
             start: Instant::now(),
             elapsed: None,
+            checked,
+            processed,
         });
     }
 
@@ -473,5 +511,39 @@ impl App {
             },
             _ => "type:  <elevator> <floor>   e.g.  e3 7".to_string(),
         }
+    }
+}
+
+/// Poll the API's `GET /api/order/{tag}` for each tag until it reports processed (or we give up),
+/// bumping `processed` as each is confirmed. Runs on its own thread; the SIM tab reads the count.
+fn poll_processed(api_base: &str, tags: Vec<String>, processed: &AtomicU64) {
+    if tags.is_empty() {
+        return;
+    }
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(2))
+        .timeout_read(Duration::from_secs(2))
+        .build();
+    let mut pending = tags;
+    let start = Instant::now();
+    while !pending.is_empty() && start.elapsed() < Duration::from_secs(120) {
+        pending.retain(|tag| {
+            let url = format!("{api_base}/api/order/{tag}");
+            match agent.get(&url).call() {
+                // 200 with processed:true -> confirmed, drop it. Any other state -> keep polling.
+                Ok(resp) => {
+                    let done = resp.into_string().unwrap_or_default().contains("\"processed\":true");
+                    if done {
+                        processed.fetch_add(1, Ordering::Relaxed);
+                    }
+                    !done
+                }
+                Err(_) => true, // 404 (not projected yet) or transient -> retry
+            }
+        });
+        if pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
     }
 }
