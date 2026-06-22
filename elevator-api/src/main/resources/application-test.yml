@@ -1,5 +1,5 @@
-# TEST profile: verbose, human-readable colored console (Spring Boot's default format).
+# TEST profile: human-readable colored console (Spring Boot's default format), INFO level.
 logging:
   level:
-    pl.feelcodes.elevator: TRACE   # our own code at full detail
-    org.springframework: DEBUG     # framework internals (requests, beans, kafka listener)
+    pl.feelcodes.elevator: INFO
+    org.springframework: INFO

@@ -1,4 +1,4 @@
-<!-- TEST logging: verbose and human-readable. Included by logback.xml when app.profile=test. -->
+<!-- TEST logging: human-readable, INFO level. Included by logback.xml when app.profile=test. -->
 <included>
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -6,14 +6,10 @@
         </encoder>
     </appender>
 
-    <!-- Kafka client coordination chatter stays quiet even here. -->
+    <!-- Kafka client coordination chatter stays quiet. -->
     <logger name="org.apache.kafka" level="WARN"/>
-    <!-- Our own code at full detail. -->
-    <logger name="pl.feelcodes.elevator" level="TRACE"/>
 
-    <!-- Frameworks at DEBUG. Pekko's own event level is raised separately via PEKKO_LOGLEVEL
-         (see application.conf) — logback alone can't lift Pekko's internal log filter. -->
-    <root level="DEBUG">
+    <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>
 </included>

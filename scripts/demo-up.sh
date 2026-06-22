@@ -51,9 +51,8 @@ echo "==> 2/4 Building jars (skip tests)…"
 "$MVN" -q -DskipTests package
 
 echo "==> 3/4 Launching elevator-app (R2DBC Postgres journal + projection)…"
-# test profile also raises Pekko's own internal log filter to DEBUG (see application.conf).
-APP_PEKKO_LL=INFO; [ "$PROFILE" = test ] && APP_PEKKO_LL=DEBUG
-PEKKO_LOGLEVEL="$APP_PEKKO_LL" java -Dapp.profile="$PROFILE" -jar "$APP_JAR" > "$LOG_DIR/app.log" 2>&1 &
+# Pekko's own internal log filter stays at INFO (its default; see application.conf).
+PEKKO_LOGLEVEL="${PEKKO_LOGLEVEL:-INFO}" java -Dapp.profile="$PROFILE" -jar "$APP_JAR" > "$LOG_DIR/app.log" 2>&1 &
 echo $! > "$RUN_DIR/app.pid"
 echo "    pid $(cat "$RUN_DIR/app.pid")  (logs: logs/app.log)"
 
