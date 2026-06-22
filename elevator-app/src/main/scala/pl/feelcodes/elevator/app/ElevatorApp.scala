@@ -24,12 +24,12 @@ object ElevatorApp extends App {
 
         sharding.init(Entity(Operator.TypeKey) { _ =>
           Operator(
-            publish = statePublisher.publish,
-            report = (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc)
+            reportMove = (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc),
+            reportStop = (name, state) => controllerProvider(name) ! Controller.Stopped(state)
           )
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider, coordinatorProvider)
+          Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
         })
         sharding.init(Entity(Coordinator.TypeKey) { e =>
           Coordinator(e.entityId, controllerProvider)

@@ -59,6 +59,14 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val msg = Operator.Move("lift-a", state, owc)
     assert(roundTrip(msg) == msg)
 
+  test("Operator.Stop round-trips"):
+    val msg = Operator.Stop("lift-a", state)
+    assert(roundTrip(msg) == msg)
+
+  test("Controller.Stopped round-trips (Operator -> Controller)"):
+    val msg = Controller.Stopped(state)
+    assert(roundTrip(msg) == msg)
+
   test("Coordinator.Reached round-trips (Controller -> Coordinator across nodes)"):
     val msg = Coordinator.Reached(5)
     assert(roundTrip(msg) == msg)

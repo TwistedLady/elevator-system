@@ -57,7 +57,7 @@ final class ControllerRecoveryTests
   private def newTestKit() =
     EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, coordinatorProvider)
+      Controller("lift-a", operatorProvider, coordinatorProvider, _ => ()) // publish is a no-op here
     )
 
   "The Controller journal" should {
@@ -68,8 +68,9 @@ final class ControllerRecoveryTests
 
       esTestKit.runCommand(Controller.AddRequest(order)).event shouldBe Controller.RequestAdded(order)
 
-      // The Operator reports a move that REACHES floor 3 -> the served order is cleared.
-      val reached = ElevatorState(Direction.Up, Motion.Moving, Floor(3))
+      // The Operator reports a move that REACHES floor 3 (and stops there) -> the order is cleared.
+      // Stopped (not Moving) so the idle-stop tick doesn't fire during this test.
+      val reached = ElevatorState(Direction.Up, Motion.Stopped, Floor(3))
       val owc = OrderElevatorCommand(order, Command.Go(Direction.Up))
       esTestKit.runCommand(Controller.MoveExecuted(reached, owc))
 
