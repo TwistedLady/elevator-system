@@ -29,7 +29,7 @@ object ElevatorApp extends App {
           )
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider)
+          Controller(e.entityId, operatorProvider, coordinatorProvider)
         })
         sharding.init(Entity(Coordinator.TypeKey) { e =>
           Coordinator(e.entityId, controllerProvider)

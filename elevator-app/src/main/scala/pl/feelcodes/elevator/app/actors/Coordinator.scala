@@ -13,6 +13,10 @@ object Coordinator {
   sealed trait Command
   final case class Process(dto: ElevatorOrderDto, replyTo: ActorRef[Ack]) extends Command
 
+  /** Fire-and-forget: the Controller reports that the order with this tag has been served (its car
+    * reached the floor). The Coordinator records the confirmation — it owns `OrderCompleted`. */
+  private[app] final case class Confirm(tag: String) extends Command
+
   sealed trait Ack
   object Ack {
     case object Ok extends Ack
@@ -21,12 +25,24 @@ object Coordinator {
   sealed trait Event
   final case class Accepted(tag: String, elevatorName: String, floor: Int) extends Event
 
+  /** Durable confirmation that the order finished. One per tag, so the 5 duplicate submissions of
+    * the same order (the Coordinator dedups them) are all covered by this single event. */
+  final case class Completed(tag: String) extends Event
+
   final case class State(seenTags: Set[String],
                          tagOrder: Vector[String],
-                         lastAccepted: Option[ElevatorOrderDto])
+                         lastAccepted: Option[ElevatorOrderDto],
+                         completed: Set[String] = Set.empty,
+                         completedOrder: Vector[String] = Vector.empty)
 
   object State {
-    val empty: State = State(seenTags = Set.empty, tagOrder = Vector.empty, lastAccepted = None)
+    val empty: State = State(
+      seenTags = Set.empty,
+      tagOrder = Vector.empty,
+      lastAccepted = None,
+      completed = Set.empty,
+      completedOrder = Vector.empty
+    )
   }
 
   def apply(elevatorName: String,
@@ -55,6 +71,12 @@ object Coordinator {
               controller ! Controller.AddRequest(ElevatorOrder(dto.tag, Floor(dto.floor)))
               replyTo ! Ack.Ok
             }
+
+      case Confirm(tag) =>
+        // The Controller has decided the order is served; record it. Idempotent — the first
+        // Confirm persists Completed, repeats (or a Confirm for an already-done tag) are no-ops.
+        if state.completed.contains(tag) then Effect.none
+        else Effect.persist(Completed(tag))
   }
 
   private val eventHandler: (State, Event) => State = { (state, event) =>
@@ -68,6 +90,11 @@ object Coordinator {
           tagOrder = finalOrder,
           lastAccepted = Some(ElevatorOrderDto(tag, elevatorName, floor))
         )
+
+      case Completed(tag) =>
+        val (finalSet, finalOrder) =
+          shrink(state.completed + tag, state.completedOrder :+ tag, maxSize = 10_000)
+        state.copy(completed = finalSet, completedOrder = finalOrder)
   }
 
   private def shrink(tags: Set[String], order: Vector[String], maxSize: Int): (Set[String], Vector[String]) = {

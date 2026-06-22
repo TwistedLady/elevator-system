@@ -43,7 +43,8 @@ object Controller {
                          requests: Set[ElevatorOrder])
 
   def apply(elevatorName: String,
-            operatorProvider: (elevatorName: String) => EntityRef[Operator.Command]): Behavior[Command] =
+            operatorProvider: (elevatorName: String) => EntityRef[Operator.Command],
+            coordinatorProvider: (elevatorName: String) => EntityRef[Coordinator.Command]): Behavior[Command] =
     Behaviors.withTimers { timers =>
       timers.startTimerAtFixedRate(Tick, 500.millis)
 
@@ -62,10 +63,15 @@ object Controller {
               else Effect.persist(RequestAdded(request))
 
             case MoveExecuted(newState, orderWithCommand) =>
-              Effect.persist(
-                WaitingSet(false),
-                ElevatorStateUpdated(newState, orderWithCommand)
-              )
+              // The order is served when its car reaches the order's floor. Tell the Coordinator
+              // so it records the confirmation (the Coordinator owns OrderCompleted).
+              val reached = orderWithCommand.order.floor == newState.floor
+              Effect
+                .persist(WaitingSet(false), ElevatorStateUpdated(newState, orderWithCommand))
+                .thenRun { s =>
+                  if reached then
+                    coordinatorProvider(s.elevatorName) ! Coordinator.Confirm(orderWithCommand.order.tag)
+                }
 
             case Tick =>
               if state.waiting || state.requests.isEmpty then Effect.none

@@ -6,7 +6,7 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
 import pl.feelcodes.elevator.common.core.*
 
 /**
@@ -29,8 +29,9 @@ object ControllerRecoveryTests {
         |  serialization-bindings {
         |    "pl.feelcodes.elevator.app.actors.Controller$Command" = jackson-cbor
         |    "pl.feelcodes.elevator.app.actors.Controller$Event"   = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Controller$State"   = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Operator$Command"   = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Controller$State"    = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Operator$Command"    = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command" = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -49,10 +50,14 @@ final class ControllerRecoveryTests
   private val operatorProvider =
     (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
 
+  private val coordinatorProbe = createTestProbe[Coordinator.Command]()
+  private val coordinatorProvider =
+    (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
+
   private def newTestKit() =
     EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider)
+      Controller("lift-a", operatorProvider, coordinatorProvider)
     )
 
   "The Controller journal" should {
@@ -67,6 +72,9 @@ final class ControllerRecoveryTests
       val reached = ElevatorState(Direction.Up, Motion.Moving, Floor(3))
       val owc = OrderElevatorCommand(order, Command.Go(Direction.Up))
       esTestKit.runCommand(Controller.MoveExecuted(reached, owc))
+
+      // Reaching the floor serves the order — the Controller confirms it to the Coordinator.
+      coordinatorProbe.expectMessage(Coordinator.Confirm("o-1"))
 
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached
@@ -87,6 +95,9 @@ final class ControllerRecoveryTests
       val midway = ElevatorState(Direction.Up, Motion.Moving, Floor(4))
       val owc = OrderElevatorCommand(order, Command.Go(Direction.Up))
       esTestKit.runCommand(Controller.MoveExecuted(midway, owc))
+
+      // Not reached -> the order is not served, so the Coordinator is NOT told it's done.
+      coordinatorProbe.expectNoMessage()
 
       esTestKit.getState().requests should contain(order)
 

@@ -19,7 +19,7 @@ object Operator {
 
   /** The Operator depends on no other actor. It is handed two ports:
     *   - `publish`: emit the new state to Kafka
-    *   - `report` : hand the result back to whoever asked
+    *   - `report` : hand the result back to the Controller (its only collaborator)
     * Both hide the collaborator behind a narrow function (a facade). */
   def apply(publish: ElevatorStateDto => Unit,
             report: (String, ElevatorState, OrderElevatorCommand) => Unit): Behavior[Command] =

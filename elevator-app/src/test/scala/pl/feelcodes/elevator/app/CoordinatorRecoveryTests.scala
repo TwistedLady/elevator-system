@@ -82,5 +82,39 @@ final class CoordinatorRecoveryTests
       dup.reply shouldBe Coordinator.Ack.Ok
       controllerProbe.expectNoMessage()
     }
+
+    "record a completion confirmed by the Controller, once per tag, surviving a crash" in {
+      val esTestKit = newTestKit()
+
+      esTestKit.runCommand[Coordinator.Ack](r => Coordinator.Process(ElevatorOrderDto("tag-9", "lift-a", 4), r))
+      controllerProbe.expectMessageType[Controller.AddRequest]
+
+      // The Controller confirms the order is served.
+      val done = esTestKit.runCommand(Coordinator.Confirm("tag-9"))
+      done.event shouldBe Coordinator.Completed("tag-9")
+      esTestKit.getState().completed should contain("tag-9")
+
+      // A repeated Confirm for the same tag records nothing new.
+      esTestKit.runCommand(Coordinator.Confirm("tag-9")).hasNoEvents shouldBe true
+
+      esTestKit.restart() // completion memory must survive a crash too
+      esTestKit.getState().completed should contain("tag-9")
+    }
+
+    "cover all duplicate submissions of one tag with a single completion" in {
+      val esTestKit = newTestKit()
+      val dto = ElevatorOrderDto("dup", "lift-a", 6)
+
+      // The same order arrives 5 times; the Coordinator dedups to one piece of work.
+      (1 to 5).foreach { _ =>
+        esTestKit.runCommand[Coordinator.Ack](r => Coordinator.Process(dto, r)).reply shouldBe Coordinator.Ack.Ok
+      }
+      controllerProbe.expectMessageType[Controller.AddRequest]
+      controllerProbe.expectNoMessage()
+
+      // One Confirm completes the tag — covering all five submissions.
+      esTestKit.runCommand(Coordinator.Confirm("dup")).event shouldBe Coordinator.Completed("dup")
+      esTestKit.getState().completed should contain("dup")
+    }
   }
 }
