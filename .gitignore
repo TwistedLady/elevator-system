@@ -13,6 +13,7 @@ dist/
 
 # Runtime / logs
 .run/
+logs/
 *.log
 **/demo-snapshots/
 

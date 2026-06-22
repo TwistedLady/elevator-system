@@ -37,10 +37,10 @@ enum Command {
         #[arg(long, env = "HEALTH_URL", default_value = "http://localhost:8080/actuator/health")]
         health_url: String,
         /// elevator-app log file tailed in the Logs view.
-        #[arg(long, default_value = "../.run/app.log")]
+        #[arg(long, default_value = "../logs/app.log")]
         app_log: String,
         /// elevator-api log file tailed in the Logs view.
-        #[arg(long, default_value = "../.run/api.log")]
+        #[arg(long, default_value = "../logs/api.log")]
         api_log: String,
     },
     /// Send one order: an elevator to a floor.

@@ -24,6 +24,14 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Persist broker + KRaft metadata so a restart no longer wipes topics (and the live chart).
+      # Default log.dirs is under /tmp, which is lost on recreate; point it at the mounted volume.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # Pin the cluster id so the existing volume's meta.properties always matches on remount.
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+    volumes:
+      - kafkadata:/var/lib/kafka/data  # survives container restarts/recreates
+      - ./logs/kafka:/opt/kafka/logs   # server.log, controller.log, … on the host
 
   postgres:
     image: postgres:17
@@ -34,9 +42,23 @@ services:
       POSTGRES_DB: elevator
       POSTGRES_USER: elevator
       POSTGRES_PASSWORD: elevator        # demo only — use a secret in real deployments
+    # Write the server log to a file (default is stderr only) so it lands in the host ./logs.
+    command:
+      - "postgres"
+      - "-c"
+      - "logging_collector=on"
+      - "-c"
+      - "log_directory=/var/log/postgresql"
+      - "-c"
+      - "log_filename=postgresql.log"
+      - "-c"
+      - "log_rotation_age=0"             # one growing file for the demo (no daily rotation)
+      - "-c"
+      - "log_rotation_size=0"
     volumes:
       - pgdata:/var/lib/postgresql/data  # persists across container restarts/recreates
       - ./db/init:/docker-entrypoint-initdb.d:ro  # schema; runs once on a fresh pgdata volume
+      - ./logs/postgres:/var/log/postgresql  # postgresql.log on the host (dir must be writable: chmod 777)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U elevator -d elevator"]
       interval: 5s
@@ -45,3 +67,4 @@ services:
 
 volumes:
   pgdata:
+  kafkadata:

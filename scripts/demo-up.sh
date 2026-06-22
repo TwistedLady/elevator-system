@@ -8,6 +8,20 @@ cd "$ROOT"
 RUN_DIR="$ROOT/.run"
 mkdir -p "$RUN_DIR"
 
+# All logs land in ./logs: app+api host JVMs write app.log/api.log here, and the Kafka +
+# Postgres containers bind-mount their log dirs into ./logs/kafka and ./logs/postgres.
+# 0777 so the Postgres server (container uid 999) can write into its bind-mounted subdir.
+LOG_DIR="$ROOT/logs"
+mkdir -p "$LOG_DIR/kafka" "$LOG_DIR/postgres"
+chmod 777 "$LOG_DIR/kafka" "$LOG_DIR/postgres"
+
+# Logging profile for the two JVMs:
+#   test (default) → verbose, human-readable console (TRACE our code, DEBUG frameworks)
+#   prod           → lean INFO/WARN, one-line JSON to console + rolling logs/{app,api}.json
+PROFILE="${PROFILE:-test}"
+case "$PROFILE" in test|prod) ;; *) echo "PROFILE must be 'test' or 'prod' (got '$PROFILE')"; exit 1;; esac
+echo "==> logging profile: $PROFILE"
+
 MVN="${MVN:-mvn}"
 APP_JAR="elevator-app/target/elevator-app-1.0-SNAPSHOT.jar"
 API_JAR="elevator-api/target/elevator-api-1.0-SNAPSHOT.jar"
@@ -37,14 +51,16 @@ echo "==> 2/4 Building jars (skip tests)…"
 "$MVN" -q -DskipTests package
 
 echo "==> 3/4 Launching elevator-app (R2DBC Postgres journal + projection)…"
-java -jar "$APP_JAR" > "$RUN_DIR/app.log" 2>&1 &
+# test profile also raises Pekko's own internal log filter to DEBUG (see application.conf).
+APP_PEKKO_LL=INFO; [ "$PROFILE" = test ] && APP_PEKKO_LL=DEBUG
+PEKKO_LOGLEVEL="$APP_PEKKO_LL" java -Dapp.profile="$PROFILE" -jar "$APP_JAR" > "$LOG_DIR/app.log" 2>&1 &
 echo $! > "$RUN_DIR/app.pid"
-echo "    pid $(cat "$RUN_DIR/app.pid")  (logs: .run/app.log)"
+echo "    pid $(cat "$RUN_DIR/app.pid")  (logs: logs/app.log)"
 
 echo "==> 4/4 Launching elevator-api (Spring, :8080)…"
-java -jar "$API_JAR" > "$RUN_DIR/api.log" 2>&1 &
+SPRING_PROFILES_ACTIVE="$PROFILE" java -jar "$API_JAR" > "$LOG_DIR/api.log" 2>&1 &
 echo $! > "$RUN_DIR/api.pid"
-echo "    pid $(cat "$RUN_DIR/api.pid")  (logs: .run/api.log)"
+echo "    pid $(cat "$RUN_DIR/api.pid")  (logs: logs/api.log)"
 
 echo "==> waiting for API on http://localhost:8080…"
 for i in $(seq 1 60); do

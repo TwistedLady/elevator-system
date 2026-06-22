@@ -1,14 +1,9 @@
 <configuration>
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
-        </encoder>
-    </appender>
-
-    <!-- Kafka client chatter (consumer/producer coordination) is noise here. -->
-    <logger name="org.apache.kafka" level="WARN"/>
-
-    <root level="INFO">
-        <appender-ref ref="STDOUT"/>
-    </root>
+    <!-- Logging profile, chosen with -Dapp.profile=prod|test (default: test).
+           test → verbose, human-readable colored console      (logback-profile-test.xml)
+           prod → INFO+, one-line JSON to console + rolling file (logback-profile-prod.xml)
+         scripts/demo-up.sh sets this from its PROFILE variable.
+         NB: the included files must NOT be named logback-test.xml / logback.xml — logback
+         auto-loads those as top-level config, which breaks the <included> include mechanism. -->
+    <include resource="logback-profile-${app.profile:-test}.xml"/>
 </configuration>

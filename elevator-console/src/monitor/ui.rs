@@ -61,9 +61,9 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" BUILDING ");
-    if app.latest.is_empty() {
-        let p = Paragraph::new("waiting for elevator state…".dim()).block(block);
-        frame.render_widget(p, area);
+    // Backend unreachable, or reachable but no state yet -> show a clear waiting banner.
+    if !app.health.reachable || app.latest.is_empty() {
+        frame.render_widget(Paragraph::new(waiting_line(app)).block(block), area);
         return;
     }
 
@@ -100,9 +100,8 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" FLOOR OVER TIME ");
-    if app.history.is_empty() {
-        let p = Paragraph::new("waiting for elevator state…".dim()).block(block);
-        frame.render_widget(p, area);
+    if !app.health.reachable || app.history.is_empty() {
+        frame.render_widget(Paragraph::new(waiting_line(app)).block(block), area);
         return;
     }
 
@@ -257,6 +256,15 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
 
 // ---- small helpers --------------------------------------------------------
 
+/// Banner for the data views: tells "backend is down" apart from "backend up, no traffic yet".
+fn waiting_line(app: &App) -> Line<'static> {
+    if !app.health.reachable {
+        Line::from("⏳  waiting for backend — elevator-api unreachable on :8080".yellow())
+    } else {
+        Line::from("waiting for elevator state…".dim())
+    }
+}
+
 fn log_line(s: &str) -> Line<'static> {
     let upper = s.to_ascii_uppercase();
     let style = if upper.contains("ERROR") {
@@ -266,7 +274,37 @@ fn log_line(s: &str) -> Line<'static> {
     } else {
         Style::new().fg(Color::Gray)
     };
-    Line::styled(s.to_string(), style)
+    Line::styled(shorten_thread(s), style)
+}
+
+/// Display-only: shorten the thread name in the first `[...]` so lines fit the narrow Logs view.
+/// e.g. `[elevator-cluster-pekko.actor.default-dispatcher-18]` -> `[e-c-p.a.d-d-18]`.
+/// Each run of letters collapses to its first letter; digits and the `-`/`.`/`_` separators stay.
+fn shorten_thread(s: &str) -> String {
+    let (Some(open), Some(close)) = (s.find('['), s.find(']')) else {
+        return s.to_string();
+    };
+    if close <= open + 1 {
+        return s.to_string();
+    }
+    let short = abbreviate(&s[open + 1..close]);
+    format!("{}[{}]{}", &s[..open], short, &s[close + 1..])
+}
+
+fn abbreviate(name: &str) -> String {
+    let mut out = String::new();
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_alphabetic() {
+            out.push(c); // keep the first letter of the run, drop the rest
+            while chars.peek().is_some_and(|n| n.is_alphabetic()) {
+                chars.next();
+            }
+        } else {
+            out.push(c); // digits and separators pass through
+        }
+    }
+    out
 }
 
 fn status_icon(status: &str) -> &'static str {

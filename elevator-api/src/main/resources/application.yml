@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    active: test          # default; override with SPRING_PROFILES_ACTIVE=prod (env wins)
   mvc:
     log-request-details: true
   kafka:
@@ -26,7 +28,7 @@ management:
       group:
         readiness:
           include: readinessState,kafka  # broker must be reachable to be "ready"
+# Logging strategy lives in the profile files: application-test.yml / application-prod.yml.
 logging:
   level:
-    org.springframework: INFO
-    org.apache.kafka: WARN   # silence consumer/producer coordination chatter
+    org.apache.kafka: WARN              # silence consumer/producer coordination chatter (both profiles)
