@@ -48,7 +48,9 @@ object Coordinator {
   def apply(elevatorName: String,
             controllerProvider: String => EntityRef[Controller.Command]): Behavior[Command] = {
     EventSourcedBehavior[Command, Event, State](
-      persistenceId = PersistenceId.ofUniqueId(s"Coordinator-$elevatorName"),
+      // PersistenceId.of (entityType|entityId) — not ofUniqueId — so the journal records an
+      // entity_type and OrderStatusProjection can stream these events by slice.
+      persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
       emptyState = State.empty,
       commandHandler = commandHandler(elevatorName, controllerProvider),
       eventHandler = eventHandler
