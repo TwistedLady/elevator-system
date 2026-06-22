@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.orderstatus;
+package pl.feelcodes.elevator.api.order;
 
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;

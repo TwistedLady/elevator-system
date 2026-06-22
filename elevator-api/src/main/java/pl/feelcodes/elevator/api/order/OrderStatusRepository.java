@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.orderstatus;
+package pl.feelcodes.elevator.api.order;
 
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 

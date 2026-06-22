@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.orderstatus;
+package pl.feelcodes.elevator.api.order;
 
 import java.time.OffsetDateTime;
 
