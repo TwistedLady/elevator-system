@@ -1,8 +1,8 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.orderstatus;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,30 +15,21 @@ import reactor.core.publisher.Mono;
  *   GET /api/order/{tag}  ->  {"tag":..,"elevatorName":..,"floor":N,"status":"ACCEPTED|DONE","processed":bool}
  *                             404 if the tag is unknown
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/order")
 class OrderStatusController {
 
-    private final DatabaseClient db;
+    private final OrderStatusService orderStatusService;
 
-    OrderStatusController(DatabaseClient db) {
-        this.db = db;
+    OrderStatusController(OrderStatusService orderStatusService) {
+        this.orderStatusService = orderStatusService;
     }
 
     @GetMapping(value = "/{tag}", produces = MediaType.APPLICATION_JSON_VALUE)
     Mono<ResponseEntity<OrderStatusDto>> status(@PathVariable("tag") String tag) {
-        return db.sql("SELECT tag, elevator_name, floor, status FROM order_status WHERE tag = :tag")
-                .bind("tag", tag)
-                .map(row -> {
-                    String st = row.get("status", String.class);
-                    return new OrderStatusDto(
-                            row.get("tag", String.class),
-                            row.get("elevator_name", String.class),
-                            row.get("floor", Integer.class),
-                            st,
-                            "DONE".equals(st));
-                })
-                .one()
+        log.info("confirm order request: tag={}", tag);
+        return orderStatusService.byTag(tag)
                 .map(ResponseEntity::ok)
                 .defaultIfEmpty(ResponseEntity.notFound().build());
     }

@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.orderstatus;
 
 /**
  * Lifecycle of one order, read from the {@code order_status} read-model.

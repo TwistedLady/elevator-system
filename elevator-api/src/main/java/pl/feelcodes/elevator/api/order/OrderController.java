@@ -1,13 +1,12 @@
 package pl.feelcodes.elevator.api.order;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
-import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -21,11 +20,16 @@ class OrderController {
     }
 
     @PostMapping
-    public OrderRequestDto order(@RequestBody OrderRequestDto dto) throws JsonProcessingException {
-        if (Objects.isNull(dto.getTag()))
+    public Mono<OrderRequestDto> order(@RequestBody OrderRequestDto dto) {
+        if (dto.getTag() == null) {
             dto.setTag(UUID.randomUUID().toString());
-        orderService.order(dto.getTag(), dto.getElevatorName(), dto.getFloor());
-        log.info(dto.toString());
-        return dto;
+        }
+        log.info("order elevator request: elevator={} floor={} tag={}",
+                dto.getElevatorName(), dto.getFloor(), dto.getTag());
+        // publishing the command is non-blocking; wrap so the endpoint composes reactively
+        return Mono.fromCallable(() -> {
+            orderService.order(dto.getTag(), dto.getElevatorName(), dto.getFloor());
+            return dto;
+        });
     }
 }
