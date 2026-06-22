@@ -531,8 +531,9 @@ fn status_style(status: &str) -> Style {
 }
 
 fn car_glyph(direction: &str, motion: &str) -> char {
+    // Stopped (idle) cars show an X; moving cars show their direction arrow.
     if !motion.eq_ignore_ascii_case("moving") {
-        return '•';
+        return 'X';
     }
     match direction.to_ascii_uppercase().as_str() {
         "UP" => '↑',
