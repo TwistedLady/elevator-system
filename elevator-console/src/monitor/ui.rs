@@ -315,12 +315,25 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
     );
     let block = retro_block(&title);
 
-    // Show only the last lines that fit (minus the 2 border rows).
+    // Wrap long lines to the panel width so nothing is cut off at the border, then keep only the
+    // last `visible` rows so the newest output stays at the bottom. Wrap from the bottom up so we
+    // never process more than a screenful of lines.
+    let inner_w = area.width.saturating_sub(2).max(1) as usize;
     let visible = area.height.saturating_sub(2) as usize;
-    let start = matched.len().saturating_sub(visible);
-    let lines: Vec<Line> = matched.iter().skip(start).map(|l| log_line(l)).collect();
 
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    let mut rows: Vec<Line> = Vec::new();
+    for l in matched.iter().rev() {
+        let mut wrapped = wrap_log_line(l, inner_w);
+        wrapped.append(&mut rows);
+        rows = wrapped;
+        if rows.len() >= visible {
+            break;
+        }
+    }
+    let start = rows.len().saturating_sub(visible);
+    let shown: Vec<Line> = rows.split_off(start);
+
+    frame.render_widget(Paragraph::new(shown).block(block), area);
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
@@ -392,16 +405,31 @@ fn waiting_line(app: &App) -> Line<'static> {
     }
 }
 
-fn log_line(s: &str) -> Line<'static> {
+/// Colour for a log line, by severity keyword.
+fn log_style(s: &str) -> Style {
     let upper = s.to_ascii_uppercase();
-    let style = if upper.contains("ERROR") {
+    if upper.contains("ERROR") {
         Style::new().fg(Color::Red)
     } else if upper.contains("WARN") {
         Style::new().fg(Color::Yellow)
     } else {
         Style::new().fg(Color::Gray)
-    };
-    Line::styled(shorten_thread(s), style)
+    }
+}
+
+/// Render one log line for the Logs view: shorten its thread name, then hard-wrap it to `width`
+/// columns so long lines aren't cut off at the border. One styled row per wrapped chunk.
+fn wrap_log_line(s: &str, width: usize) -> Vec<Line<'static>> {
+    let text = shorten_thread(s);
+    let style = log_style(&text);
+    let chars: Vec<char> = text.chars().collect();
+    if chars.is_empty() {
+        return vec![Line::from("")];
+    }
+    chars
+        .chunks(width.max(1))
+        .map(|chunk| Line::styled(chunk.iter().collect::<String>(), style))
+        .collect()
 }
 
 /// Display-only: shorten the thread name in the first `[...]` so lines fit the narrow Logs view.
