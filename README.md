@@ -15,22 +15,57 @@ coming together.
 
 ## Architecture
 
-```
-                  ┌─────────────── elevator-api (Spring) ───────────────┐
-  POST /api/order │                                                      │ ─► Kafka: elevator-commands
-  GET  /api/...   │   REST edge  +  /actuator/health (liveness/readiness)│        │
-                  └──────────────────────▲──────────────────────────────┘        ▼
-                                         │                            Coordinator (idempotent dedup)
-                       Kafka: elevator-state                                       │
-                                         │                            Controller (event-sourced scheduler)
-   ┌──────────────── elevator-console (Rust) ───────────────┐                     │ one move / tick
-   │  tabs: chart · trend · order · sim · health · logs      │                    ▼
-   │  one order · bulk sim (progress) · name filters         │ ◄─ Kafka: state ◄─ Operator (moves the car)
-   └─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    client(["HTTP client"]) -->|"POST /api/order · GET /api/..."| api["elevator-api (Spring)<br/>REST edge + /actuator/health"]
+    console["elevator-console (Rust)<br/>tabs: chart · trend · order · sim · health · logs"]
+
+    api -->|produce| cmd[("Kafka: elevator-commands")]
+    console -->|"one order · bulk sim"| cmd
+
+    subgraph app["elevator-app (Pekko)"]
+        direction LR
+        coord["Coordinator<br/>idempotent dedup"] --> ctrl["Controller<br/>event-sourced scheduler"]
+        ctrl -->|"one move / tick"| op["Operator<br/>moves the car"]
+    end
+
+    cmd --> coord
+    op -->|produce| state[("Kafka: elevator-state")]
+    state -->|cache| api
+    state -->|live updates| console
 ```
 
 Both the Spring API and the Rust console are independent clients of the same two Kafka
 topics — the console talks straight to Kafka, the API adds HTTP on top.
+
+### The actors — who does what
+
+One order flows through three actors, each with a single responsibility. There is one
+`Coordinator` and one `Controller` per elevator (cluster-sharded, event-sourced); the
+`Operator` is a stateless worker.
+
+```mermaid
+flowchart TD
+    ord(["order · ElevatorOrderDto<br/>from Kafka: elevator-commands"]) --> coord
+
+    coord["<b>Coordinator</b> — intake + confirmation<br/><i>event-sourced, one per elevator</i><br/>• dedup by tag (remembers last 10k)<br/>• persist Accepted<br/>• forward new order to Controller<br/>• persist OrderCompleted when the Controller confirms"]
+    coord -->|AddRequest| ctrl
+
+    ctrl["<b>Controller</b> — scheduler / brain<br/><i>event-sourced, one per elevator</i><br/>• collect pending requests<br/>• tick every 500 ms<br/>• choose next move via Policy<br/>• update car state, drop served floors<br/>• confirm served orders to the Coordinator"]
+    ctrl -->|Move| op
+
+    op["<b>Operator</b> — execute one move<br/><i>stateless worker</i><br/>• compute new floor / direction / motion<br/>• publish new state to Kafka<br/>• report result back to Controller (only)"]
+    op -->|publish| out[("Kafka: elevator-state")]
+    op -.->|"MoveExecuted (report)"| ctrl
+    ctrl -.->|"Confirm(tag) — order served"| coord
+```
+
+| Actor | Responsibility | Tasks |
+|-------|----------------|-------|
+| **Coordinator** | Order intake **and** confirmation (event-sourced, per elevator) | Drop duplicate orders by `tag` (remembers the last 10k); persist an `Accepted` event; forward each new order to the Controller as `AddRequest`; when the Controller confirms an order is served, persist an idempotent `OrderCompleted(tag)` — one per tag, so duplicate submissions are all covered |
+| **Controller** | The per-elevator scheduler / brain (event-sourced, per elevator) | Accumulate pending requests; on a 500 ms `Tick` pick the next move via the pure `Policy`; mark itself "waiting" until the move completes; update the car's state and drop a request once its floor is reached; **tell the Coordinator (`Confirm(tag)`)** when an order is served |
+| **Operator** | Execute one physical move (stateless) | Compute the new floor/direction/motion from the `Policy` command; publish the new `ElevatorState` to Kafka `elevator-state`; report `MoveExecuted` back to the Controller (its only collaborator) |
+| **ElevatorStateProjection** | Read-side CQRS view (see below) | Replay journal events by slice; UPSERT one row per elevator into `elevator_state_view` |
 
 ### Persistence & read side (CQRS)
 
@@ -39,14 +74,11 @@ restarts, rebuilt by replaying events). A separate **Pekko Projection** reads th
 out by slice and maintains a queryable read-model — the write side and read side are different
 concerns, different tables:
 
-```
-  Controller ──persist──► event_journal (Postgres, source of truth)
-                                  │  eventsBySlices  (read-only)
-                                  ▼
-                      ElevatorStateProjection  ──UPSERT──►  elevator_state_view
-                      (ShardedDaemonProcess,                (one row per elevator:
-                       role "read-model",                    floor/direction/motion,
-                       exactly-once offsets)                 queryable with SQL)
+```mermaid
+flowchart TD
+    ctrl["Controller"] -->|persist| journal[("event_journal<br/>Postgres — source of truth")]
+    journal -->|"eventsBySlices (read-only)"| proj["ElevatorStateProjection<br/>ShardedDaemonProcess · role &quot;read-model&quot;<br/>exactly-once offsets"]
+    proj -->|UPSERT| view[("elevator_state_view<br/>one row per elevator:<br/>floor / direction / motion · queryable with SQL")]
 ```
 
 Kafka (the `elevator-state` topic) stays as the **live, ephemeral** broadcast for the API cache
