@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::{Regex, RegexBuilder};
@@ -58,10 +58,12 @@ pub struct SimRun {
     pub start: Instant,
     /// Set once when the run finishes, so the elapsed time stops ticking.
     pub elapsed: Option<Duration>,
-    /// How many of the sent orders we verify against the API (capped — see CHECK_CAP).
+    /// How many of the sent orders we verify against the API (= total; we check them all).
     pub checked: u64,
-    /// Orders confirmed processed (status DONE) by the API; bumped by the poller thread.
-    pub processed: Arc<AtomicU64>,
+    /// Orders the API reports as status DONE; set by the poller each round.
+    pub status_done: Arc<AtomicU64>,
+    /// Orders the API reports as status PROGRESS (accepted, on the way); set by the poller.
+    pub status_progress: Arc<AtomicU64>,
 }
 
 impl SimRun {
@@ -78,17 +80,17 @@ impl SimRun {
         }
     }
 
-    pub fn processed(&self) -> u64 {
-        self.processed.load(Ordering::Relaxed)
+    pub fn done(&self) -> u64 {
+        self.status_done.load(Ordering::Relaxed)
     }
 
-    /// Fraction of the *checked* orders confirmed processed by the API.
-    pub fn processed_ratio(&self) -> f64 {
-        if self.checked == 0 {
-            0.0
-        } else {
-            (self.processed() as f64 / self.checked as f64).clamp(0.0, 1.0)
-        }
+    pub fn in_progress(&self) -> u64 {
+        self.status_progress.load(Ordering::Relaxed)
+    }
+
+    /// Orders not yet seen in the read-model (sent but no PROGRESS/DONE row yet).
+    pub fn pending(&self) -> u64 {
+        self.checked.saturating_sub(self.done() + self.in_progress())
     }
 
     pub fn finished(&self) -> bool {
@@ -100,9 +102,6 @@ impl SimRun {
         self.elapsed.unwrap_or_else(|| self.start.elapsed()).as_secs_f64()
     }
 }
-
-/// Most orders we verify against the API after a sim (one HTTP GET per tag, polled until done).
-const CHECK_CAP: usize = 100;
 
 /// Which backend log the Logs view is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -174,6 +173,8 @@ pub struct App {
     /// Per-elevator floor history as (seconds-since-start, floor), for the TREND chart.
     pub history: BTreeMap<String, VecDeque<(f64, f64)>>,
     start: Instant,
+    /// Wall-clock (unix seconds) at startup, paired with `start`, to label chart times.
+    start_unix: i64,
     pub health: HealthSnapshot,
     pub app_logs: VecDeque<String>,
     pub api_logs: VecDeque<String>,
@@ -210,6 +211,10 @@ impl App {
             latest: BTreeMap::new(),
             history: BTreeMap::new(),
             start: Instant::now(),
+            start_unix: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
             health: HealthSnapshot::default(),
             app_logs: VecDeque::new(),
             api_logs: VecDeque::new(),
@@ -251,9 +256,25 @@ impl App {
         self.latest.insert(state.elevator_name.clone(), state);
     }
 
-    /// Seconds since the monitor started (X axis "now" for the trend chart).
+    /// Seconds since the monitor started — the trend's scrolling "now" (right edge of the window).
     pub fn now_secs(&self) -> f64 {
         self.start.elapsed().as_secs_f64()
+    }
+
+    /// Local wall-clock time (HH:MM:SS) for a chart x-value, i.e. `secs_since_start` seconds after
+    /// startup. Lets the trend axis show *when the data is from*, not a relative offset.
+    pub fn clock_at(&self, secs_since_start: f64) -> String {
+        local_hms(self.start_unix + secs_since_start.round() as i64)
+    }
+
+    /// Current local wall-clock time (HH:MM:SS) — a live header clock for eyeballing lag between
+    /// the sim progress bar finishing and the trend chart settling.
+    pub fn now_clock(&self) -> String {
+        let unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(self.start_unix);
+        local_hms(unix)
     }
 
     pub fn push_log(&mut self, source: LogSource, line: String) {
@@ -370,12 +391,15 @@ impl App {
             done_t.store(true, Ordering::Relaxed);
         });
 
-        // Verify (up to CHECK_CAP of) the sent orders against the API's order-status endpoint.
-        let tags = crate::sender::sim_tags(run_id, count, threads, CHECK_CAP);
+        // Verify ALL the sent orders against the API's order-status endpoint, polling until every
+        // one is DONE. The poller classifies each tag (DONE / PROGRESS / not-yet-seen).
+        let tags = crate::sender::sim_tags(run_id, count, threads, count as usize);
         let checked = tags.len() as u64;
-        let processed = Arc::new(AtomicU64::new(0));
-        let (processed_t, api_base) = (Arc::clone(&processed), self.api_base.clone());
-        std::thread::spawn(move || poll_processed(&api_base, tags, &processed_t));
+        let status_done = Arc::new(AtomicU64::new(0));
+        let status_progress = Arc::new(AtomicU64::new(0));
+        let (done_t2, prog_t2, api_base) =
+            (Arc::clone(&status_done), Arc::clone(&status_progress), self.api_base.clone());
+        std::thread::spawn(move || poll_statuses(&api_base, tags, &done_t2, &prog_t2));
 
         self.sim = Some(SimRun {
             total: count,
@@ -385,7 +409,8 @@ impl App {
             start: Instant::now(),
             elapsed: None,
             checked,
-            processed,
+            status_done,
+            status_progress,
         });
     }
 
@@ -514,9 +539,19 @@ impl App {
     }
 }
 
-/// Poll the API's `GET /api/order/{tag}` for each tag until it reports processed (or we give up),
-/// bumping `processed` as each is confirmed. Runs on its own thread; the SIM tab reads the count.
-fn poll_processed(api_base: &str, tags: Vec<String>, processed: &AtomicU64) {
+/// Format a unix timestamp as local HH:MM:SS. `localtime_r` is reentrant/thread-safe and uses
+/// the machine's local timezone.
+fn local_hms(unix: i64) -> String {
+    let t = unix as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&t, &mut tm) };
+    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+}
+
+/// Poll the API's `GET /api/order/{tag}` for every tag until they are ALL done. Each round it
+/// re-checks the still-pending tags and classifies them, updating `done` and `in_progress` so the
+/// SIM tab can draw the per-status bar. Runs on its own thread.
+fn poll_statuses(api_base: &str, tags: Vec<String>, done: &AtomicU64, in_progress: &AtomicU64) {
     if tags.is_empty() {
         return;
     }
@@ -524,23 +559,31 @@ fn poll_processed(api_base: &str, tags: Vec<String>, processed: &AtomicU64) {
         .timeout_connect(Duration::from_secs(2))
         .timeout_read(Duration::from_secs(2))
         .build();
-    let mut pending = tags;
+    let total = tags.len() as u64;
+    let mut pending = tags; // tags not yet seen DONE
     let start = Instant::now();
-    while !pending.is_empty() && start.elapsed() < Duration::from_secs(120) {
+    // Keep going until every order is DONE (generous safety cap so it never spins forever).
+    while !pending.is_empty() && start.elapsed() < Duration::from_secs(600) {
+        let mut progress = 0u64;
         pending.retain(|tag| {
             let url = format!("{api_base}/api/order/{tag}");
             match agent.get(&url).call() {
-                // 200 with processed:true -> confirmed, drop it. Any other state -> keep polling.
                 Ok(resp) => {
-                    let done = resp.into_string().unwrap_or_default().contains("\"processed\":true");
-                    if done {
-                        processed.fetch_add(1, Ordering::Relaxed);
+                    let body = resp.into_string().unwrap_or_default();
+                    if body.contains("\"status\":\"DONE\"") {
+                        false // done -> drop from pending
+                    } else {
+                        if body.contains("\"status\":\"PROGRESS\"") {
+                            progress += 1;
+                        }
+                        true // PROGRESS or not-yet-projected -> keep polling
                     }
-                    !done
                 }
                 Err(_) => true, // 404 (not projected yet) or transient -> retry
             }
         });
+        done.store(total - pending.len() as u64, Ordering::Relaxed);
+        in_progress.store(progress, Ordering::Relaxed);
         if pending.is_empty() {
             break;
         }
