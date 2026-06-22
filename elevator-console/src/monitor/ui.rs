@@ -54,9 +54,13 @@ fn retro_block(title: &str) -> Block<'_> {
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     let titles: Vec<Line> = View::ALL.iter().map(|v| Line::from(v.title())).collect();
+    // Live local clock in the header, right-aligned — visible on every tab, so you can read the
+    // time when the SIM bar hits 100% vs when the TREND chart settles and measure the lag.
+    let clock = retro_block(" ▌ ELEVATOR CONTROL ▐ ")
+        .title_top(Line::from(format!(" ⏱ {} ", app.now_clock())).cyan().bold().right_aligned());
     let tabs = Tabs::new(titles)
         .select(app.view.index())
-        .block(retro_block(" ▌ ELEVATOR CONTROL ▐ "))
+        .block(clock)
         .style(Style::new().fg(Color::Green))
         .highlight_style(Style::new().fg(Color::Black).bg(Color::Yellow).bold())
         .divider(Span::from("│").dark_gray());
@@ -118,16 +122,26 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // X window: the last TREND_WINDOW_SECS seconds, scrolling with "now".
-    let x_hi = app.now_secs().max(TREND_WINDOW_SECS);
+    // Scroll continuously with real time (EKG-style): the right edge is "now", so idle cars draw
+    // flat horizontal lines that keep moving left. The x-axis is labelled with local clock time
+    // (below), so you still read exactly when each point is from.
+    let x_hi = app.now_secs();
     let x_lo = x_hi - TREND_WINDOW_SECS;
 
     // Own the point vectors locally so the datasets can borrow them for this frame.
+    // Each line is held flat to the right edge (now) at the elevator's current floor, so an idle
+    // car shows a horizontal line scrolling left instead of stopping at its last update.
     let mut series: Vec<(String, Vec<(f64, f64)>)> = app
         .history
         .iter()
         .filter(|(name, _)| app.elevator_matches(name))
-        .map(|(name, pts)| (name.clone(), pts.iter().copied().collect()))
+        .map(|(name, pts)| {
+            let mut v: Vec<(f64, f64)> = pts.iter().copied().collect();
+            if let Some(state) = app.latest.get(name) {
+                v.push((x_hi, state.floor as f64));
+            }
+            (name.clone(), v)
+        })
         .collect();
     if series.is_empty() {
         let msg = format!("no elevators match /{}/", app.elevator_filter);
@@ -174,7 +188,12 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
             Axis::default()
                 .style(Style::new().dark_gray())
                 .bounds([x_lo, x_hi])
-                .labels([Span::from(format!("{x_lo:.0}s")), Span::from(format!("{x_hi:.0}s"))]),
+                // Local wall-clock time of the data at each x-position (left / middle / right edge).
+                .labels([
+                    Span::from(app.clock_at(x_lo)),
+                    Span::from(app.clock_at((x_lo + x_hi) / 2.0)),
+                    Span::from(app.clock_at(x_hi)),
+                ]),
         )
         .y_axis(
             Axis::default()
@@ -221,7 +240,9 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
 
     let rows = Layout::vertical([
         Constraint::Length(3), // status text
-        Constraint::Length(1), // progress gauge
+        Constraint::Length(1), // "sent" gauge
+        Constraint::Length(1), // labels
+        Constraint::Length(1), // "processed" gauge (verified via the API)
         Constraint::Min(0),    // help
     ])
     .split(inner);
@@ -255,13 +276,44 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
             ]);
             frame.render_widget(info, rows[0]);
 
-            let pct = (sim.ratio() * 100.0).round() as u16;
-            let fill = if sim.finished() { Color::Green } else { Color::Cyan };
-            let gauge = Gauge::default()
-                .gauge_style(Style::new().fg(fill).bg(Color::Black).bold())
-                .ratio(sim.ratio())
-                .label(format!("{sent}/{}  ({pct}%)", sim.total));
-            frame.render_widget(gauge, rows[1]);
+            // "sent" gauge — how many orders reached Kafka.
+            let sent_pct = (sim.ratio() * 100.0).round() as u16;
+            let sent_fill = if sim.finished() { Color::Green } else { Color::Cyan };
+            frame.render_widget(
+                Gauge::default()
+                    .gauge_style(Style::new().fg(sent_fill).bg(Color::Black).bold())
+                    .ratio(sim.ratio())
+                    .label(format!("sent  {sent}/{}  ({sent_pct}%)", sim.total)),
+                rows[1],
+            );
+
+            // Per-status verification (polled from the API until all DONE): a single bar split
+            // into DONE (green) · PROGRESS (yellow) · not-yet-seen (grey).
+            let total = sim.checked.max(1);
+            let done = sim.done();
+            let prog = sim.in_progress();
+            let pending = sim.pending();
+            frame.render_widget(
+                Paragraph::new(
+                    format!(
+                        "order status (API):  DONE {done}  ·  PROGRESS {prog}  ·  pending {pending}   / {}",
+                        sim.checked
+                    )
+                    .dark_gray(),
+                ),
+                rows[2],
+            );
+
+            let bar_w = rows[3].width as usize;
+            let done_w = (bar_w as u64 * done / total) as usize;
+            let prog_w = (bar_w as u64 * prog / total) as usize;
+            let rest_w = bar_w.saturating_sub(done_w + prog_w);
+            let bar = Line::from(vec![
+                Span::styled("█".repeat(done_w), Style::new().fg(Color::Green)),
+                Span::styled("█".repeat(prog_w), Style::new().fg(Color::Yellow)),
+                Span::styled("░".repeat(rest_w), Style::new().fg(Color::DarkGray)),
+            ]);
+            frame.render_widget(Paragraph::new(bar), rows[3]);
         }
     }
 }

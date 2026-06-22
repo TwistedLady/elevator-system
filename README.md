@@ -65,24 +65,31 @@ flowchart TD
 | **Coordinator** | Order intake **and** confirmation (event-sourced, per elevator) | Drop duplicate orders by `tag` (remembers the last 10k); persist an `Accepted` event; forward each new order to the Controller as `AddRequest`; when the Controller confirms an order is served, persist an idempotent `OrderCompleted(tag)` — one per tag, so duplicate submissions are all covered |
 | **Controller** | The per-elevator scheduler / brain (event-sourced, per elevator) | Accumulate pending requests; on a 500 ms `Tick` pick the next move via the pure `Policy`; mark itself "waiting" until the move completes; update the car's state and drop a request once its floor is reached; **tell the Coordinator (`Confirm(tag)`)** when an order is served |
 | **Operator** | Execute one physical move (stateless) | Compute the new floor/direction/motion from the `Policy` command; publish the new `ElevatorState` to Kafka `elevator-state`; report `MoveExecuted` back to the Controller (its only collaborator) |
-| **ElevatorStateProjection** | Read-side CQRS view (see below) | Replay journal events by slice; UPSERT one row per elevator into `elevator_state_view` |
+| **ElevatorStateProjection** | Read-side CQRS view (see below) | Replay Controller events by slice; UPSERT one row per elevator into `elevator_state_view` |
+| **OrderStatusProjection** | Read-side CQRS view, keyed by order tag | Replay Coordinator events by slice; mark each order `ACCEPTED` then `DONE` in `order_status` (powers `GET /api/order/{tag}`) |
 
 ### Persistence & read side (CQRS)
 
-The `Controller` is event-sourced into a durable **R2DBC Postgres journal** (state survives
-restarts, rebuilt by replaying events). A separate **Pekko Projection** reads those events back
-out by slice and maintains a queryable read-model — the write side and read side are different
+The `Controller` and `Coordinator` are event-sourced into a durable **R2DBC Postgres journal**
+(state survives restarts, rebuilt by replaying events). Two **Pekko Projections** read those events
+back out by slice and maintain queryable read-models — write side and read side are different
 concerns, different tables:
 
 ```mermaid
 flowchart TD
     ctrl["Controller"] -->|persist| journal[("event_journal<br/>Postgres — source of truth")]
-    journal -->|"eventsBySlices (read-only)"| proj["ElevatorStateProjection<br/>ShardedDaemonProcess · role &quot;read-model&quot;<br/>exactly-once offsets"]
-    proj -->|UPSERT| view[("elevator_state_view<br/>one row per elevator:<br/>floor / direction / motion · queryable with SQL")]
+    coord["Coordinator"] -->|persist| journal
+    journal -->|"eventsBySlices (Controller)"| sproj["ElevatorStateProjection<br/>role &quot;read-model&quot; · exactly-once"]
+    journal -->|"eventsBySlices (Coordinator)"| oproj["OrderStatusProjection<br/>role &quot;read-model&quot; · exactly-once"]
+    sproj -->|UPSERT| view[("elevator_state_view<br/>one row per elevator:<br/>floor / direction / motion")]
+    oproj -->|UPSERT| ostatus[("order_status<br/>one row per order tag:<br/>ACCEPTED / DONE")]
+    api["elevator-api"] -->|"GET /api/order/{tag}"| ostatus
 ```
 
 Kafka (the `elevator-state` topic) stays as the **live, ephemeral** broadcast for the API cache
-and console; the projection is the **durable, queryable** view derived from the journal.
+and console; the projections are the **durable, queryable** views derived from the journal.
+`OrderStatusProjection` follows the `Coordinator`'s `Accepted`/`Completed` events so the API can
+answer **"was the order with tag X processed?"** via `GET /api/order/{tag}`.
 
 ### Live vs durable: which source to read?
 
@@ -92,6 +99,7 @@ Two read paths, two jobs — pick by what the consumer needs:
 |---|---|---|
 | **Online/real-time monitor** (ticking dashboard, console) | **Kafka** `elevator-state` | push-based, sub-second; ephemeral is fine for "now" |
 | **Durable query / snapshot / history** (REST, survives restart) | **projection** `elevator_state_view` | complete & correct even right after a restart; queryable with SQL |
+| **"Was order X processed?"** (by tag) | **projection** `order_status` via `GET /api/order/{tag}` | per-order lifecycle (ACCEPTED → DONE), durable and indexed by tag |
 
 Best of both for a live UI: **seed** the initial picture once from `elevator_state_view` (so nothing
 is blank at startup), then **stream** live updates from the Kafka topic.

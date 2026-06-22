@@ -63,14 +63,14 @@ object Controller {
               else Effect.persist(RequestAdded(request))
 
             case MoveExecuted(newState, orderWithCommand) =>
-              // The order is served when its car reaches the order's floor. Tell the Coordinator
-              // so it records the confirmation (the Coordinator owns OrderCompleted).
-              val reached = orderWithCommand.order.floor == newState.floor
+              // Reaching a floor serves EVERY order waiting there (merge by floor), not just the
+              // one we scheduled. Tell the Coordinator the floor so it confirms them all at once.
+              val servedHere = state.requests.exists(_.floor == newState.floor)
               Effect
                 .persist(WaitingSet(false), ElevatorStateUpdated(newState, orderWithCommand))
                 .thenRun { s =>
-                  if reached then
-                    coordinatorProvider(s.elevatorName) ! Coordinator.Confirm(orderWithCommand.order.tag)
+                  if servedHere then
+                    coordinatorProvider(s.elevatorName) ! Coordinator.Reached(newState.floor.num)
                 }
 
             case Tick =>
@@ -95,9 +95,9 @@ object Controller {
             case WaitingSet(waiting) =>
               state.copy(waiting = waiting)
 
-            case ElevatorStateUpdated(newState, orderWithCommand) =>
-              val reached = orderWithCommand.order.floor == newState.floor
-              val reqs = if reached then state.requests - orderWithCommand.order else state.requests
+            case ElevatorStateUpdated(newState, _) =>
+              // Drop every request waiting at the floor the car is now on — they are all served.
+              val reqs = state.requests.filterNot(_.floor == newState.floor)
               state.copy(
                 elevatorState = newState,
                 requests = reqs

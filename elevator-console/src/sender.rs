@@ -63,6 +63,32 @@ pub fn send_one(brokers: &str, topic: &str, elevator: &str, floor: i32) -> Resul
     Ok(())
 }
 
+/// The deterministic tag for the i-th order of simulation worker `tid` in run `run_id`. Shared so
+/// the TUI can reconstruct the tags it sent and check them against the API's order-status endpoint.
+/// `run_id` makes each run's tags unique so a re-run isn't deduped away (and shows fresh progress).
+pub fn sim_tag(run_id: u64, tid: u64, i: u64) -> String {
+    format!("sim-{run_id}-{tid}-{i}")
+}
+
+/// Enumerate up to `limit` of the tags a simulation of `count` orders on `threads` workers will
+/// produce — same per-worker split as `run_simulation`, so these match what was actually sent.
+pub fn sim_tags(run_id: u64, count: u64, threads: u64, limit: usize) -> Vec<String> {
+    let threads = threads.max(1);
+    let per = count / threads;
+    let rem = count % threads;
+    let mut tags = Vec::new();
+    for tid in 0..threads {
+        let n = per + if tid < rem { 1 } else { 0 };
+        for i in 0..n {
+            if tags.len() >= limit {
+                return tags;
+            }
+            tags.push(sim_tag(run_id, tid, i));
+        }
+    }
+    tags
+}
+
 /// Core simulation loop, shared by the CLI and the TUI. Sends `count` random orders across
 /// `elevators` using `threads` producers, bumping `sent` after each one so a caller on another
 /// thread can poll progress. Does no printing — that's the caller's concern.
@@ -81,6 +107,7 @@ pub fn run_simulation(
     max_floor: i32,
     sent: &AtomicU64,
     pace: Option<Duration>,
+    run_id: u64,
 ) -> Result<(), BoxErr> {
     if elevators.is_empty() {
         return Err("need at least one elevator".into());
@@ -94,8 +121,9 @@ pub fn run_simulation(
         let mut handles = Vec::new();
         for t in 0..threads {
             let n = per + if t < rem { 1 } else { 0 };
-            handles
-                .push(s.spawn(move || worker(brokers, topic, t, n, elevators, max_floor, sent, pace)));
+            handles.push(
+                s.spawn(move || worker(brokers, topic, t, n, elevators, max_floor, sent, pace, run_id)),
+            );
         }
         for h in handles {
             h.join().expect("worker thread panicked")?;
@@ -120,7 +148,9 @@ pub fn simulate(
     );
     let start = Instant::now();
 
-    run_simulation(brokers, topic, count, threads, elevators, max_floor, &sent, None)?;
+    // Unique per CLI invocation so seeds across runs don't collide (dedup) on tags.
+    let run_id = std::process::id() as u64;
+    run_simulation(brokers, topic, count, threads, elevators, max_floor, &sent, None, run_id)?;
 
     let secs = start.elapsed().as_secs_f64();
     let total = sent.load(Ordering::Relaxed);
@@ -139,6 +169,7 @@ fn worker(
     max_floor: i32,
     sent: &AtomicU64,
     pace: Option<Duration>,
+    run_id: u64,
 ) -> Result<(), BoxErr> {
     let producer = make_producer(brokers)?;
     let mut rng = rand::thread_rng();
@@ -151,7 +182,7 @@ fn worker(
     for i in 0..n {
         let elevator = &elevators[rng.gen_range(0..elevators.len())];
         let floor = rng.gen_range(0..=max_floor);
-        let tag = format!("sim-{tid}-{i}");
+        let tag = sim_tag(run_id, tid, i);
         send_order(&producer, topic, elevator, floor, &tag)?;
         if i % 1000 == 0 {
             producer.poll(Duration::from_millis(0)); // serve delivery callbacks

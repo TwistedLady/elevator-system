@@ -8,8 +8,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 class OrderRequestDto {
-    private String tag;
+    private String tag;          // optional on input; the API fills a UUID when absent
     private String elevatorName;
     private Integer floor;
-    private String status;
 }

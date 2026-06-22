@@ -10,11 +10,10 @@ import pl.feelcodes.elevator.app.actors.{Controller, Coordinator}
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 
 /**
- * Disaster-recovery test for the Coordinator's idempotency.
- *
- * The Coordinator deduplicates orders by tag. If that memory did NOT survive a crash, after a
- * restart the same order would be accepted twice -> the elevator would be driven twice. This
- * proves the dedup state is rebuilt from the journal and still rejects duplicates afterwards.
+ * Event-sourcing tests for the Coordinator. Dedup is no longer its job (that moved to durable
+ * ingestion-time dedup), so this covers what it DOES own: accepting orders, grouping them by
+ * floor, and confirming every order at a floor when the Controller reports it reached — surviving
+ * a crash via journal replay.
  */
 object CoordinatorRecoveryTests {
   val config = ConfigFactory
@@ -53,68 +52,43 @@ final class CoordinatorRecoveryTests
       Coordinator("lift-a", controllerProvider)
     )
 
-  "The Coordinator journal" should {
+  "The Coordinator" should {
 
-    "remember accepted orders across a crash, and still reject duplicates after recovery" in {
+    "accept an order, forward it to the Controller, and group it by floor" in {
       val esTestKit = newTestKit()
 
-      val dto1 = ElevatorOrderDto("tag-1", "lift-a", 3)
-      val dto2 = ElevatorOrderDto("tag-2", "lift-a", 5)
-
-      val r1 = esTestKit.runCommand[Coordinator.Ack](replyTo => Coordinator.Process(dto1, replyTo))
-      r1.event shouldBe Coordinator.Accepted("tag-1", "lift-a", 3)
-      r1.reply shouldBe Coordinator.Ack.Ok
+      val r = esTestKit.runCommand[Coordinator.Ack](rt =>
+        Coordinator.Process(ElevatorOrderDto("t1", "lift-a", 3), rt))
+      r.event shouldBe Coordinator.Accepted("t1", "lift-a", 3)
+      r.reply shouldBe Coordinator.Ack.Ok
       controllerProbe.expectMessageType[Controller.AddRequest]
+      esTestKit.getState().byFloor shouldBe Map(3 -> Set("t1"))
+    }
 
-      esTestKit.runCommand[Coordinator.Ack](replyTo => Coordinator.Process(dto2, replyTo))
-      controllerProbe.expectMessageType[Controller.AddRequest]
+    "merge orders sharing a floor and confirm them all when it is reached, surviving a crash" in {
+      val esTestKit = newTestKit()
+
+      // a, b, c all want floor 7; d wants floor 2
+      List(("a", 7), ("b", 7), ("c", 7), ("d", 2)).foreach { case (tag, floor) =>
+        esTestKit.runCommand[Coordinator.Ack](rt =>
+          Coordinator.Process(ElevatorOrderDto(tag, "lift-a", floor), rt))
+        controllerProbe.expectMessageType[Controller.AddRequest]
+      }
+
+      val res = esTestKit.runCommand(Coordinator.Reached(7))
+      res.events should contain allOf (
+        Coordinator.Completed("a"), Coordinator.Completed("b"), Coordinator.Completed("c"))
 
       val before = esTestKit.getState()
-      before.seenTags should contain allOf ("tag-1", "tag-2")
+      before.byFloor shouldBe Map(2 -> Set("d")) // floor 7 cleared; floor 2 still outstanding
 
-      esTestKit.restart() // <-- crash: dedup memory must be rebuilt from the journal
-
+      esTestKit.restart() // rebuilt purely from the journal
       esTestKit.getState() shouldBe before
-
-      // A duplicate of an already-seen order: no new event, no second forward to the Controller.
-      val dup = esTestKit.runCommand[Coordinator.Ack](replyTo => Coordinator.Process(dto1, replyTo))
-      dup.hasNoEvents shouldBe true
-      dup.reply shouldBe Coordinator.Ack.Ok
-      controllerProbe.expectNoMessage()
     }
 
-    "record a completion confirmed by the Controller, once per tag, surviving a crash" in {
+    "do nothing when reaching a floor with no orders waiting" in {
       val esTestKit = newTestKit()
-
-      esTestKit.runCommand[Coordinator.Ack](r => Coordinator.Process(ElevatorOrderDto("tag-9", "lift-a", 4), r))
-      controllerProbe.expectMessageType[Controller.AddRequest]
-
-      // The Controller confirms the order is served.
-      val done = esTestKit.runCommand(Coordinator.Confirm("tag-9"))
-      done.event shouldBe Coordinator.Completed("tag-9")
-      esTestKit.getState().completed should contain("tag-9")
-
-      // A repeated Confirm for the same tag records nothing new.
-      esTestKit.runCommand(Coordinator.Confirm("tag-9")).hasNoEvents shouldBe true
-
-      esTestKit.restart() // completion memory must survive a crash too
-      esTestKit.getState().completed should contain("tag-9")
-    }
-
-    "cover all duplicate submissions of one tag with a single completion" in {
-      val esTestKit = newTestKit()
-      val dto = ElevatorOrderDto("dup", "lift-a", 6)
-
-      // The same order arrives 5 times; the Coordinator dedups to one piece of work.
-      (1 to 5).foreach { _ =>
-        esTestKit.runCommand[Coordinator.Ack](r => Coordinator.Process(dto, r)).reply shouldBe Coordinator.Ack.Ok
-      }
-      controllerProbe.expectMessageType[Controller.AddRequest]
-      controllerProbe.expectNoMessage()
-
-      // One Confirm completes the tag — covering all five submissions.
-      esTestKit.runCommand(Coordinator.Confirm("dup")).event shouldBe Coordinator.Completed("dup")
-      esTestKit.getState().completed should contain("dup")
+      esTestKit.runCommand(Coordinator.Reached(9)).hasNoEvents shouldBe true
     }
   }
 }

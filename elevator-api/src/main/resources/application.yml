@@ -1,8 +1,10 @@
 spring:
   profiles:
     active: test          # default; override with SPRING_PROFILES_ACTIVE=prod (env wins)
-  mvc:
-    log-request-details: true
+  r2dbc:                  # read-only access to the order_status read-model (same env knobs as the app)
+    url: r2dbc:postgresql://${ELEVATOR_PG_HOST:localhost}:${ELEVATOR_PG_PORT:5432}/${ELEVATOR_PG_DATABASE:elevator}
+    username: ${ELEVATOR_PG_USER:elevator}
+    password: ${ELEVATOR_PG_PASSWORD:elevator}
   kafka:
     bootstrap-servers: localhost:9092
     producer:
