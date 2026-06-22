@@ -56,5 +56,44 @@ for i in $(seq 1 60); do
 done
 
 echo
-echo "Backend is up. Try:  scripts/demo.sh lift-a 5"
-echo "Tear down with:      scripts/demo-down.sh"
+echo "Backend is up."
+
+# A cold restart wipes the Kafka state topic (no volume) and the api's in-memory cache,
+# so the chart would start empty. Seed a fleet of moving cars so there's something to watch.
+# Fleet is either a file of names or a count:
+#   FLEET_FILE=path  names file (default scripts/fleet.txt if present; see fleet.example.txt)
+#   ELEVATORS=N      else generate e1..eN
+#   SEED=N           orders to fire   SEED_MAX_FLOOR=N   top floor   NO_UI=1   don't open the chart
+FLEET_FILE="${FLEET_FILE:-$ROOT/scripts/fleet.txt}"
+ELEVATORS="${ELEVATORS:-4}"
+SEED="${SEED:-300}"
+SEED_MAX_FLOOR="${SEED_MAX_FLOOR:-10}"
+
+CONSOLE="$ROOT/elevator-console/target/release/elevator-console"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console/target/debug/elevator-console"
+if [ ! -x "$CONSOLE" ]; then
+  echo "==> building elevator-console (cargo)…"
+  ( cd "$ROOT/elevator-console" && cargo build ) && CONSOLE="$ROOT/elevator-console/target/debug/elevator-console"
+fi
+
+if [ "$SEED" -gt 0 ] && [ -x "$CONSOLE" ]; then
+  if [ -f "$FLEET_FILE" ]; then
+    echo "==> seeding $SEED orders across the fleet in $FLEET_FILE…"
+    fleet_args=(--elevators-file "$FLEET_FILE")
+  else
+    echo "==> seeding $SEED orders across $ELEVATORS elevators (e1..e$ELEVATORS)…"
+    fleet_args=(--elevator-count "$ELEVATORS")
+  fi
+  "$CONSOLE" simulate "${fleet_args[@]}" --count "$SEED" --max-floor "$SEED_MAX_FLOOR" \
+    || echo "    (seed failed — skip with SEED=0)"
+fi
+
+echo
+if [ "${NO_UI:-0}" != "1" ] && [ -x "$CONSOLE" ] && [ -t 1 ]; then
+  echo "==> opening the live chart (Ctrl-C exits the chart; backend keeps running)…"
+  exec "$CONSOLE" monitor
+else
+  echo "Open the live chart with:  $CONSOLE monitor"
+  echo "Or the bash chart:         scripts/monitor.sh"
+fi
+echo "Tear down with:            scripts/demo-down.sh"

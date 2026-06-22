@@ -67,7 +67,9 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let cars: Vec<&ElevatorState> = app.latest.values().collect();
+    let mut cars: Vec<&ElevatorState> = app.latest.values().collect();
+    // Natural order so columns read e1, e2, … e10 (not the lexicographic e1, e10, e2).
+    cars.sort_by(|a, b| crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name)));
     let top = cars.iter().map(|c| c.floor).max().unwrap_or(0).max(0);
     let bottom = cars.iter().map(|c| c.floor).min().unwrap_or(0).min(0);
 
@@ -109,11 +111,13 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     let x_lo = x_hi - TREND_WINDOW_SECS;
 
     // Own the point vectors locally so the datasets can borrow them for this frame.
-    let series: Vec<(String, Vec<(f64, f64)>)> = app
+    let mut series: Vec<(String, Vec<(f64, f64)>)> = app
         .history
         .iter()
         .map(|(name, pts)| (name.clone(), pts.iter().copied().collect()))
         .collect();
+    // Natural order so the legend reads e1, e2, … e10 and colours stay stable.
+    series.sort_by(|a, b| crate::natural_key(&a.0).cmp(&crate::natural_key(&b.0)));
 
     // Y range from the data, padded so a flat line isn't on the border.
     let mut y_lo = f64::MAX;

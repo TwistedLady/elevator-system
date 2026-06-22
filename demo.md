@@ -25,7 +25,7 @@ restarts** (rebuilt by replaying events), and a projection maintains the durable
 ## Run it
 
 ```bash
-scripts/demo-up.sh          # Kafka + Postgres (docker) + elevator-app + elevator-api (host JVMs)
+scripts/demo-up.sh          # infra + both JVMs, then seeds a fleet and opens the live chart
 scripts/demo.sh lift-a 5    # order lift-a to floor 5, then monitor until it arrives (pass/fail)
 scripts/demo-down.sh        # stop everything
 
@@ -33,6 +33,18 @@ scripts/demo-down.sh        # stop everything
 docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
   "SELECT elevator_name, floor, direction, motion FROM elevator_state_view;"
 ```
+
+> **Why demo-up.sh seeds a fleet:** Kafka has no volume in `docker-compose.demo.yml`, so a
+> restart wipes the `elevator-state` topic (and the api's in-memory cache) — the chart would
+> start empty even though the Postgres journal still has the actors. So `demo-up.sh` fires a
+> burst of orders after boot. Configure it:
+>
+> ```bash
+> ELEVATORS=8 scripts/demo-up.sh                   # generate e1..e8 (default 4)
+> cp scripts/fleet.example.txt scripts/fleet.txt   # or name them in a file (auto-detected)
+> SEED=1000 SEED_MAX_FLOOR=20 scripts/demo-up.sh   # heavier load / taller building
+> NO_UI=1 scripts/demo-up.sh                       # don't open the chart at the end
+> ```
 
 > Schema (journal + projection tables + `elevator_state_view`) is created by the Postgres
 > container from `db/init/` on first start. To recreate it from scratch, wipe the volume:

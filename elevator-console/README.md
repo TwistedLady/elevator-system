@@ -62,7 +62,16 @@ cargo run --release -- simulate
 # crank it: 1,000,000 orders, 8 threads, floors 0..=20
 cargo run --release -- simulate --count 1000000 --threads 8 --max-floor 20 \
     --elevators alpha,beta,gamma,delta
+
+# specify how many elevators by number (generates e1..eN, overrides --elevators)
+cargo run --release -- simulate --elevator-count 6 --count 500
+
+# or read the fleet from a file (one name per line or comma-separated; '#' = comment)
+cargo run --release -- simulate --elevators-file scripts/fleet.txt --count 500
 ```
+
+Source precedence is `--elevator-count` > `--elevators-file` > `--elevators`. Whatever the
+source, names are de-duplicated and natural-sorted (`e1, e2, … e10`) so they stay ordered.
 
 > Use `--release` for the simulator — a debug build is much slower.
 

@@ -40,7 +40,10 @@ object Operator {
 
           report(elevatorName, newState, orderWithCommand)
 
-          ctx.log.info(s" [$elevatorName]:${newState.floor.num}  >>>   ${orderWithCommand.order.floor.num}")
+          // Log only when the car actually moves a floor. A parked car still gets a Move
+          // tick from the Controller every step; logging each one floods the console.
+          if newState.floor.num != state.floor.num then
+            ctx.log.info(s" [$elevatorName] ${state.floor.num} >>> ${newState.floor.num}  (target ${orderWithCommand.order.floor.num})")
           Behaviors.same
     }
 }

@@ -75,8 +75,9 @@ is blank at startup), then **stream** live updates from the Kafka topic.
 ## Run
 
 ```bash
-scripts/demo-up.sh            # Kafka + Postgres (docker) + elevator-app + elevator-api (host JVMs)
-# then, the rich console:
+scripts/demo-up.sh            # infra + both JVMs, seeds a fleet (e1..eN), opens the chart
+                              #   ELEVATORS=N | FLEET_FILE=scripts/fleet.txt | SEED=N | NO_UI=1
+# or run the rich console yourself:
 cd elevator-console && cargo run -- monitor      # Tab: chart / trend / health / logs
 scripts/demo-down.sh          # stop everything
 

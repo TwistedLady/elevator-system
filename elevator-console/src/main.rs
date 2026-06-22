@@ -65,6 +65,12 @@ enum Command {
         /// Elevators to spread orders across (comma-separated).
         #[arg(long, value_delimiter = ',', default_value = "alpha,beta,gamma")]
         elevators: Vec<String>,
+        /// Number of elevators to generate, named e1..eN. Overrides --elevators.
+        #[arg(long)]
+        elevator_count: Option<usize>,
+        /// Read elevator names from a file (one per line or comma-separated; '#' = comment).
+        #[arg(long)]
+        elevators_file: Option<String>,
         /// Highest floor to request; orders pick a floor in 0..=max-floor.
         #[arg(long, default_value_t = 10)]
         max_floor: i32,
@@ -82,12 +88,66 @@ fn main() {
         Command::Order { elevator, floor, topic } => {
             sender::send_one(&cli.brokers, &topic, &elevator, floor)
         }
-        Command::Simulate { count, threads, elevators, max_floor, topic } => {
-            sender::simulate(&cli.brokers, &topic, count, threads, &elevators, max_floor)
+        Command::Simulate { count, threads, elevators, elevator_count, elevators_file, max_floor, topic } => {
+            resolve_elevators(elevators, elevator_count, elevators_file)
+                .and_then(|list| sender::simulate(&cli.brokers, &topic, count, threads, &list, max_floor))
         }
     };
     if let Err(e) = result {
         eprintln!("error: {e}");
         std::process::exit(1);
+    }
+}
+
+/// Decide the elevator list for `simulate`. Precedence:
+///   --elevator-count N  >  --elevators-file PATH  >  --elevators LIST
+/// The result is de-duplicated and natural-sorted (e1, e2, … e10) so the names are
+/// always ordered, whatever the source.
+fn resolve_elevators(
+    elevators: Vec<String>,
+    count: Option<usize>,
+    file: Option<String>,
+) -> Result<Vec<String>, BoxErr> {
+    let mut names = match (count, file) {
+        (Some(n), _) if n > 0 => (1..=n).map(|i| format!("e{i}")).collect::<Vec<_>>(),
+        (_, Some(path)) => read_elevators_file(&path)?,
+        _ => elevators,
+    };
+    if names.is_empty() {
+        return Err("no elevators specified".into());
+    }
+    names.sort_by(|a, b| natural_key(a).cmp(&natural_key(b)));
+    names.dedup();
+    Ok(names)
+}
+
+/// Read elevator names from a file: one per line or comma-separated, '#' starts a
+/// comment, blank entries ignored.
+fn read_elevators_file(path: &str) -> Result<Vec<String>, BoxErr> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read elevators file '{path}': {e}"))?;
+    let names: Vec<String> = text
+        .lines()
+        .map(|l| l.split('#').next().unwrap_or("")) // strip trailing comment
+        .flat_map(|l| l.split(','))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    if names.is_empty() {
+        return Err(format!("no elevator names found in '{path}'").into());
+    }
+    Ok(names)
+}
+
+/// Natural-order key: split a name into its non-digit prefix and trailing number, so
+/// "e2" sorts before "e10" instead of lexicographically after it.
+fn natural_key(name: &str) -> (&str, u64) {
+    match name.find(|c: char| c.is_ascii_digit()) {
+        Some(i) => {
+            let (prefix, num) = name.split_at(i);
+            (prefix, num.parse::<u64>().unwrap_or(u64::MAX))
+        }
+        None => (name, u64::MAX),
     }
 }
