@@ -68,6 +68,7 @@ fn event_loop(
         if let Ok(h) = health.lock() {
             app.health = h.clone();
         }
+        app.refresh_sim();
 
         terminal.draw(|frame| ui::draw(frame, app))?;
 

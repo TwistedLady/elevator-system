@@ -1,7 +1,9 @@
 //! Application state and the logic that mutates it (no rendering, no I/O threads here).
 
 use std::collections::{BTreeMap, VecDeque};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::{Regex, RegexBuilder};
@@ -46,6 +48,42 @@ impl Default for HealthSnapshot {
     }
 }
 
+/// State of an in-flight (or finished) simulation — drives the SIM tab's progress bar.
+/// A worker thread bumps `sent`; the UI thread only reads it.
+pub struct SimRun {
+    pub total: u64,
+    pub elevators: usize,
+    pub sent: Arc<AtomicU64>,
+    pub done: Arc<AtomicBool>,
+    pub start: Instant,
+    /// Set once when the run finishes, so the elapsed time stops ticking.
+    pub elapsed: Option<Duration>,
+}
+
+impl SimRun {
+    pub fn sent(&self) -> u64 {
+        self.sent.load(Ordering::Relaxed)
+    }
+
+    /// Fraction done, clamped to 0.0..=1.0 (safe to hand straight to a Gauge).
+    pub fn ratio(&self) -> f64 {
+        if self.total == 0 {
+            0.0
+        } else {
+            (self.sent() as f64 / self.total as f64).clamp(0.0, 1.0)
+        }
+    }
+
+    pub fn finished(&self) -> bool {
+        self.elapsed.is_some()
+    }
+
+    /// Seconds elapsed: frozen once finished, otherwise live.
+    pub fn secs(&self) -> f64 {
+        self.elapsed.unwrap_or_else(|| self.start.elapsed()).as_secs_f64()
+    }
+}
+
 /// Which backend log the Logs view is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LogSource {
@@ -67,19 +105,24 @@ impl LogSource {
 pub enum View {
     Chart,
     Trend,
+    Order,
+    Sim,
     Health,
     Logs,
 }
 
 impl View {
-    pub const ALL: [View; 4] = [View::Chart, View::Trend, View::Health, View::Logs];
+    pub const ALL: [View; 6] =
+        [View::Chart, View::Trend, View::Order, View::Sim, View::Health, View::Logs];
 
     pub fn index(self) -> usize {
         match self {
             View::Chart => 0,
             View::Trend => 1,
-            View::Health => 2,
-            View::Logs => 3,
+            View::Order => 2,
+            View::Sim => 3,
+            View::Health => 4,
+            View::Logs => 5,
         }
     }
 
@@ -88,8 +131,10 @@ impl View {
         match self {
             View::Chart => "① CHART",
             View::Trend => "② TREND",
-            View::Health => "③ HEALTH",
-            View::Logs => "④ LOGS",
+            View::Order => "③ ORDER",
+            View::Sim => "④ SIM",
+            View::Health => "⑤ HEALTH",
+            View::Logs => "⑥ LOGS",
         }
     }
 
@@ -119,7 +164,17 @@ pub struct App {
     pub log_re: Option<Regex>,
     /// True when `log_filter` is non-empty but not a valid regex.
     pub log_re_err: bool,
-    pub input: String,
+    /// Elevator-name filter for the Chart and Trend views (regex, case-insensitive).
+    pub elevator_filter: String,
+    pub elevator_re: Option<Regex>,
+    pub elevator_re_err: bool,
+    /// Count typed in the SIM view (how many random orders to fire).
+    pub sim_input: String,
+    /// "<elevator> <floor>" typed in the ORDER view.
+    pub order_input: String,
+    /// Current/last simulation run, for the SIM tab's progress bar.
+    pub sim: Option<SimRun>,
+    /// Short feedback message shown in the ORDER/SIM footers (last action result).
     pub message: String,
     pub should_quit: bool,
     brokers: String,
@@ -140,11 +195,25 @@ impl App {
             log_filter: String::new(),
             log_re: None,
             log_re_err: false,
-            input: String::new(),
+            elevator_filter: String::new(),
+            elevator_re: None,
+            elevator_re_err: false,
+            sim_input: String::new(),
+            order_input: String::new(),
+            sim: None,
             message: String::new(),
             should_quit: false,
             brokers: brokers.to_string(),
             command_topic: command_topic.to_string(),
+        }
+    }
+
+    /// Per-frame upkeep: freeze a finished run's elapsed time so it stops ticking.
+    pub fn refresh_sim(&mut self) {
+        if let Some(sim) = &mut self.sim {
+            if sim.elapsed.is_none() && sim.done.load(Ordering::Relaxed) {
+                sim.elapsed = Some(sim.start.elapsed());
+            }
         }
     }
 
@@ -182,10 +251,11 @@ impl App {
         }
     }
 
-    /// Elevators for `sim`: those seen so far, or a default 8 if none yet.
+    /// Elevators for `sim`: those seen so far, or a default e1..e8 if none yet (matches the
+    /// demo's naming, so an early sim targets the real fleet instead of spawning phantoms).
     fn elevator_pool(&self) -> Vec<String> {
         if self.latest.is_empty() {
-            (1..=8).map(|i| format!("lift-{i:02}")).collect()
+            (1..=8).map(|i| format!("e{i}")).collect()
         } else {
             self.latest.keys().cloned().collect()
         }
@@ -217,23 +287,112 @@ impl App {
             _ => {}
         }
         match self.view {
-            View::Chart => self.on_key_chart(key),
+            View::Chart | View::Trend => self.on_key_elevator_filter(key),
+            View::Order => self.on_key_order(key),
+            View::Sim => self.on_key_sim(key),
             View::Logs => self.on_key_logs(key),
-            View::Health | View::Trend => {}
+            View::Health => {}
         }
     }
 
-    fn on_key_chart(&mut self, key: KeyEvent) {
+    fn on_key_order(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
-                let line = std::mem::take(&mut self.input);
-                self.message = self.run_command(&line);
+                let line = std::mem::take(&mut self.order_input);
+                self.message = self.run_order(line.trim());
             }
             KeyCode::Backspace => {
-                self.input.pop();
+                self.order_input.pop();
             }
-            KeyCode::Char(c) => self.input.push(c),
+            KeyCode::Char(c) => self.order_input.push(c),
             _ => {}
+        }
+    }
+
+    fn on_key_sim(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                let line = std::mem::take(&mut self.sim_input);
+                self.message = self.run_sim(line.trim());
+            }
+            KeyCode::Backspace => {
+                self.sim_input.pop();
+            }
+            KeyCode::Char(c) => self.sim_input.push(c),
+            _ => {}
+        }
+    }
+
+    /// Kick off a simulation on a background thread, tracking progress via a shared counter.
+    fn start_sim(&mut self, count: u64) {
+        let pool = self.elevator_pool();
+        let elevators = pool.len();
+        let (brokers, topic) = (self.brokers.clone(), self.command_topic.clone());
+        let sent = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
+        let (sent_t, done_t) = (Arc::clone(&sent), Arc::clone(&done));
+        let threads = count.clamp(1, 4);
+        // Spread the run over ~2.5s so the progress bar visibly fills; big runs that take
+        // longer than that to send simply ignore the pacing and go full speed.
+        let pace = Some(Duration::from_millis(2500));
+        std::thread::spawn(move || {
+            let _ = crate::sender::run_simulation(
+                &brokers, &topic, count, threads, &pool, SIM_MAX_FLOOR, &sent_t, pace,
+            );
+            done_t.store(true, Ordering::Relaxed);
+        });
+        self.sim = Some(SimRun {
+            total: count,
+            elevators,
+            sent,
+            done,
+            start: Instant::now(),
+            elapsed: None,
+        });
+    }
+
+    /// Chart/Trend filter: type to narrow which elevators are shown; Enter clears it.
+    fn on_key_elevator_filter(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                self.elevator_filter.clear();
+                self.recompile_elevator_filter();
+            }
+            KeyCode::Backspace => {
+                self.elevator_filter.pop();
+                self.recompile_elevator_filter();
+            }
+            KeyCode::Char(c) => {
+                self.elevator_filter.push(c);
+                self.recompile_elevator_filter();
+            }
+            _ => {}
+        }
+    }
+
+    fn recompile_elevator_filter(&mut self) {
+        if self.elevator_filter.is_empty() {
+            self.elevator_re = None;
+            self.elevator_re_err = false;
+        } else {
+            match RegexBuilder::new(&self.elevator_filter).case_insensitive(true).build() {
+                Ok(re) => {
+                    self.elevator_re = Some(re);
+                    self.elevator_re_err = false;
+                }
+                Err(_) => {
+                    self.elevator_re = None; // keep showing all while the pattern is half-typed
+                    self.elevator_re_err = true;
+                }
+            }
+        }
+    }
+
+    /// Whether an elevator passes the Chart/Trend name filter (all pass if no/invalid filter).
+    pub fn elevator_matches(&self, name: &str) -> bool {
+        match &self.elevator_re {
+            Some(re) => re.is_match(name),
+            None => true,
         }
     }
 
@@ -276,30 +435,31 @@ impl App {
         }
     }
 
-    /// Parse an input line into an order or a `sim`, producing off-thread so the UI
-    /// never blocks. Returns a short status message for the footer.
-    fn run_command(&self, line: &str) -> String {
+    /// SIM input: a count (bare number, or "sim 300"). Runs that many random orders off-thread,
+    /// tracked by the progress bar. Returns a footer status message.
+    fn run_sim(&mut self, line: &str) -> String {
+        let line = line.trim();
+        if line.is_empty() {
+            return String::new();
+        }
+        // Tolerate a leading "sim" keyword ("sim 300", "sim300") — it's natural to type.
+        let lower = line.to_ascii_lowercase();
+        let rest = if lower.starts_with("sim") { line[3..].trim() } else { line };
+        match rest.parse::<u64>() {
+            Ok(count) if count > 0 => {
+                self.start_sim(count);
+                format!("running {count} orders")
+            }
+            Ok(_) => "count must be greater than 0".to_string(),
+            Err(_) => "type a number of orders, e.g. 300".to_string(),
+        }
+    }
+
+    /// ORDER input: "<elevator> <floor>" sends one order off-thread (so the UI never blocks).
+    fn run_order(&mut self, line: &str) -> String {
         let parts: Vec<&str> = line.split_whitespace().collect();
         match parts.as_slice() {
             [] => String::new(),
-            [cmd, n] if cmd.eq_ignore_ascii_case("sim") => match n.parse::<u64>() {
-                Ok(count) => {
-                    let (brokers, topic) = (self.brokers.clone(), self.command_topic.clone());
-                    let pool = self.elevator_pool();
-                    std::thread::spawn(move || {
-                        let _ = crate::sender::simulate(
-                            &brokers,
-                            &topic,
-                            count,
-                            count.clamp(1, 4),
-                            &pool,
-                            SIM_MAX_FLOOR,
-                        );
-                    });
-                    format!("sent sim {count}")
-                }
-                Err(_) => "usage: sim <count>".to_string(),
-            },
             [elevator, floor] => match floor.parse::<i32>() {
                 Ok(f) => {
                     let (brokers, topic, name) =
@@ -307,11 +467,11 @@ impl App {
                     std::thread::spawn(move || {
                         let _ = crate::sender::send_one(&brokers, &topic, &name, f);
                     });
-                    format!("ordered {elevator} -> floor {f}")
+                    format!("ordered {elevator} → floor {f}")
                 }
                 Err(_) => "floor must be a number".to_string(),
             },
-            _ => "type:  <elevator> <floor>   or   sim <count>".to_string(),
+            _ => "type:  <elevator> <floor>   e.g.  e3 7".to_string(),
         }
     }
 }

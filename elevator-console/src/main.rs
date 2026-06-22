@@ -87,6 +87,7 @@ fn main() {
         }
         Command::Order { elevator, floor, topic } => {
             sender::send_one(&cli.brokers, &topic, &elevator, floor)
+                .map(|()| println!("sent order: elevator={elevator} floor={floor}"))
         }
         Command::Simulate { count, threads, elevators, elevator_count, elevators_file, max_floor, topic } => {
             resolve_elevators(elevators, elevator_count, elevators_file)

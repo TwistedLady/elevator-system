@@ -4,7 +4,9 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, Paragraph, Tabs, Wrap};
+use ratatui::widgets::{
+    Axis, Block, BorderType, Chart, Dataset, Gauge, GraphType, Paragraph, Tabs, Wrap,
+};
 use ratatui::Frame;
 
 use super::app::{App, ElevatorState, View, TREND_WINDOW_SECS};
@@ -35,6 +37,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match app.view {
         View::Chart => draw_chart(frame, app, chunks[1]),
         View::Trend => draw_trend(frame, app, chunks[1]),
+        View::Order => draw_order(frame, app, chunks[1]),
+        View::Sim => draw_sim(frame, app, chunks[1]),
         View::Health => draw_health(frame, app, chunks[1]),
         View::Logs => draw_logs(frame, app, chunks[1]),
     }
@@ -67,7 +71,16 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let mut cars: Vec<&ElevatorState> = app.latest.values().collect();
+    let mut cars: Vec<&ElevatorState> = app
+        .latest
+        .values()
+        .filter(|c| app.elevator_matches(&c.elevator_name))
+        .collect();
+    if cars.is_empty() {
+        let msg = format!("no elevators match /{}/", app.elevator_filter);
+        frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
+        return;
+    }
     // Natural order so columns read e1, e2, … e10 (not the lexicographic e1, e10, e2).
     cars.sort_by(|a, b| crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name)));
     let top = cars.iter().map(|c| c.floor).max().unwrap_or(0).max(0);
@@ -113,8 +126,14 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     let mut series: Vec<(String, Vec<(f64, f64)>)> = app
         .history
         .iter()
+        .filter(|(name, _)| app.elevator_matches(name))
         .map(|(name, pts)| (name.clone(), pts.iter().copied().collect()))
         .collect();
+    if series.is_empty() {
+        let msg = format!("no elevators match /{}/", app.elevator_filter);
+        frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
+        return;
+    }
     // Natural order so the legend reads e1, e2, … e10 and colours stay stable.
     series.sort_by(|a, b| crate::natural_key(&a.0).cmp(&crate::natural_key(&b.0)));
 
@@ -166,6 +185,85 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
         );
 
     frame.render_widget(chart, area);
+}
+
+fn draw_order(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" ORDER ");
+    let mut lines: Vec<Line> = vec![
+        Line::from("Send one elevator to a floor.".white()),
+        Line::from("Type below:  <elevator> <floor>   e.g.  e3 7".dim()),
+        Line::from(""),
+    ];
+    if !app.message.is_empty() {
+        lines.push(Line::from(app.message.clone().cyan()));
+        lines.push(Line::from(""));
+    }
+    // Known elevators (natural order) as a hint of valid names.
+    let mut names: Vec<&String> = app.latest.keys().collect();
+    names.sort_by(|a, b| crate::natural_key(a).cmp(&crate::natural_key(b)));
+    let known = if names.is_empty() {
+        "(none seen yet)".to_string()
+    } else {
+        names.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+    };
+    lines.push(Line::from(vec![
+        Span::from("known elevators: ").dark_gray(),
+        Span::from(known).green(),
+    ]));
+
+    frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+}
+
+fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" SIMULATOR ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::vertical([
+        Constraint::Length(3), // status text
+        Constraint::Length(1), // progress gauge
+        Constraint::Min(0),    // help
+    ])
+    .split(inner);
+
+    match &app.sim {
+        None => {
+            let p = Paragraph::new(vec![
+                Line::from("No simulation running.".dim()),
+                Line::from("Type how many orders to fire below, then press Enter.".dim()),
+            ]);
+            frame.render_widget(p, rows[0]);
+        }
+        Some(sim) => {
+            let sent = sim.sent();
+            let secs = sim.secs();
+            let rate = if secs > 0.0 { sent as f64 / secs } else { 0.0 };
+            let status = if sim.finished() {
+                "done ✓".green().bold()
+            } else {
+                "running…".yellow().bold()
+            };
+            let info = Paragraph::new(vec![
+                Line::from(vec![Span::from("status   ").white(), status]),
+                Line::from(
+                    format!(
+                        "{sent}/{} orders   {rate:.0} msg/s   {secs:.2}s   across {} elevators",
+                        sim.total, sim.elevators
+                    )
+                    .dark_gray(),
+                ),
+            ]);
+            frame.render_widget(info, rows[0]);
+
+            let pct = (sim.ratio() * 100.0).round() as u16;
+            let fill = if sim.finished() { Color::Green } else { Color::Cyan };
+            let gauge = Gauge::default()
+                .gauge_style(Style::new().fg(fill).bg(Color::Black).bold())
+                .ratio(sim.ratio())
+                .label(format!("{sent}/{}  ({pct}%)", sim.total));
+            frame.render_widget(gauge, rows[1]);
+        }
+    }
 }
 
 fn draw_health(frame: &mut Frame, app: &App, area: Rect) {
@@ -228,13 +326,42 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
     let content = match app.view {
-        View::Chart => Line::from(vec![
-            Span::from("> ").green().bold(),
-            Span::from(app.input.clone()).white(),
-            Span::from("█").green(),
-            Span::from("   "),
-            Span::from(app.message.clone()).dark_gray(),
-        ]),
+        View::Chart | View::Trend => {
+            let mut spans = vec![
+                Span::from("filter ▸ ").green().bold(),
+                Span::from(app.elevator_filter.clone()).white(),
+                Span::from("█").green(),
+            ];
+            if app.elevator_re_err {
+                spans.push(Span::from("  invalid regex").red());
+            }
+            spans.push(Span::from("   Enter: clear · Tab: switch · Esc: quit").dark_gray());
+            Line::from(spans)
+        }
+        View::Order => {
+            let mut spans = vec![
+                Span::from("order ▸ ").green().bold(),
+                Span::from(app.order_input.clone()).white(),
+                Span::from("█").green(),
+                Span::from("   <elevator> <floor> · Enter: send").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
+        View::Sim => {
+            let mut spans = vec![
+                Span::from("sim ▸ ").green().bold(),
+                Span::from(app.sim_input.clone()).white(),
+                Span::from("█").green(),
+                Span::from("   number of orders · Enter: run").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
         View::Logs => {
             let mut spans = vec![
                 Span::from("filter ▸ ").green().bold(),
@@ -247,7 +374,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::from("   Enter: clear · ←/→: source · Esc: quit").dark_gray());
             Line::from(spans)
         }
-        View::Health | View::Trend => Line::from(
+        View::Health => Line::from(
             "Tab/Shift-Tab: switch view   ·   Esc: quit".dim(),
         ),
     };

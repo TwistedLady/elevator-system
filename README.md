@@ -24,8 +24,8 @@ coming together.
                        Kafka: elevator-state                                       │
                                          │                            Controller (event-sourced scheduler)
    ┌──────────────── elevator-console (Rust) ───────────────┐                     │ one move / tick
-   │  TUI: chart · floor-over-time · health · logs           │                    ▼
-   │  send orders · bulk "sim"                               │ ◄─ Kafka: state ◄─ Operator (moves the car)
+   │  tabs: chart · trend · order · sim · health · logs      │                    ▼
+   │  one order · bulk sim (progress) · name filters         │ ◄─ Kafka: state ◄─ Operator (moves the car)
    └─────────────────────────────────────────────────────────┘
 ```
 
@@ -70,15 +70,15 @@ is blank at startup), then **stream** live updates from the Kafka topic.
 | `elevator-common-dto`  | Scala 3 | Messages shared across the wire                                     |
 | `elevator-app`         | Pekko   | The brain: event-sourced `Coordinator` / `Controller` / `Operator` + R2DBC journal & read-side projection |
 | `elevator-api`         | Spring  | HTTP edge + Actuator health (Kafka readiness check)                 |
-| `elevator-console`     | Rust    | Terminal UI: live chart, floor-over-time, actuator health, log viewer; order + bulk `sim` |
+| `elevator-console`     | Rust    | Tabbed terminal UI: chart, floor-over-time, single order, bulk `sim` (progress bar), actuator health, log viewer |
 
 ## Run
 
 ```bash
 scripts/demo-up.sh            # infra + both JVMs, seeds a fleet (e1..eN), opens the chart
-                              #   ELEVATORS=N | FLEET_FILE=scripts/fleet.txt | SEED=N | NO_UI=1
+                              #   PROFILE=test|prod | ELEVATORS=N | FLEET_FILE=scripts/fleet.txt | SEED=N | NO_UI=1
 # or run the rich console yourself:
-cd elevator-console && cargo run -- monitor      # Tab: chart / trend / health / logs
+cd elevator-console && cargo run -- monitor      # Tab: chart / trend / order / sim / health / logs
 scripts/demo-down.sh          # stop everything
 
 # inspect the durable read-model:
