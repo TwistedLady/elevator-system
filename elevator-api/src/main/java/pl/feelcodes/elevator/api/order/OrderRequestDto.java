@@ -1,14 +1,15 @@
 package pl.feelcodes.elevator.api.order;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import java.util.UUID;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-class OrderRequestDto {
-    private String tag;          // optional on input; the API fills a UUID when absent
-    private String elevatorName;
-    private Integer floor;
+/**
+ * POST /api/order request body. {@code tag} is optional on input — {@link #withTagIfAbsent()}
+ * fills a UUID when the client omits it.
+ */
+record OrderRequestDto(String tag, String elevatorName, Integer floor) {
+
+    /** This order, or a copy with a freshly generated tag when none was supplied. */
+    OrderRequestDto withTagIfAbsent() {
+        return tag != null ? this : new OrderRequestDto(UUID.randomUUID().toString(), elevatorName, floor);
+    }
 }

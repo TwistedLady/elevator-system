@@ -11,8 +11,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-import java.util.UUID;
-
 /**
  * The {@code /api/order} resource — one controller for the whole order lifecycle:
  *
@@ -42,15 +40,13 @@ class OrderController {
     /** Place an order — fills a tag if absent, publishes the command, echoes the body. */
     @PostMapping
     public Mono<OrderRequestDto> place(@RequestBody OrderRequestDto dto) {
-        if (dto.getTag() == null) {
-            dto.setTag(UUID.randomUUID().toString());
-        }
+        OrderRequestDto order = dto.withTagIfAbsent();
         log.info("[order place ] {} -> floor {} (tag {})",
-                dto.getElevatorName(), dto.getFloor(), dto.getTag());
+                order.elevatorName(), order.floor(), order.tag());
         // publishing the command is non-blocking; wrap so the endpoint composes reactively
         return Mono.fromCallable(() -> {
-            orderService.order(dto.getTag(), dto.getElevatorName(), dto.getFloor());
-            return dto;
+            orderService.order(order.tag(), order.elevatorName(), order.floor());
+            return order;
         });
     }
 
