@@ -108,5 +108,27 @@ final class ControllerRecoveryTests
       esTestKit.getState().requests should contain(order)
       esTestKit.getState().elevatorState.floor shouldBe Floor(4)
     }
+
+    "redeliver the in-flight move after a crash that happened while waiting for the Operator" in {
+      val esTestKit = newTestKit()
+      val order = ElevatorOrder("o-3", Floor(9))
+
+      esTestKit.runCommand(Controller.AddRequest(order))
+
+      // A Tick dispatches the move to the Operator and latches `waiting`. We deliberately do NOT
+      // deliver MoveExecuted — this is the crash window: the car was told to move, but the node
+      // dies before the (ephemeral) Operator reports back.
+      esTestKit.runCommand(Controller.Tick)
+      operatorProbe.expectMessageType[Operator.Move] // the original command, now "lost"
+      esTestKit.getState().waiting shouldBe true
+
+      esTestKit.restart() // crash + recover from the journal, replaying waiting = true
+
+      // Before the fix the Controller froze here (waiting = true, no report ever coming).
+      // Recovery now redelivers the lost command instead.
+      val redelivered = operatorProbe.expectMessageType[Operator.Move]
+      redelivered.orderWithCommand.order shouldBe order
+      redelivered.orderWithCommand.command shouldBe Command.Go(Direction.Up)
+    }
   }
 }

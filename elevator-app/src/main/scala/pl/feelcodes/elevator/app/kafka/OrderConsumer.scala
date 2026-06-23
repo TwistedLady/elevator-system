@@ -48,13 +48,17 @@ object OrderConsumer {
         .mapAsync(1) { msg =>
           val dto = Json.decode(msg.record.value(), classOf[ElevatorOrderDto])
 
-          // Durable dedup at the boundary: claim the tag; forward only first-time orders.
-          dedup.firstSeen(dto.tag).flatMap {
-            case false =>
-              Future.successful(msg.committableOffset) // duplicate, already processed — drop
+          // Durable dedup at the boundary. CHECK first to drop re-sent tags; CLAIM only AFTER the
+          // Coordinator has durably accepted, so a crash between accept and claim is recoverable
+          // (the tag stays unclaimed and the redelivered message is reprocessed) rather than
+          // silently lost. The Coordinator's accept is idempotent, covering that redelivery.
+          dedup.alreadyProcessed(dto.tag).flatMap {
             case true =>
+              Future.successful(msg.committableOffset) // duplicate, already processed — drop
+            case false =>
               coordinatorProvider(dto.elevatorName)
                 .ask[Coordinator.Ack](replyTo => Coordinator.Process(dto, replyTo))
+                .flatMap(_ => dedup.markProcessed(dto.tag))
                 .map(_ => msg.committableOffset)
           }
         }

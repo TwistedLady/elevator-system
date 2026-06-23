@@ -14,7 +14,7 @@ class OrderProducerConfig {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    @Bean
+    @Bean(destroyMethod = "close")
     public KafkaProducer<String, String> elevatorCommandProducer() {
         Properties props = new Properties();
         props.put("bootstrap.servers", bootstrapServers);
