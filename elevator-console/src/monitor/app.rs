@@ -131,11 +131,14 @@ pub enum View {
     Health,
     Logs,
     K8s,
+    Test,
 }
 
 impl View {
-    pub const ALL: [View; 7] =
-        [View::Chart, View::Trend, View::Order, View::Sim, View::Health, View::Logs, View::K8s];
+    pub const ALL: [View; 8] = [
+        View::Chart, View::Trend, View::Order, View::Sim,
+        View::Health, View::Logs, View::K8s, View::Test,
+    ];
 
     pub fn index(self) -> usize {
         match self {
@@ -146,6 +149,7 @@ impl View {
             View::Health => 4,
             View::Logs => 5,
             View::K8s => 6,
+            View::Test => 7,
         }
     }
 
@@ -159,6 +163,7 @@ impl View {
             View::Health => "⑤ HEALTH",
             View::Logs => "⑥ LOGS",
             View::K8s => "⑦ K8S",
+            View::Test => "⑧ TEST",
         }
     }
 
@@ -186,6 +191,12 @@ pub struct App {
     pub k8s: K8sSnapshot,
     /// Result of an async K8s action (mode switch), surfaced into `message` next frame.
     k8s_action: Arc<Mutex<Option<String>>>,
+    /// Last integration-test report (parsed logs/itest-report.json), shown on the Test tab.
+    pub test_report: Option<serde_json::Value>,
+    /// True while an integration test launched from the Test tab is running.
+    pub test_running: Arc<std::sync::atomic::AtomicBool>,
+    /// Edge-detect for `test_running` so we reload the report exactly when a run finishes.
+    test_was_running: bool,
     start: Instant,
     /// Wall-clock (unix seconds) at startup, paired with `start`, to label chart times.
     start_unix: i64,
@@ -220,7 +231,7 @@ pub struct App {
 
 impl App {
     pub fn new(brokers: &str, command_topic: &str, api_base: &str) -> Self {
-        Self {
+        let mut app = Self {
             view: View::Chart,
             latest: BTreeMap::new(),
             history: BTreeMap::new(),
@@ -228,6 +239,9 @@ impl App {
             seen_floor_max: 0,
             k8s: K8sSnapshot::default(),
             k8s_action: Arc::new(Mutex::new(None)),
+            test_report: None,
+            test_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            test_was_running: false,
             start: Instant::now(),
             start_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -251,7 +265,19 @@ impl App {
             brokers: brokers.to_string(),
             command_topic: command_topic.to_string(),
             api_base: api_base.to_string(),
-        }
+        };
+        app.reload_test_report();
+        app
+    }
+
+    /// Path of the integration-test report the `itest` mode writes (relative to the run dir).
+    const TEST_REPORT_PATH: &'static str = "logs/itest-report.json";
+
+    /// Load the last integration-test report from disk (if any), for the Test tab.
+    fn reload_test_report(&mut self) {
+        self.test_report = std::fs::read_to_string(Self::TEST_REPORT_PATH)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok());
     }
 
     /// Per-frame upkeep: freeze a finished run's elapsed time, and surface any async K8s action
@@ -265,6 +291,18 @@ impl App {
         if let Some(msg) = self.k8s_action.lock().ok().and_then(|mut g| g.take()) {
             self.message = msg;
         }
+        // When a Test-tab run finishes, reload the fresh report and report the verdict.
+        let running = self.test_running.load(Ordering::Relaxed);
+        if self.test_was_running && !running {
+            self.reload_test_report();
+            let verdict = self
+                .test_report
+                .as_ref()
+                .and_then(|r| r["verdict"].as_str())
+                .unwrap_or("?");
+            self.message = format!("integration test: {verdict}");
+        }
+        self.test_was_running = running;
     }
 
     pub fn record_state(&mut self, state: ElevatorState) {
@@ -368,8 +406,34 @@ impl App {
             View::Sim => self.on_key_sim(key),
             View::Logs => self.on_key_logs(key),
             View::K8s => self.on_key_k8s(key),
+            View::Test => self.on_key_test(key),
             View::Health => {}
         }
+    }
+
+    /// Test tab: 'r' runs the integration test (console `itest`) off-thread. Output is suppressed
+    /// (quiet=true) so it can't corrupt the TUI; when it finishes, `refresh_sim` reloads the report.
+    fn on_key_test(&mut self, key: KeyEvent) {
+        if !matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
+            return;
+        }
+        if self.test_running.load(Ordering::Relaxed) {
+            self.message = "test already running…".to_string();
+            return;
+        }
+        self.message = "running integration test…".to_string();
+        self.test_running.store(true, Ordering::Relaxed);
+        self.test_was_running = true;
+        let running = Arc::clone(&self.test_running);
+        let brokers = self.brokers.clone();
+        let topic = self.command_topic.clone();
+        let health_url = format!("{}/actuator/health", self.api_base);
+        std::thread::spawn(move || {
+            let _ = crate::itest::run_itest(
+                &brokers, &topic, &health_url, 12, 75, App::TEST_REPORT_PATH, true,
+            );
+            running.store(false, Ordering::Relaxed);
+        });
     }
 
     /// K8s tab: 'f' / 's' flip the app to fast / slow (swap the configmap on the deployment +
