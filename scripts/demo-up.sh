@@ -8,6 +8,10 @@ cd "$ROOT"
 RUN_DIR="$ROOT/.run"
 mkdir -p "$RUN_DIR"
 
+# This demo runs its own Kafka on localhost:9092. The console now defaults to the k8s
+# cluster (localhost:9094), so pin it back to the demo broker for the seed/monitor below.
+export KAFKA_BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:9092}"
+
 # All logs land in ./logs: app+api host JVMs write app.log/api.log here, and the Kafka +
 # Postgres containers bind-mount their log dirs into ./logs/kafka and ./logs/postgres.
 # 0777 so the Postgres server (container uid 999) can write into its bind-mounted subdir.
