@@ -19,8 +19,10 @@ spec:
           image: elevator-app:local
           imagePullPolicy: IfNotPresent
           envFrom:
+            # Mode = which configmap this points at: elevator-app-config-fast or -slow
+            # (they differ only in ELEVATOR_OPERATOR_CLASS). Swap + rollout to flip mode.
             - configMapRef:
-                name: elevator-app-config   # injects ELEVATOR_KAFKA_* as env vars
+                name: elevator-app-config-fast
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1",    memory: "512Mi" }

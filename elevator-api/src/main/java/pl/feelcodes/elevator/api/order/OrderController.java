@@ -1,5 +1,6 @@
 package pl.feelcodes.elevator.api.order;
 
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,7 +40,7 @@ class OrderController {
 
     /** Place an order — fills a tag if absent, publishes the command, echoes the body. */
     @PostMapping
-    public Mono<OrderRequestDto> place(@RequestBody OrderRequestDto dto) {
+    public Mono<OrderRequestDto> place(@Valid @RequestBody OrderRequestDto dto) {
         OrderRequestDto order = dto.withTagIfAbsent();
         log.info("[order place ] {} -> floor {} (tag {})",
                 order.elevatorName(), order.floor(), order.tag());

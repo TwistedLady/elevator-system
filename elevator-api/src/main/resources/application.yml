@@ -17,6 +17,9 @@ spring:
 elevator:
   command-topic: elevator-commands
   state-topic: elevator-state
+  # Order-validation params (overridable via env ELEVATOR_MAXFLOOR / ELEVATOR_ELEVATORS).
+  max-floor: 15
+  elevators: e1,e2,e3,e4,e5,e6,e7,e8,e9,e10
 management:
   endpoints:
     web:
