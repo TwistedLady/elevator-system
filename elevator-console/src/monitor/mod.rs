@@ -4,12 +4,19 @@
 //!   app      — all UI state + key handling (no I/O)
 //!   sources  — background threads feeding state in (Kafka / health / logs)
 //!   ui       — rendering only
+//!   selftest — headless PASS/FAIL check reusing `sources` (no TUI)
 //! This module just wires them together and runs the draw/event loop.
 
 mod app;
+mod selftest;
 mod sources;
 mod ui;
+mod watch;
 
+pub use selftest::run_selftest;
+pub use watch::run_watch;
+
+use std::io::IsTerminal;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -27,6 +34,16 @@ pub fn run(
     app_log: &str,
     api_log: &str,
 ) -> Result<(), BoxErr> {
+    // The full-screen TUI needs a real terminal. In a captured shell (e.g. the in-session
+    // `!` bash) ratatui::init() would panic with "No such device or address"; fail with a
+    // clear message pointing at the headless alternatives instead.
+    if !std::io::stdout().is_terminal() {
+        return Err("`monitor` needs a real terminal (TTY); it can't run in a captured shell \
+                    like the in-session `!` bash. Run it in your own terminal window, or use \
+                    `watch` (headless live view) or `selftest` here."
+            .into());
+    }
+
     // The api base is the health URL minus the actuator path (e.g. http://localhost:8080).
     let api_base = health_url.strip_suffix("/actuator/health").unwrap_or(health_url);
     let mut app = App::new(brokers, command_topic, api_base);
