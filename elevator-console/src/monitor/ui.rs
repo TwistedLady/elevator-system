@@ -42,6 +42,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         View::Health => draw_health(frame, app, chunks[1]),
         View::Logs => draw_logs(frame, app, chunks[1]),
         View::K8s => draw_k8s(frame, app, chunks[1]),
+        View::Test => draw_test(frame, app, chunks[1]),
     }
     draw_footer(frame, app, chunks[2]);
 }
@@ -447,6 +448,76 @@ fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+fn draw_test(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" INTEGRATION TEST · console itest ");
+    let mut lines: Vec<Line> = Vec::new();
+
+    if app.test_running.load(std::sync::atomic::Ordering::Relaxed) {
+        lines.push(Line::from(
+            "⏳ running… sending orders, polling the api, cross-checking app+api logs".yellow(),
+        ));
+        lines.push(Line::from(""));
+    }
+
+    match &app.test_report {
+        None => {
+            lines.push(Line::from("no test run yet.".white()));
+            lines.push(Line::from("press  r  to run the integration test.".dim()));
+        }
+        Some(r) => {
+            let verdict = r["verdict"].as_str().unwrap_or("?");
+            let vstyle = if verdict == "PASS" {
+                Style::new().fg(Color::Black).bg(Color::Green).bold()
+            } else {
+                Style::new().fg(Color::Black).bg(Color::Red).bold()
+            };
+            lines.push(Line::from(vec![
+                Span::from("verdict   ").white(),
+                Span::styled(format!(" {verdict} "), vstyle),
+                Span::from(format!("   run {}  ·  mode {}", r["run_id"], r["mode"].as_str().unwrap_or("?")))
+                    .dark_gray(),
+            ]));
+            lines.push(Line::from(""));
+
+            let lm = &r["latency_ms"];
+            let kv = |k: &str, v: String| {
+                Line::from(vec![Span::from(format!("{k:<22}")).dark_gray(), Span::from(v).green()])
+            };
+            lines.push(kv("requests", format!("{}", r["requests"])));
+            lines.push(kv("done", format!("{}", r["done"])));
+            lines.push(Line::from(vec![
+                Span::from(format!("{:<22}", "lost")).dark_gray(),
+                Span::styled(
+                    format!("{}", r["lost"]),
+                    if r["lost"].as_u64() == Some(0) { Style::new().fg(Color::Green) } else { Style::new().fg(Color::Red).bold() },
+                ),
+            ]));
+            lines.push(kv("latency p50/p95/max", format!("{} / {} / {} ms", lm["p50"], lm["p95"], lm["max"])));
+            lines.push(kv(
+                "throughput",
+                format!("{:.2}/s", r["throughput_done_per_s"].as_f64().unwrap_or(0.0)),
+            ));
+            lines.push(kv("api confirmed DONE", format!("{}", r["api_confirmed_done"])));
+            lines.push(kv("app moves observed", format!("{}", r["app_moves_observed"])));
+            lines.push(Line::from(""));
+
+            lines.push(Line::from("checks".dark_gray()));
+            if let Some(checks) = r["checks"].as_array() {
+                for c in checks {
+                    let ok = c["ok"].as_bool().unwrap_or(false);
+                    let st = if ok { Style::new().fg(Color::Green) } else { Style::new().fg(Color::Red) };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!(" {} ", if ok { "PASS" } else { "FAIL" }), st.bold()),
+                        Span::from(format!("  {}", c["check"].as_str().unwrap_or(""))).white(),
+                    ]));
+                }
+            }
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+}
+
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
     let content = match app.view {
@@ -509,6 +580,18 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
                 Span::from("s").fg(Color::Black).bg(Color::Magenta).bold(),
                 Span::from(": slow").dark_gray(),
                 Span::from("   (swaps the app configmap + rolls the pod)").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
+        View::Test => {
+            let mut spans = vec![
+                Span::from("integration test ▸ ").green().bold(),
+                Span::from("r").fg(Color::Black).bg(Color::Green).bold(),
+                Span::from(": run").dark_gray(),
+                Span::from("   (sends orders, polls api, cross-checks app+api logs)").dark_gray(),
             ];
             if !app.message.is_empty() {
                 spans.push(Span::from(format!("   {}", app.message)).cyan());

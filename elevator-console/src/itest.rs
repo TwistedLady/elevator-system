@@ -36,6 +36,7 @@ pub fn run_itest(
     count: u64,
     timeout_secs: u64,
     out_path: &str,
+    quiet: bool, // true when launched from the TUI (stdout would corrupt the alternate screen)
 ) -> Result<(), BoxErr> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
@@ -48,7 +49,9 @@ pub fn run_itest(
         agent.get(health_url).call().map(|r| r.into_string().unwrap_or_default()),
         Ok(body) if body.contains("\"status\":\"UP\"")
     );
-    eprintln!("[itest] health {} ({health_url})", if health_ok { "UP" } else { "DOWN" });
+    if !quiet {
+        eprintln!("[itest] health {} ({health_url})", if health_ok { "UP" } else { "DOWN" });
+    }
 
     // 2) send N tagged orders
     let run_id = now_ms();
@@ -58,7 +61,9 @@ pub fn run_itest(
     let send_start = Instant::now();
     run_simulation(brokers, command_topic, count, THREADS, &fleet, MAX_FLOOR, &sent, None, run_id)?;
     let send_secs = send_start.elapsed().as_secs_f64();
-    eprintln!("[itest] sent {count} orders in {send_secs:.2}s (run {run_id})");
+    if !quiet {
+        eprintln!("[itest] sent {count} orders in {send_secs:.2}s (run {run_id})");
+    }
 
     // 3) poll the api per tag until DONE or timeout
     let mut pending: BTreeSet<String> =
@@ -116,7 +121,9 @@ pub fn run_itest(
     write_report(out_path, &report)?;
     write_markdown(out_path, &report, &checks);
 
-    print_summary(&report, &checks);
+    if !quiet {
+        print_summary(&report, &checks);
+    }
 
     if !passed {
         let failed: Vec<&str> =

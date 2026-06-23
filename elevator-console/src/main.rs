@@ -151,7 +151,7 @@ fn main() {
             monitor::run_watch(&cli.brokers, &topic, refresh_ms, duration)
         }
         Command::Itest { count, topic, health_url, timeout, out } => {
-            itest::run_itest(&cli.brokers, &topic, &health_url, count, timeout, &out)
+            itest::run_itest(&cli.brokers, &topic, &health_url, count, timeout, &out, false)
         }
     };
     if let Err(e) = result {
