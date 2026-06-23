@@ -44,6 +44,10 @@ spec:
           volumeMounts:
             - name: pgdata
               mountPath: /var/lib/postgresql/data
+            # Schema init: postgres:17 runs every *.sql here on first init (empty data dir).
+            # Backed by the postgres-init ConfigMap (generated from db/init/*.sql).
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "elevator", "-d", "elevator"]
@@ -54,6 +58,10 @@ spec:
               command: ["pg_isready", "-U", "elevator", "-d", "elevator"]
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
   volumeClaimTemplates:
     - metadata:
         name: pgdata

@@ -9,6 +9,13 @@ data:
   ELEVATOR_KAFKA_GROUP_ID: "elevator-app"
   ELEVATOR_KAFKA_COMMAND_TOPIC: "elevator-commands"
   ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
+  # R2DBC journal + read-model live in the postgres StatefulSet (Service "postgres").
+  # application.conf reads this via ${?ELEVATOR_PG_HOST}; defaults to localhost otherwise.
+  ELEVATOR_PG_HOST: "postgres"
+  # Which Operator subclass the inline match in ElevatorApp builds. application.conf reads
+  # this via ${?ELEVATOR_OPERATOR_CLASS}; defaults to FastOperator. SlowOperator = heavy
+  # SlowEngine (CPU-burning moves).
+  ELEVATOR_OPERATOR_CLASS: "SlowOperator"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -19,3 +26,7 @@ data:
   SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
   ELEVATOR_COMMAND_TOPIC: "elevator-commands"
   ELEVATOR_STATE_TOPIC: "elevator-state"
+  # Read-only R2DBC access to the order_status read-model (Service "postgres").
+  # application.yml reads ${ELEVATOR_PG_HOST:localhost}; without this the api's r2dbc
+  # health check fails (localhost:5432) and /actuator/health returns 503 DOWN.
+  ELEVATOR_PG_HOST: "postgres"
