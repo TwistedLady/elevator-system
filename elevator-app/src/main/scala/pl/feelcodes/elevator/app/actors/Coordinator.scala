@@ -3,7 +3,7 @@ package pl.feelcodes.elevator.app.actors
 import org.apache.pekko.actor.typed.{ActorRef, Behavior}
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.PersistenceId
-import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
+import org.apache.pekko.persistence.typed.scaladsl.{Effect, EffectBuilder, EventSourcedBehavior}
 import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 
@@ -59,12 +59,19 @@ object Coordinator {
                             (state: State, cmd: Command): Effect[Event, State] = {
     cmd match
       case Process(dto, replyTo) =>
-        Effect
-          .persist(Accepted(dto.tag, dto.elevatorName, dto.floor))
-          .thenRun { _ =>
-            controllerProvider(elevatorName) ! Controller.AddRequest(ElevatorOrder(dto.tag, Floor(dto.floor)))
-            replyTo ! Ack.Ok
-          }
+        // Idempotent accept. A crash between the Coordinator persisting `Accepted` and the
+        // ingestion stream claiming the tag (see OrderDedup) makes Kafka redeliver the order; we
+        // must not record it twice. If the tag is already outstanding at this floor, skip the
+        // event — but still (re)forward to the Controller (idempotent there too) so a handoff lost
+        // in that same crash window is healed. Either way we ack so the offset advances.
+        val alreadyOutstanding = state.byFloor.getOrElse(dto.floor, Set.empty).contains(dto.tag)
+        val effect: EffectBuilder[Event, State] =
+          if alreadyOutstanding then Effect.none
+          else Effect.persist(Accepted(dto.tag, dto.elevatorName, dto.floor))
+        effect.thenRun { _ =>
+          controllerProvider(elevatorName) ! Controller.AddRequest(ElevatorOrder(dto.tag, Floor(dto.floor)))
+          replyTo ! Ack.Ok
+        }
 
       case Reached(floor) =>
         // Confirm every order still waiting for this floor. A revisited floor has nothing left

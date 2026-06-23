@@ -3,7 +3,7 @@ package pl.feelcodes.elevator.app.actors
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
-import org.apache.pekko.persistence.typed.PersistenceId
+import org.apache.pekko.persistence.typed.{PersistenceId, RecoveryCompleted}
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
@@ -66,6 +66,23 @@ object Controller {
     Behaviors.withTimers { timers =>
       timers.startTimerAtFixedRate(Tick, 500.millis)
 
+      // Issue the move/stop the current state calls for. Used by Tick and — crucially — on
+      // RecoveryCompleted: the Move/Stop we send to the (ephemeral, non-persistent) Operator is
+      // lost if the node crashes before the Operator reports back. Because `waiting` IS persisted,
+      // a plain recovery would replay `waiting=true` and every Tick would short-circuit, freezing
+      // the car forever. Re-dispatching here redelivers that lost command; `waiting` stays true so
+      // we never issue a duplicate, and the Operator's report clears it as usual.
+      def dispatch(s: State): Unit =
+        if s.requests.nonEmpty then
+          val next = Policy.next(
+            orders = s.requests,
+            floor = s.elevatorState.floor,
+            direction = s.elevatorState.direction
+          )
+          operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, next)
+        else if s.elevatorState.motion == Motion.Moving then
+          operatorProvider(s.elevatorName) ! Operator.Stop(s.elevatorName, s.elevatorState)
+
       EventSourcedBehavior[Command, Event, State](
         persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
         emptyState = State(
@@ -99,25 +116,13 @@ object Controller {
                 .thenRun(s => publish(toDto(s.elevatorName, newState, "")))
 
             case Tick =>
+              // Either there are requests to serve, or the car is coasting with none left and must
+              // be stopped. `dispatch` picks the right command; latch `waiting` until it reports back.
               if state.waiting then Effect.none
-              else if state.requests.nonEmpty then
-                val next = Policy.next(
-                  orders = state.requests,
-                  floor = state.elevatorState.floor,
-                  direction = state.elevatorState.direction
-                )
+              else if state.requests.nonEmpty || state.elevatorState.motion == Motion.Moving then
                 Effect
                   .persist(WaitingSet(true))
-                  .thenRun { s =>
-                    operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, next)
-                  }
-              else if state.elevatorState.motion == Motion.Moving then
-                // No requests left but the car is still moving -> tell the Operator to stop it.
-                Effect
-                  .persist(WaitingSet(true))
-                  .thenRun { s =>
-                    operatorProvider(s.elevatorName) ! Operator.Stop(s.elevatorName, s.elevatorState)
-                  }
+                  .thenRun(dispatch)
               else Effect.none
         ,
         eventHandler = (state, evt) =>
@@ -135,7 +140,11 @@ object Controller {
                 elevatorState = newState,
                 requests = reqs
               )
-      ).withTagger {
+      ).receiveSignal {
+        // The Move/Stop in flight to the Operator is lost on a crash, but `waiting` was persisted.
+        // Redeliver it so the car doesn't freeze waiting for a report that will never come.
+        case (state, RecoveryCompleted) if state.waiting => dispatch(state)
+      }.withTagger {
         case _: ElevatorStateUpdated => Set("controller-state")
         case _ => Set.empty
       }

@@ -44,11 +44,10 @@ class OrderController {
         OrderRequestDto order = dto.withTagIfAbsent();
         log.info("[order place ] {} -> floor {} (tag {})",
                 order.elevatorName(), order.floor(), order.tag());
-        // publishing the command is non-blocking; wrap so the endpoint composes reactively
-        return Mono.fromCallable(() -> {
-            orderService.order(order.tag(), order.elevatorName(), order.floor());
-            return order;
-        });
+        // Publish the command and echo the body once the broker has acknowledged it; a send
+        // failure propagates as an error response rather than being silently swallowed.
+        return orderService.order(order.tag(), order.elevatorName(), order.floor())
+                .thenReturn(order);
     }
 
     /** The order's current status, or 404 if the tag is unknown. */

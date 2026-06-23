@@ -86,6 +86,24 @@ final class CoordinatorRecoveryTests
       esTestKit.getState() shouldBe before
     }
 
+    "accept a redelivered order idempotently — no duplicate event, still acked and forwarded" in {
+      val esTestKit = newTestKit()
+      val dto = ElevatorOrderDto("dup", "lift-a", 5)
+
+      val first = esTestKit.runCommand[Coordinator.Ack](rt => Coordinator.Process(dto, rt))
+      first.event shouldBe Coordinator.Accepted("dup", "lift-a", 5)
+      controllerProbe.expectMessageType[Controller.AddRequest]
+
+      // Same tag again: this is Kafka redelivery after a crash between accept and dedup-claim.
+      // No new event is recorded, but the order is re-forwarded to the Controller (idempotent
+      // there) and acked so the offset can advance.
+      val second = esTestKit.runCommand[Coordinator.Ack](rt => Coordinator.Process(dto, rt))
+      second.hasNoEvents shouldBe true
+      second.reply shouldBe Coordinator.Ack.Ok
+      controllerProbe.expectMessageType[Controller.AddRequest]
+      esTestKit.getState().byFloor shouldBe Map(5 -> Set("dup"))
+    }
+
     "do nothing when reaching a floor with no orders waiting" in {
       val esTestKit = newTestKit()
       esTestKit.runCommand(Coordinator.Reached(9)).hasNoEvents shouldBe true

@@ -11,28 +11,47 @@ import scala.jdk.FutureConverters.*
 
 /**
  * Durable, unbounded order dedup backed by the `processed_orders` table's primary key — the
- * proper replacement for the Coordinator's old in-memory seen-tags set. Used at ingestion: the
- * Kafka stream claims a tag before forwarding the order; a re-sent tag conflicts and is dropped.
+ * proper replacement for the Coordinator's old in-memory seen-tags set. Used at ingestion.
+ *
+ * The two steps are deliberately split: the caller [[OrderConsumer]] CHECKS ([[alreadyProcessed]])
+ * up front to drop re-sent tags, but only CLAIMS ([[markProcessed]]) AFTER the Coordinator has
+ * durably accepted the order. Claiming first would lose orders: if the node crashed between the
+ * claim and the accept, the Kafka offset would not be committed, the message would be redelivered,
+ * and the now-claimed tag would be dropped — an order accepted by nobody. Claiming last means a
+ * crash in that window simply leaves the tag unclaimed, so redelivery reprocesses it.
  */
 final class OrderDedup(connectionFactory: ConnectionFactory) {
 
-  /** Claim the tag. `true` = first time we've seen it (row inserted); `false` = already
-    * processed (primary-key conflict), so the caller should drop the order. */
-  def firstSeen(tag: String): Future[Boolean] = {
-    val rowsInserted: Mono[java.lang.Long] = Mono.usingWhen(
-      Mono.from(connectionFactory.create()),
-      conn =>
-        Mono
-          .from(
-            conn
-              .createStatement("INSERT INTO processed_orders (tag) VALUES ($1) ON CONFLICT DO NOTHING")
-              .bind(0, tag)
-              .execute())
-          .flatMap(result => Mono.from(result.getRowsUpdated)),
-      conn => Mono.from(conn.close()))
+  /** Has this tag already been fully processed (claimed)? `true` => the caller should drop it. */
+  def alreadyProcessed(tag: String): Future[Boolean] =
+    withConnection { conn =>
+      Mono
+        .from(
+          conn
+            .createStatement("SELECT EXISTS(SELECT 1 FROM processed_orders WHERE tag = $1)")
+            .bind(0, tag)
+            .execute())
+        .flatMap(result => Mono.from(result.map((row, _) => row.get(0, classOf[java.lang.Boolean]))))
+    }.toFuture.asScala.map(_.booleanValue())(ExecutionContext.parasitic)
 
-    rowsInserted.toFuture.asScala.map(_.longValue() == 1L)(ExecutionContext.parasitic)
-  }
+  /** Durably claim the tag so it is never processed again. Idempotent (`ON CONFLICT DO NOTHING`),
+    * so a redelivered-then-reaccepted order can re-claim harmlessly. */
+  def markProcessed(tag: String): Future[Unit] =
+    withConnection { conn =>
+      Mono
+        .from(
+          conn
+            .createStatement("INSERT INTO processed_orders (tag) VALUES ($1) ON CONFLICT DO NOTHING")
+            .bind(0, tag)
+            .execute())
+        .flatMap(result => Mono.from(result.getRowsUpdated))
+    }.toFuture.asScala.map(_ => ())(ExecutionContext.parasitic)
+
+  private def withConnection[A](use: io.r2dbc.spi.Connection => Mono[A]): Mono[A] =
+    Mono.usingWhen(
+      Mono.from(connectionFactory.create()),
+      use(_),
+      conn => Mono.from(conn.close()))
 }
 
 object OrderDedup {
