@@ -4,6 +4,7 @@ import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import pl.feelcodes.elevator.app.actors.*
+import pl.feelcodes.elevator.common.core.Elevator
 import pl.feelcodes.elevator.app.kafka.{OrderConsumer, OrderDedup, StatePublisher}
 import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusProjection}
 
@@ -28,17 +29,16 @@ object ElevatorApp extends App {
             (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc)
           val reportStop: Operator.ReportStop =
             (name, state) => controllerProvider(name) ! Controller.Stopped(state)
-          // Pick the operator subclass from config key `elevator.operator-class` at startup.
-          // Adding a new operator is one `final class` in Operator.scala plus one case here;
-          // the compiler still sees every class (no reflection, so renames/find-usages work).
-          Behaviors.setup { ctx =>
+          // Pick the elevator-build strategy from config key `elevator.operator-class` at startup.
+          // Adding a new variant is one case here (no reflection, so find-usages still works).
+          val buildElevator: Operator.BuildElevator =
             ctx.system.settings.config.getString("elevator.operator-class") match
-              case "FastOperator" => new FastOperator(ctx, reportMove, reportStop)
-              case "SlowOperator" => new SlowOperator(ctx, reportMove, reportStop)
+              case "FastOperator" => (name, state) => Elevator.fast(name)(state)
+              case "SlowOperator" => (name, state) => Elevator.slow(name)(state)
               case other =>
                 throw new IllegalArgumentException(
                   s"Unknown elevator.operator-class '$other'. Known: FastOperator, SlowOperator")
-          }
+          Operator(reportMove, reportStop, buildElevator)
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
           Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
