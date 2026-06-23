@@ -62,7 +62,7 @@ flowchart TD
 
 | Actor | Responsibility | Tasks |
 |-------|----------------|-------|
-| **Coordinator** | Order intake **and** confirmation (event-sourced, per elevator) | Persist an `Accepted` event; group orders by floor and forward each new one to the Controller as `AddRequest`; when the Controller reports a floor `Reached`, persist a `Completed` event for **every** order waiting at that floor. (Duplicate orders are already dropped upstream at the Kafka ingress — see `OrderConsumer` + `OrderDedup`, durable via the `processed_orders` table.) |
+| **Coordinator** | Order intake **and** confirmation (event-sourced, per elevator) | Persist an `Accepted` event (idempotent — a re-delivered tag already outstanding records nothing); group orders by floor and forward each new one to the Controller as `AddRequest`; when the Controller reports a floor `Reached`, persist a `Completed` event for **every** order waiting at that floor. (Duplicate orders are dropped at the Kafka ingress — `OrderConsumer` + `OrderDedup`, durable via the `processed_orders` table. See **Crash recovery** below for why the tag is claimed only *after* this accept.) |
 | **Controller** | The per-elevator scheduler / brain (event-sourced, per elevator) | Accumulate pending requests; on a 500 ms `Tick` pick the next move via the pure `Policy`; mark itself "waiting" until the move completes; **own publishing the car's `ElevatorState` to Kafka `elevator-state`**; drop a request once its floor is reached and **tell the Coordinator (`Reached(floor)`)** to confirm every order waiting there; when no requests remain, **tell the Operator to `Stop`** the car |
 | **Operator** | Dumb worker — execute one physical move or stop (stateless) | Compute the new floor/direction/motion from the `Policy` command, or stop the car; report `MoveExecuted` / `Stopped` back to the Controller (its only collaborator). Makes no decisions and publishes nothing |
 | **ElevatorStateProjection** | Read-side CQRS view (see below) | Replay Controller events by slice; UPSERT one row per elevator into `elevator_state_view` |
@@ -90,6 +90,24 @@ Kafka (the `elevator-state` topic) stays as the **live, ephemeral** broadcast fo
 and console; the projections are the **durable, queryable** views derived from the journal.
 `OrderStatusProjection` follows the `Coordinator`'s `Accepted`/`Completed` events so the API can
 answer **"was the order with tag X processed?"** via `GET /api/order/{tag}`.
+
+### Crash recovery (at-least-once, idempotent)
+
+Event sourcing rebuilds actor state from the journal after a crash — but two handoffs cross
+out of the journal (to the ephemeral `Operator`, and to the dedup table), so recovery needs
+care to avoid a frozen car or a lost order:
+
+- **Controller — re-dispatch the in-flight move.** The `waiting` latch is persisted, but the
+  `Move`/`Stop` it waits on goes to the stateless `Operator`. A crash before the Operator
+  reports back would replay `waiting=true` with the command gone, freezing the car forever.
+  On `RecoveryCompleted` the Controller re-sends that command; the latch stays set, so no
+  duplicate is issued and the Operator's report clears it as usual.
+- **Ingress dedup — claim *after* accept, never before.** `OrderConsumer` **checks**
+  `processed_orders` up front to drop re-sent tags, but **claims** the tag only *after* the
+  `Coordinator` durably accepts. Claiming first would lose orders: a crash between the claim
+  and the accept leaves the Kafka offset uncommitted, so the message is redelivered — and the
+  already-claimed tag would be dropped, accepted by nobody. Claiming last means a crash there
+  simply reprocesses the order; the Coordinator's idempotent accept covers that redelivery.
 
 ### Live vs durable: which source to read?
 
