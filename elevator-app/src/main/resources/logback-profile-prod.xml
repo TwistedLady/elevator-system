@@ -1,0 +1,27 @@
+<!-- PROD logging: lean levels, one-line JSON for log tooling. Included when app.profile=prod. -->
+<included>
+    <!-- JSON to stdout, one event per line (uses logback's built-in encoder; no extra dep). -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+    </appender>
+
+    <!-- JSON rolling file: logs/app.json, 10MB per file, 7 days kept, 200MB total cap. -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/app.json</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/app-%d{yyyy-MM-dd}.%i.json</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>200MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+    </appender>
+
+    <logger name="org.apache.kafka" level="WARN"/>
+    <logger name="pl.feelcodes.elevator" level="INFO"/>
+
+    <root level="INFO">
+        <appender-ref ref="JSON_CONSOLE"/>
+        <appender-ref ref="JSON_FILE"/>
+    </root>
+</included>

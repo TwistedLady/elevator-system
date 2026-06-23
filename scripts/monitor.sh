@@ -47,7 +47,7 @@ center() {
 
 discover() {
   curl -s "$API/api/elevator" 2>/dev/null \
-    | grep -oE '"elevatorName":"[^"]*"' | sed -E 's/.*:"([^"]*)"/\1/' | sort -u
+    | grep -oE '"elevatorName":"[^"]*"' | sed -E 's/.*:"([^"]*)"/\1/' | sort -u -V
 }
 
 field() { grep -oE "\"$2\":\"?[^\",}]*\"?" <<<"$1" | head -1 | sed -E 's/.*:"?([^"]*)"?$/\1/'; }

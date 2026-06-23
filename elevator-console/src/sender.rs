@@ -52,13 +52,84 @@ fn send_order(
     }
 }
 
+/// Send one order and wait for it to flush. Prints nothing — the TUI calls this on a
+/// background thread, so stdout output would corrupt the alternate screen. The CLI caller
+/// prints its own confirmation.
 pub fn send_one(brokers: &str, topic: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     let producer = make_producer(brokers)?;
     let tag = format!("cli-{}", std::process::id());
     send_order(&producer, topic, elevator, floor, &tag)?;
     producer.flush(Duration::from_secs(10))?;
-    println!("sent order: elevator={elevator} floor={floor} tag={tag}");
     Ok(())
+}
+
+/// The deterministic tag for the i-th order of simulation worker `tid` in run `run_id`. Shared so
+/// the TUI can reconstruct the tags it sent and check them against the API's order-status endpoint.
+/// `run_id` makes each run's tags unique so a re-run isn't deduped away (and shows fresh progress).
+pub fn sim_tag(run_id: u64, tid: u64, i: u64) -> String {
+    format!("sim-{run_id}-{tid}-{i}")
+}
+
+/// Enumerate up to `limit` of the tags a simulation of `count` orders on `threads` workers will
+/// produce — same per-worker split as `run_simulation`, so these match what was actually sent.
+pub fn sim_tags(run_id: u64, count: u64, threads: u64, limit: usize) -> Vec<String> {
+    let threads = threads.max(1);
+    let per = count / threads;
+    let rem = count % threads;
+    let mut tags = Vec::new();
+    for tid in 0..threads {
+        let n = per + if tid < rem { 1 } else { 0 };
+        for i in 0..n {
+            if tags.len() >= limit {
+                return tags;
+            }
+            tags.push(sim_tag(run_id, tid, i));
+        }
+    }
+    tags
+}
+
+/// Core simulation loop, shared by the CLI and the TUI. Sends `count` random orders across
+/// `elevators` using `threads` producers, bumping `sent` after each one so a caller on another
+/// thread can poll progress. Does no printing — that's the caller's concern.
+///
+/// `pace` is an optional target wall-clock duration for the whole run: each worker spreads its
+/// share of the orders evenly across it, so the TUI progress bar visibly fills instead of
+/// jumping to 100% instantly. Pass `None` (the CLI) to send as fast as possible. Pacing only
+/// ever slows things down — when the orders take longer to send than `pace`, it has no effect.
+#[allow(clippy::too_many_arguments)] // a config struct would be more ceremony than it's worth here
+pub fn run_simulation(
+    brokers: &str,
+    topic: &str,
+    count: u64,
+    threads: u64,
+    elevators: &[String],
+    max_floor: i32,
+    sent: &AtomicU64,
+    pace: Option<Duration>,
+    run_id: u64,
+) -> Result<(), BoxErr> {
+    if elevators.is_empty() {
+        return Err("need at least one elevator".into());
+    }
+    let threads = threads.max(1);
+    let per = count / threads;
+    let rem = count % threads;
+
+    // Scoped threads can borrow `sent`, `elevators`, `brokers`, `topic` without Arc/clone.
+    std::thread::scope(|s| -> Result<(), BoxErr> {
+        let mut handles = Vec::new();
+        for t in 0..threads {
+            let n = per + if t < rem { 1 } else { 0 };
+            handles.push(
+                s.spawn(move || worker(brokers, topic, t, n, elevators, max_floor, sent, pace, run_id)),
+            );
+        }
+        for h in handles {
+            h.join().expect("worker thread panicked")?;
+        }
+        Ok(())
+    })
 }
 
 pub fn simulate(
@@ -69,33 +140,17 @@ pub fn simulate(
     elevators: &[String],
     max_floor: i32,
 ) -> Result<(), BoxErr> {
-    if elevators.is_empty() {
-        return Err("need at least one elevator".into());
-    }
-    let threads = threads.max(1);
     let sent = AtomicU64::new(0);
-    let per = count / threads;
-    let rem = count % threads;
-
     println!(
-        "simulating {count} orders across {} elevator(s) on {threads} thread(s) → '{topic}'…",
-        elevators.len()
+        "simulating {count} orders across {} elevator(s) on {} thread(s) → '{topic}'…",
+        elevators.len(),
+        threads.max(1)
     );
     let start = Instant::now();
 
-    // Scoped threads can borrow `sent`, `elevators`, `brokers`, `topic` without Arc/clone.
-    std::thread::scope(|s| -> Result<(), BoxErr> {
-        let sent = &sent;
-        let mut handles = Vec::new();
-        for t in 0..threads {
-            let n = per + if t < rem { 1 } else { 0 };
-            handles.push(s.spawn(move || worker(brokers, topic, t, n, elevators, max_floor, sent)));
-        }
-        for h in handles {
-            h.join().expect("worker thread panicked")?;
-        }
-        Ok(())
-    })?;
+    // Unique per CLI invocation so seeds across runs don't collide (dedup) on tags.
+    let run_id = std::process::id() as u64;
+    run_simulation(brokers, topic, count, threads, elevators, max_floor, &sent, None, run_id)?;
 
     let secs = start.elapsed().as_secs_f64();
     let total = sent.load(Ordering::Relaxed);
@@ -104,6 +159,7 @@ pub fn simulate(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn worker(
     brokers: &str,
     topic: &str,
@@ -112,18 +168,29 @@ fn worker(
     elevators: &[String],
     max_floor: i32,
     sent: &AtomicU64,
+    pace: Option<Duration>,
+    run_id: u64,
 ) -> Result<(), BoxErr> {
     let producer = make_producer(brokers)?;
     let mut rng = rand::thread_rng();
+    // Spread this worker's `n` orders across `pace`. Skip sub-millisecond delays: thread::sleep
+    // can't honour them and big runs (tiny per-order share) should just go full speed anyway.
+    let delay = pace
+        .filter(|_| n > 0)
+        .map(|p| p / n as u32)
+        .filter(|d| *d >= Duration::from_millis(1));
     for i in 0..n {
         let elevator = &elevators[rng.gen_range(0..elevators.len())];
         let floor = rng.gen_range(0..=max_floor);
-        let tag = format!("sim-{tid}-{i}");
+        let tag = sim_tag(run_id, tid, i);
         send_order(&producer, topic, elevator, floor, &tag)?;
         if i % 1000 == 0 {
             producer.poll(Duration::from_millis(0)); // serve delivery callbacks
         }
         sent.fetch_add(1, Ordering::Relaxed);
+        if let Some(d) = delay {
+            std::thread::sleep(d);
+        }
     }
     producer.flush(Duration::from_secs(30))?;
     Ok(())

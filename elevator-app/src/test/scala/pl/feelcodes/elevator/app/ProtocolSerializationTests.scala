@@ -5,7 +5,7 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.serialization.{SerializationExtension, Serializers}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.app.actors.{Controller, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
 import pl.feelcodes.elevator.common.core.*
 
 /**
@@ -23,8 +23,9 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
       |  allow-java-serialization = off
       |  warn-about-java-serializer-usage = on
       |  serialization-bindings {
-      |    "pl.feelcodes.elevator.app.actors.Controller$Command" = jackson-cbor
-      |    "pl.feelcodes.elevator.app.actors.Operator$Command"   = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.Controller$Command"   = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.Operator$Command"     = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"  = jackson-cbor
       |  }
       |}
       |""".stripMargin
@@ -56,4 +57,16 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("Operator.Move round-trips (data only — no Elevator/Engine)"):
     val msg = Operator.Move("lift-a", state, owc)
+    assert(roundTrip(msg) == msg)
+
+  test("Operator.Stop round-trips"):
+    val msg = Operator.Stop("lift-a", state)
+    assert(roundTrip(msg) == msg)
+
+  test("Controller.Stopped round-trips (Operator -> Controller)"):
+    val msg = Controller.Stopped(state)
+    assert(roundTrip(msg) == msg)
+
+  test("Coordinator.Reached round-trips (Controller -> Coordinator across nodes)"):
+    val msg = Coordinator.Reached(5)
     assert(roundTrip(msg) == msg)

@@ -1,6 +1,10 @@
 spring:
-  mvc:
-    log-request-details: true
+  profiles:
+    active: test          # default; override with SPRING_PROFILES_ACTIVE=prod (env wins)
+  r2dbc:                  # read-only access to the order_status read-model (same env knobs as the app)
+    url: r2dbc:postgresql://${ELEVATOR_PG_HOST:localhost}:${ELEVATOR_PG_PORT:5432}/${ELEVATOR_PG_DATABASE:elevator}
+    username: ${ELEVATOR_PG_USER:elevator}
+    password: ${ELEVATOR_PG_PASSWORD:elevator}
   kafka:
     bootstrap-servers: localhost:9092
     producer:
@@ -13,6 +17,9 @@ spring:
 elevator:
   command-topic: elevator-commands
   state-topic: elevator-state
+  # Order-validation params (overridable via env ELEVATOR_MAXFLOOR / ELEVATOR_ELEVATORS).
+  max-floor: 15
+  elevators: e1,e2,e3,e4,e5,e6,e7,e8,e9,e10
 management:
   endpoints:
     web:
@@ -26,6 +33,7 @@ management:
       group:
         readiness:
           include: readinessState,kafka  # broker must be reachable to be "ready"
+# Logging strategy lives in the profile files: application-test.yml / application-prod.yml.
 logging:
   level:
-    org.springframework: INFO
+    org.apache.kafka: WARN              # silence consumer/producer coordination chatter (both profiles)

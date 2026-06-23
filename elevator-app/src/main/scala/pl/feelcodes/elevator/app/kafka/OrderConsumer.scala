@@ -1,11 +1,8 @@
-package pl.feelcodes.elevator.app
+package pl.feelcodes.elevator.app.kafka
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.typesafe.config.Config
 import org.apache.kafka.clients.consumer.ConsumerConfig
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import org.apache.kafka.common.serialization.{ByteArrayDeserializer, StringDeserializer, StringSerializer}
+import org.apache.kafka.common.serialization.{ByteArrayDeserializer, StringDeserializer}
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityRef
@@ -16,28 +13,21 @@ import org.apache.pekko.stream.KillSwitches
 import org.apache.pekko.stream.scaladsl.{Flow, Keep}
 import org.apache.pekko.util.Timeout
 import pl.feelcodes.elevator.app.actors.Coordinator
-import pl.feelcodes.elevator.common.dto.{ElevatorStateDto, ElevatorOrderDto}
+import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 
-import java.util.Properties
-
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.*
 
-object Json {
-  private val mapper = ObjectMapper().registerModule(DefaultScalaModule)
-
-  def encode[T](obj: T): String = mapper.writeValueAsString(obj)
-
-  def decode[T](bytes: Array[Byte], clazz: Class[T]): T = mapper.readValue(bytes, clazz)
-}
-
-object Kafka {
+/** Inbound Kafka boundary: stream orders off the command topic, drop duplicates ([[OrderDedup]]),
+  * and hand the first-seen ones to the matching [[Coordinator]]. */
+object OrderConsumer {
   private final case class KafkaConf(bootstrapServers: String,
                                      groupId: String,
                                      commandTopic: String)
 
-  def runKafkaToCoordinator(system: ActorSystem[?],
-                            coordinatorProvider: String => EntityRef[Coordinator.Command]): Unit = {
+  def run(system: ActorSystem[?],
+          coordinatorProvider: String => EntityRef[Coordinator.Command],
+          dedup: OrderDedup): Unit = {
     given ActorSystem[?] = system
     given ExecutionContext = system.executionContext
     given Timeout = 3.seconds
@@ -57,11 +47,16 @@ object Kafka {
       Flow[CommittableMessage[String, Array[Byte]]]
         .mapAsync(1) { msg =>
           val dto = Json.decode(msg.record.value(), classOf[ElevatorOrderDto])
-          val coordinator = coordinatorProvider(dto.elevatorName)
 
-          coordinator
-            .ask[Coordinator.Ack](replyTo => Coordinator.Process(dto, replyTo))
-            .map(_ => msg.committableOffset)
+          // Durable dedup at the boundary: claim the tag; forward only first-time orders.
+          dedup.firstSeen(dto.tag).flatMap {
+            case false =>
+              Future.successful(msg.committableOffset) // duplicate, already processed — drop
+            case true =>
+              coordinatorProvider(dto.elevatorName)
+                .ask[Coordinator.Ack](replyTo => Coordinator.Process(dto, replyTo))
+                .map(_ => msg.committableOffset)
+          }
         }
 
     val (killSwitch, done) =
@@ -87,28 +82,5 @@ object Kafka {
       groupId = cfg.getString("group-id"),
       commandTopic = cfg.getString("command-topic")
     )
-  }
-}
-
-/** Publishes confirmed elevator state to the `elevator-state` topic so the Spring API
-  * (and anything else) can monitor movement. Keyed by elevator name. */
-final class StatePublisher(producer: KafkaProducer[String, String], topic: String) {
-  def publish(dto: ElevatorStateDto): Unit =
-    producer.send(new ProducerRecord[String, String](topic, dto.elevatorName, Json.encode(dto)))
-}
-
-object StatePublisher {
-  def apply(system: ActorSystem[?]): StatePublisher = {
-    val cfg = system.settings.config.getConfig("elevator.kafka")
-
-    val props = new Properties()
-    props.put("bootstrap.servers", cfg.getString("bootstrap-servers"))
-    props.put("key.serializer", classOf[StringSerializer].getName)
-    props.put("value.serializer", classOf[StringSerializer].getName)
-
-    val producer = new KafkaProducer[String, String](props)
-    system.classicSystem.registerOnTermination(() => producer.close())
-
-    new StatePublisher(producer, cfg.getString("state-topic"))
   }
 }

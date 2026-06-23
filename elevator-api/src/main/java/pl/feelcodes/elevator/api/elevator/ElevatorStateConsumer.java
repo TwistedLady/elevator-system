@@ -1,5 +1,6 @@
-package pl.feelcodes.elevator.api.monitor;
+package pl.feelcodes.elevator.api.elevator;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import pl.feelcodes.elevator.common.dto.ElevatorStateDto;
 
 import java.time.Duration;
 import java.util.List;
@@ -20,15 +22,16 @@ import java.util.UUID;
 
 /**
  * Background Kafka consumer that tails the elevator-state topic and keeps the
- * {@link StateStore} updated with the latest state per elevator. Plain kafka-clients
+ * {@link ElevatorStateStore} updated with the latest state per elevator. Plain kafka-clients
  * on a daemon thread — no extra framework, easy to reason about.
  */
 @Component
-public class StateConsumer {
+public class ElevatorStateConsumer {
 
-    private static final Logger log = LoggerFactory.getLogger(StateConsumer.class);
+    private static final Logger log = LoggerFactory.getLogger(ElevatorStateConsumer.class);
 
-    private final StateStore store;
+    private final ElevatorStateStore store;
+    private final ObjectMapper objectMapper;
     private final String bootstrapServers;
     private final String stateTopic;
 
@@ -36,10 +39,12 @@ public class StateConsumer {
     private volatile KafkaConsumer<String, String> consumer;
     private Thread thread;
 
-    public StateConsumer(StateStore store,
-                         @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
-                         @Value("${elevator.state-topic}") String stateTopic) {
+    public ElevatorStateConsumer(ElevatorStateStore store,
+                                 ObjectMapper objectMapper,
+                                 @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
+                                 @Value("${elevator.state-topic}") String stateTopic) {
         this.store = store;
+        this.objectMapper = objectMapper;
         this.bootstrapServers = bootstrapServers;
         this.stateTopic = stateTopic;
     }
@@ -69,7 +74,11 @@ public class StateConsumer {
             while (running) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(500));
                 for (ConsumerRecord<String, String> record : records) {
-                    store.put(record.key(), record.value());
+                    try {
+                        store.put(record.key(), objectMapper.readValue(record.value(), ElevatorStateDto.class));
+                    } catch (Exception parseError) {
+                        log.warn("skipping unparseable state message for '{}': {}", record.key(), parseError.getMessage());
+                    }
                 }
             }
         } catch (WakeupException expectedOnShutdown) {

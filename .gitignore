@@ -13,8 +13,12 @@ dist/
 
 # Runtime / logs
 .run/
+logs/
 *.log
 **/demo-snapshots/
+
+# Local demo fleet (copy scripts/fleet.example.txt → scripts/fleet.txt); the example is tracked
+scripts/fleet.txt
 
 # OS
 .DS_Store

@@ -1,0 +1,17 @@
+# PROD profile: lean levels, one-line JSON to console + a rolling logs/api.json file.
+# Uses Spring Boot 3.4 native structured logging (no extra dependency).
+logging:
+  level:
+    pl.feelcodes.elevator: INFO
+    org.springframework: WARN
+  structured:
+    format:
+      console: logstash   # stdout as one-line JSON
+      file: logstash      # logs/api.json as one-line JSON
+  file:
+    name: logs/api.json
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+      total-size-cap: 200MB

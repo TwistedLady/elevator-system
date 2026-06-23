@@ -4,7 +4,9 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, Paragraph, Tabs, Wrap};
+use ratatui::widgets::{
+    Axis, Block, BorderType, Chart, Dataset, Gauge, GraphType, Paragraph, Tabs, Wrap,
+};
 use ratatui::Frame;
 
 use super::app::{App, ElevatorState, View, TREND_WINDOW_SECS};
@@ -35,8 +37,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match app.view {
         View::Chart => draw_chart(frame, app, chunks[1]),
         View::Trend => draw_trend(frame, app, chunks[1]),
+        View::Order => draw_order(frame, app, chunks[1]),
+        View::Sim => draw_sim(frame, app, chunks[1]),
         View::Health => draw_health(frame, app, chunks[1]),
         View::Logs => draw_logs(frame, app, chunks[1]),
+        View::K8s => draw_k8s(frame, app, chunks[1]),
     }
     draw_footer(frame, app, chunks[2]);
 }
@@ -50,9 +55,23 @@ fn retro_block(title: &str) -> Block<'_> {
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     let titles: Vec<Line> = View::ALL.iter().map(|v| Line::from(v.title())).collect();
+    // Header title carries the live cluster MODE so fast/slow is visible on every tab.
+    let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
+        "fast" => ("FAST", Color::Cyan),
+        "slow" => ("SLOW", Color::Magenta),
+        _ => ("MODE ?", Color::DarkGray),
+    };
+    let header = retro_block(" ▌ ELEVATOR CONTROL ▐ ").title_top(
+        Line::from(vec![
+            Span::from(format!(" {mode_txt} ")).fg(Color::Black).bg(mode_color).bold(),
+            Span::from(format!(" ⏱ {} ", app.now_clock())).cyan().bold(),
+        ])
+        .right_aligned(),
+    );
+    let clock = header;
     let tabs = Tabs::new(titles)
         .select(app.view.index())
-        .block(retro_block(" ▌ ELEVATOR CONTROL ▐ "))
+        .block(clock)
         .style(Style::new().fg(Color::Green))
         .highlight_style(Style::new().fg(Color::Black).bg(Color::Yellow).bold())
         .divider(Span::from("│").dark_gray());
@@ -61,13 +80,24 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" BUILDING ");
-    if app.latest.is_empty() {
-        let p = Paragraph::new("waiting for elevator state…".dim()).block(block);
-        frame.render_widget(p, area);
+    // Backend unreachable, or reachable but no state yet -> show a clear waiting banner.
+    if !app.health.reachable || app.latest.is_empty() {
+        frame.render_widget(Paragraph::new(waiting_line(app)).block(block), area);
         return;
     }
 
-    let cars: Vec<&ElevatorState> = app.latest.values().collect();
+    let mut cars: Vec<&ElevatorState> = app
+        .latest
+        .values()
+        .filter(|c| app.elevator_matches(&c.elevator_name))
+        .collect();
+    if cars.is_empty() {
+        let msg = format!("no elevators match /{}/", app.elevator_filter);
+        frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
+        return;
+    }
+    // Natural order so columns read e1, e2, … e10 (not the lexicographic e1, e10, e2).
+    cars.sort_by(|a, b| crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name)));
     let top = cars.iter().map(|c| c.floor).max().unwrap_or(0).max(0);
     let bottom = cars.iter().map(|c| c.floor).min().unwrap_or(0).min(0);
 
@@ -98,22 +128,39 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" FLOOR OVER TIME ");
-    if app.history.is_empty() {
-        let p = Paragraph::new("waiting for elevator state…".dim()).block(block);
-        frame.render_widget(p, area);
+    if !app.health.reachable || app.history.is_empty() {
+        frame.render_widget(Paragraph::new(waiting_line(app)).block(block), area);
         return;
     }
 
-    // X window: the last TREND_WINDOW_SECS seconds, scrolling with "now".
-    let x_hi = app.now_secs().max(TREND_WINDOW_SECS);
+    // Scroll continuously with real time (EKG-style): the right edge is "now", so idle cars draw
+    // flat horizontal lines that keep moving left. The x-axis is labelled with local clock time
+    // (below), so you still read exactly when each point is from.
+    let x_hi = app.now_secs();
     let x_lo = x_hi - TREND_WINDOW_SECS;
 
     // Own the point vectors locally so the datasets can borrow them for this frame.
-    let series: Vec<(String, Vec<(f64, f64)>)> = app
+    // Each line is held flat to the right edge (now) at the elevator's current floor, so an idle
+    // car shows a horizontal line scrolling left instead of stopping at its last update.
+    let mut series: Vec<(String, Vec<(f64, f64)>)> = app
         .history
         .iter()
-        .map(|(name, pts)| (name.clone(), pts.iter().copied().collect()))
+        .filter(|(name, _)| app.elevator_matches(name))
+        .map(|(name, pts)| {
+            let mut v: Vec<(f64, f64)> = pts.iter().copied().collect();
+            if let Some(state) = app.latest.get(name) {
+                v.push((x_hi, state.floor as f64));
+            }
+            (name.clone(), v)
+        })
         .collect();
+    if series.is_empty() {
+        let msg = format!("no elevators match /{}/", app.elevator_filter);
+        frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
+        return;
+    }
+    // Natural order so the legend reads e1, e2, … e10 and colours stay stable.
+    series.sort_by(|a, b| crate::natural_key(&a.0).cmp(&crate::natural_key(&b.0)));
 
     // Y range from the data, padded so a flat line isn't on the border.
     let mut y_lo = f64::MAX;
@@ -152,7 +199,12 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
             Axis::default()
                 .style(Style::new().dark_gray())
                 .bounds([x_lo, x_hi])
-                .labels([Span::from(format!("{x_lo:.0}s")), Span::from(format!("{x_hi:.0}s"))]),
+                // Local wall-clock time of the data at each x-position (left / middle / right edge).
+                .labels([
+                    Span::from(app.clock_at(x_lo)),
+                    Span::from(app.clock_at((x_lo + x_hi) / 2.0)),
+                    Span::from(app.clock_at(x_hi)),
+                ]),
         )
         .y_axis(
             Axis::default()
@@ -163,6 +215,122 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
         );
 
     frame.render_widget(chart, area);
+}
+
+fn draw_order(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" ORDER ");
+    let mut lines: Vec<Line> = vec![
+        Line::from("Send one elevator to a floor.".white()),
+        Line::from("Type below:  <elevator> <floor>   e.g.  e3 7".dim()),
+        Line::from(""),
+    ];
+    if !app.message.is_empty() {
+        lines.push(Line::from(app.message.clone().cyan()));
+        lines.push(Line::from(""));
+    }
+    // Session memory: the whole fleet seen so far (not just currently-reporting cars) and the
+    // tallest floor observed, so the hint stays accurate even after a car goes quiet.
+    let fleet = app.fleet();
+    let known = if fleet.is_empty() {
+        "(none seen yet)".to_string()
+    } else {
+        fleet.join(", ")
+    };
+    lines.push(Line::from(vec![
+        Span::from("fleet (session): ").dark_gray(),
+        Span::from(known).green(),
+    ]));
+    lines.push(Line::from(vec![
+        Span::from("floors seen:     ").dark_gray(),
+        Span::from(format!("0..{}", app.seen_floor_max)).green(),
+    ]));
+
+    frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+}
+
+fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" SIMULATOR ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::vertical([
+        Constraint::Length(3), // status text
+        Constraint::Length(1), // "sent" gauge
+        Constraint::Length(1), // labels
+        Constraint::Length(1), // "processed" gauge (verified via the API)
+        Constraint::Min(0),    // help
+    ])
+    .split(inner);
+
+    match &app.sim {
+        None => {
+            let p = Paragraph::new(vec![
+                Line::from("No simulation running.".dim()),
+                Line::from("Type how many orders to fire below, then press Enter.".dim()),
+            ]);
+            frame.render_widget(p, rows[0]);
+        }
+        Some(sim) => {
+            let sent = sim.sent();
+            let secs = sim.secs();
+            let rate = if secs > 0.0 { sent as f64 / secs } else { 0.0 };
+            let status = if sim.finished() {
+                "done ✓".green().bold()
+            } else {
+                "running…".yellow().bold()
+            };
+            let info = Paragraph::new(vec![
+                Line::from(vec![Span::from("status   ").white(), status]),
+                Line::from(
+                    format!(
+                        "{sent}/{} orders   {rate:.0} msg/s   {secs:.2}s   across {} elevators",
+                        sim.total, sim.elevators
+                    )
+                    .dark_gray(),
+                ),
+            ]);
+            frame.render_widget(info, rows[0]);
+
+            // "sent" gauge — how many orders reached Kafka.
+            let sent_pct = (sim.ratio() * 100.0).round() as u16;
+            let sent_fill = if sim.finished() { Color::Green } else { Color::Cyan };
+            frame.render_widget(
+                Gauge::default()
+                    .gauge_style(Style::new().fg(sent_fill).bg(Color::Black).bold())
+                    .ratio(sim.ratio())
+                    .label(format!("sent  {sent}/{}  ({sent_pct}%)", sim.total)),
+                rows[1],
+            );
+
+            // Per-status verification (polled from the API until all DONE): a single bar split
+            // into DONE (green) · PROGRESS (yellow) · not-yet-seen (grey).
+            let total = sim.checked.max(1);
+            let done = sim.done();
+            let prog = sim.in_progress();
+            let pending = sim.pending();
+            frame.render_widget(
+                Paragraph::new(
+                    format!(
+                        "order status (API):  DONE {done}  ·  PROGRESS {prog}  ·  pending {pending}   / {}",
+                        sim.checked
+                    )
+                    .dark_gray(),
+                ),
+                rows[2],
+            );
+
+            let bar_w = rows[3].width as usize;
+            let done_w = (bar_w as u64 * done / total) as usize;
+            let prog_w = (bar_w as u64 * prog / total) as usize;
+            let rest_w = bar_w.saturating_sub(done_w + prog_w);
+            let bar = Line::from(vec![
+                Span::styled("█".repeat(done_w), Style::new().fg(Color::Green)),
+                Span::styled("█".repeat(prog_w), Style::new().fg(Color::Yellow)),
+                Span::styled("░".repeat(rest_w), Style::new().fg(Color::DarkGray)),
+            ]);
+            frame.render_widget(Paragraph::new(bar), rows[3]);
+        }
+    }
 }
 
 fn draw_health(frame: &mut Frame, app: &App, area: Rect) {
@@ -214,10 +382,67 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
     );
     let block = retro_block(&title);
 
-    // Show only the last lines that fit (minus the 2 border rows).
+    // Wrap long lines to the panel width so nothing is cut off at the border, then keep only the
+    // last `visible` rows so the newest output stays at the bottom. Wrap from the bottom up so we
+    // never process more than a screenful of lines.
+    let inner_w = area.width.saturating_sub(2).max(1) as usize;
     let visible = area.height.saturating_sub(2) as usize;
-    let start = matched.len().saturating_sub(visible);
-    let lines: Vec<Line> = matched.iter().skip(start).map(|l| log_line(l)).collect();
+
+    let mut rows: Vec<Line> = Vec::new();
+    for l in matched.iter().rev() {
+        let mut wrapped = wrap_log_line(l, inner_w);
+        wrapped.append(&mut rows);
+        rows = wrapped;
+        if rows.len() >= visible {
+            break;
+        }
+    }
+    let start = rows.len().saturating_sub(visible);
+    let shown: Vec<Line> = rows.split_off(start);
+
+    frame.render_widget(Paragraph::new(shown).block(block), area);
+}
+
+fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" KUBERNETES · elevator (kind) ");
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Mode banner.
+    let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
+        "fast" => ("FAST  (~instant moves)", Color::Cyan),
+        "slow" => ("SLOW  (CPU-burning moves)", Color::Magenta),
+        other => (other, Color::DarkGray),
+    };
+    lines.push(Line::from(vec![
+        Span::from("mode  ").white(),
+        Span::styled(format!(" {mode_txt} "), Style::new().fg(Color::Black).bg(mode_color).bold()),
+    ]));
+    lines.push(Line::from(""));
+
+    if !app.k8s.reachable {
+        lines.push(Line::from(format!("kubectl unavailable — {}", app.k8s.note).red()));
+        frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+        return;
+    }
+
+    // Pod table.
+    lines.push(Line::from(
+        format!("  {:<34}{:<10}{:<8}{}", "POD", "STATUS", "READY", "RESTARTS").dark_gray(),
+    ));
+    for p in &app.k8s.pods {
+        let st = match p.status.as_str() {
+            "Running" => Style::new().fg(Color::Green),
+            "Pending" | "ContainerCreating" => Style::new().fg(Color::Yellow),
+            _ => Style::new().fg(Color::Red),
+        };
+        let ready_color = if p.ready == "true" { Color::Green } else { Color::Yellow };
+        lines.push(Line::from(vec![
+            Span::from(format!("  {:<34}", p.name)).white(),
+            Span::styled(format!("{:<10}", p.status), st),
+            Span::from(format!("{:<8}", p.ready)).fg(ready_color),
+            Span::from(p.restarts.clone()).dark_gray(),
+        ]));
+    }
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
@@ -225,13 +450,42 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
     let content = match app.view {
-        View::Chart => Line::from(vec![
-            Span::from("> ").green().bold(),
-            Span::from(app.input.clone()).white(),
-            Span::from("█").green(),
-            Span::from("   "),
-            Span::from(app.message.clone()).dark_gray(),
-        ]),
+        View::Chart | View::Trend => {
+            let mut spans = vec![
+                Span::from("filter ▸ ").green().bold(),
+                Span::from(app.elevator_filter.clone()).white(),
+                Span::from("█").green(),
+            ];
+            if app.elevator_re_err {
+                spans.push(Span::from("  invalid regex").red());
+            }
+            spans.push(Span::from("   Enter: clear · Tab: switch · Esc: quit").dark_gray());
+            Line::from(spans)
+        }
+        View::Order => {
+            let mut spans = vec![
+                Span::from("order ▸ ").green().bold(),
+                Span::from(app.order_input.clone()).white(),
+                Span::from("█").green(),
+                Span::from("   <elevator> <floor> · Enter: send").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
+        View::Sim => {
+            let mut spans = vec![
+                Span::from("sim ▸ ").green().bold(),
+                Span::from(app.sim_input.clone()).white(),
+                Span::from("█").green(),
+                Span::from("   number of orders · Enter: run").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
         View::Logs => {
             let mut spans = vec![
                 Span::from("filter ▸ ").green().bold(),
@@ -244,25 +498,93 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::from("   Enter: clear · ←/→: source · Esc: quit").dark_gray());
             Line::from(spans)
         }
-        View::Health | View::Trend => Line::from(
+        View::Health => Line::from(
             "Tab/Shift-Tab: switch view   ·   Esc: quit".dim(),
         ),
+        View::K8s => {
+            let mut spans = vec![
+                Span::from("change configmap ▸ ").green().bold(),
+                Span::from("f").fg(Color::Black).bg(Color::Cyan).bold(),
+                Span::from(": fast  ").dark_gray(),
+                Span::from("s").fg(Color::Black).bg(Color::Magenta).bold(),
+                Span::from(": slow").dark_gray(),
+                Span::from("   (swaps the app configmap + rolls the pod)").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
     };
     frame.render_widget(Paragraph::new(content).block(block).wrap(Wrap { trim: false }), area);
 }
 
 // ---- small helpers --------------------------------------------------------
 
-fn log_line(s: &str) -> Line<'static> {
+/// Banner for the data views: tells "backend is down" apart from "backend up, no traffic yet".
+fn waiting_line(app: &App) -> Line<'static> {
+    if !app.health.reachable {
+        Line::from("⏳  waiting for backend — elevator-api unreachable on :8080".yellow())
+    } else {
+        Line::from("waiting for elevator state…".dim())
+    }
+}
+
+/// Colour for a log line, by severity keyword.
+fn log_style(s: &str) -> Style {
     let upper = s.to_ascii_uppercase();
-    let style = if upper.contains("ERROR") {
+    if upper.contains("ERROR") {
         Style::new().fg(Color::Red)
     } else if upper.contains("WARN") {
         Style::new().fg(Color::Yellow)
     } else {
         Style::new().fg(Color::Gray)
+    }
+}
+
+/// Render one log line for the Logs view: shorten its thread name, then hard-wrap it to `width`
+/// columns so long lines aren't cut off at the border. One styled row per wrapped chunk.
+fn wrap_log_line(s: &str, width: usize) -> Vec<Line<'static>> {
+    let text = shorten_thread(s);
+    let style = log_style(&text);
+    let chars: Vec<char> = text.chars().collect();
+    if chars.is_empty() {
+        return vec![Line::from("")];
+    }
+    chars
+        .chunks(width.max(1))
+        .map(|chunk| Line::styled(chunk.iter().collect::<String>(), style))
+        .collect()
+}
+
+/// Display-only: shorten the thread name in the first `[...]` so lines fit the narrow Logs view.
+/// e.g. `[elevator-cluster-pekko.actor.default-dispatcher-18]` -> `[e-c-p.a.d-d-18]`.
+/// Each run of letters collapses to its first letter; digits and the `-`/`.`/`_` separators stay.
+fn shorten_thread(s: &str) -> String {
+    let (Some(open), Some(close)) = (s.find('['), s.find(']')) else {
+        return s.to_string();
     };
-    Line::styled(s.to_string(), style)
+    if close <= open + 1 {
+        return s.to_string();
+    }
+    let short = abbreviate(&s[open + 1..close]);
+    format!("{}[{}]{}", &s[..open], short, &s[close + 1..])
+}
+
+fn abbreviate(name: &str) -> String {
+    let mut out = String::new();
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_alphabetic() {
+            out.push(c); // keep the first letter of the run, drop the rest
+            while chars.peek().is_some_and(|n| n.is_alphabetic()) {
+                chars.next();
+            }
+        } else {
+            out.push(c); // digits and separators pass through
+        }
+    }
+    out
 }
 
 fn status_icon(status: &str) -> &'static str {
@@ -282,8 +604,9 @@ fn status_style(status: &str) -> Style {
 }
 
 fn car_glyph(direction: &str, motion: &str) -> char {
+    // Stopped (idle) cars show an X; moving cars show their direction arrow.
     if !motion.eq_ignore_ascii_case("moving") {
-        return '•';
+        return 'X';
     }
     match direction.to_ascii_uppercase().as_str() {
         "UP" => '↑',

@@ -30,20 +30,23 @@ Start the demo broker (from `elevator-system/`):
 docker compose -p elevator-demo -f docker-compose.demo.yml up -d
 ```
 
-### Monitor — live building chart + inline ordering
+### Monitor — tabbed live dashboard
 
 ```bash
 cargo run -- monitor
 ```
 
-Shows a live floor-by-floor chart of every elevator. To order without leaving the
-monitor, type `<elevator> <floor>` and press Enter:
+A retro multi-tab TUI. Switch tabs with **Tab / Shift-Tab**, quit with **Esc**.
+Each tab has its own input line at the bottom (what you type only affects that tab):
 
-```
-lift-01 7      # send lift-01 to floor 7
-lift-02 0      # send lift-02 to the ground floor
-sim 60         # fire 60 random orders across the elevators on screen
-```
+| Tab | Input | What it does |
+|-----|-------|--------------|
+| **① Chart**  | filter | Live floor-by-floor grid of every elevator. Type to show only matching names (regex, e.g. `e1` matches `e1`,`e10`); Enter clears. |
+| **② Trend**  | filter | Floor-over-time line chart; same name filter as Chart. |
+| **③ Order**  | `<elevator> <floor>` | Send one order, e.g. `e3 7`. Lists the known elevator names. |
+| **④ Sim**    | count  | Fire N random orders (e.g. `300`) with a **progress bar**. Small runs are paced over ~2.5s so the bar visibly fills; big runs go full speed. |
+| **⑤ Health** | —      | Actuator `/actuator/health`. Shows a clear "waiting for backend" banner when `elevator-api` is unreachable. |
+| **⑥ Logs**   | filter | Tails the `elevator-app` / `elevator-api` logs (←/→ to switch source); type a regex to filter. Long thread names are abbreviated for width. |
 
 It survives backend/Kafka restarts — the chart stays up and reconnects automatically.
 
@@ -62,7 +65,16 @@ cargo run --release -- simulate
 # crank it: 1,000,000 orders, 8 threads, floors 0..=20
 cargo run --release -- simulate --count 1000000 --threads 8 --max-floor 20 \
     --elevators alpha,beta,gamma,delta
+
+# specify how many elevators by number (generates e1..eN, overrides --elevators)
+cargo run --release -- simulate --elevator-count 6 --count 500
+
+# or read the fleet from a file (one name per line or comma-separated; '#' = comment)
+cargo run --release -- simulate --elevators-file scripts/fleet.txt --count 500
 ```
+
+Source precedence is `--elevator-count` > `--elevators-file` > `--elevators`. Whatever the
+source, names are de-duplicated and natural-sorted (`e1, e2, … e10`) so they stay ordered.
 
 > Use `--release` for the simulator — a debug build is much slower.
 

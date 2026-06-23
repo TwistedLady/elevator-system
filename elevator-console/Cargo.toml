@@ -22,3 +22,5 @@ ureq = { version = "2", default-features = false }
 ratatui = "0.29"
 # Regex log filtering in the Logs view.
 regex = "1"
+# localtime_r, to label the trend x-axis with local wall-clock time (no heavy date crate).
+libc = "0.2"

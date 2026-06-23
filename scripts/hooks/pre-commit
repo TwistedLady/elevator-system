@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Commit gate: the integration test (console `itest`) must pass before a commit is allowed.
+# Enable once per clone:  git config core.hooksPath scripts/hooks
+#
+# Skips (exit 0) when it genuinely cannot test, so it doesn't block every commit:
+#   - SKIP_ITEST=1            explicit override (docs-only change, offline, etc.)
+#   - kind cluster offline    can't run the test -> warn + skip
+# Otherwise it runs the test and BLOCKS the commit (exit 1) on failure.
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+
+if [ "${SKIP_ITEST:-0}" = "1" ]; then
+  echo "pre-commit: SKIP_ITEST=1 -> skipping integration test"
+  exit 0
+fi
+
+if ! kubectl get pods >/dev/null 2>&1; then
+  echo "pre-commit: kind cluster unreachable -> skipping integration test (SKIP_ITEST=1 to silence)"
+  exit 0
+fi
+
+CONSOLE="$ROOT/elevator-console/target/release/elevator-console"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console/target/debug/elevator-console"
+if [ ! -x "$CONSOLE" ]; then
+  echo "pre-commit: console not built -> (cd elevator-console && cargo build --release)"; exit 1
+fi
+
+ensure_forward() {  # <svc> <local:remote>
+  ps -C kubectl -o args= 2>/dev/null | grep -q "port-forward svc/$1 $2" && return
+  nohup kubectl port-forward "svc/$1" "$2" >/dev/null 2>&1 & disown
+  for _ in $(seq 1 15); do (echo > "/dev/tcp/127.0.0.1/${2%%:*}") 2>/dev/null && return; sleep 1; done
+}
+ensure_forward kafka        9094:9094
+ensure_forward elevator-api 8080:8080
+
+echo "pre-commit: running integration test (console itest)…"
+if KAFKA_BOOTSTRAP=localhost:9094 "$CONSOLE" itest --count 12 --timeout 75; then
+  echo "pre-commit: integration test PASSED ✓"
+  exit 0
+fi
+echo "pre-commit: integration test FAILED ✗  -> commit blocked"
+echo "            (override with:  SKIP_ITEST=1 git commit ... )"
+exit 1

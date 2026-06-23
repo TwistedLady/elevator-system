@@ -1,14 +1,34 @@
 # Config lives here, not in the image. Pods read these as environment variables.
 # Change a value -> restart the pod -> new config. The image never changes.
+#
+# The elevator-app has TWO full configmaps, -fast and -slow, identical except for
+# ELEVATOR_OPERATOR_CLASS. app.yaml's single envFrom points at one of them; switching modes
+# = repoint envFrom at the other + rollout restart (the console's K8s tab does this).
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: elevator-app-config
+  name: elevator-app-config-fast
+  labels: { app: elevator-app, mode: fast }
 data:
   ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
   ELEVATOR_KAFKA_GROUP_ID: "elevator-app"
   ELEVATOR_KAFKA_COMMAND_TOPIC: "elevator-commands"
   ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
+  ELEVATOR_PG_HOST: "postgres"
+  ELEVATOR_OPERATOR_CLASS: "FastOperator"   # cheap engine: ~instant moves
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elevator-app-config-slow
+  labels: { app: elevator-app, mode: slow }
+data:
+  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  ELEVATOR_KAFKA_GROUP_ID: "elevator-app"
+  ELEVATOR_KAFKA_COMMAND_TOPIC: "elevator-commands"
+  ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
+  ELEVATOR_PG_HOST: "postgres"
+  ELEVATOR_OPERATOR_CLASS: "SlowOperator"   # heavy SlowEngine: CPU-burning moves
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -19,3 +39,9 @@ data:
   SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
   ELEVATOR_COMMAND_TOPIC: "elevator-commands"
   ELEVATOR_STATE_TOPIC: "elevator-state"
+  # Read-only R2DBC access to the order_status read-model (Service "postgres").
+  ELEVATOR_PG_HOST: "postgres"
+  # Order-validation params (Spring relaxed binding -> elevator.max-floor / elevator.elevators).
+  # The api rejects orders with floor outside 0..MAXFLOOR or an elevator not in the fleet.
+  ELEVATOR_MAXFLOOR: "15"
+  ELEVATOR_ELEVATORS: "e1,e2,e3,e4,e5,e6,e7,e8,e9,e10"
