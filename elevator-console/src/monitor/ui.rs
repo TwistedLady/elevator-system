@@ -41,6 +41,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         View::Sim => draw_sim(frame, app, chunks[1]),
         View::Health => draw_health(frame, app, chunks[1]),
         View::Logs => draw_logs(frame, app, chunks[1]),
+        View::K8s => draw_k8s(frame, app, chunks[1]),
     }
     draw_footer(frame, app, chunks[2]);
 }
@@ -54,10 +55,20 @@ fn retro_block(title: &str) -> Block<'_> {
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     let titles: Vec<Line> = View::ALL.iter().map(|v| Line::from(v.title())).collect();
-    // Live local clock in the header, right-aligned — visible on every tab, so you can read the
-    // time when the SIM bar hits 100% vs when the TREND chart settles and measure the lag.
-    let clock = retro_block(" ▌ ELEVATOR CONTROL ▐ ")
-        .title_top(Line::from(format!(" ⏱ {} ", app.now_clock())).cyan().bold().right_aligned());
+    // Header title carries the live cluster MODE so fast/slow is visible on every tab.
+    let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
+        "fast" => ("FAST", Color::Cyan),
+        "slow" => ("SLOW", Color::Magenta),
+        _ => ("MODE ?", Color::DarkGray),
+    };
+    let header = retro_block(" ▌ ELEVATOR CONTROL ▐ ").title_top(
+        Line::from(vec![
+            Span::from(format!(" {mode_txt} ")).fg(Color::Black).bg(mode_color).bold(),
+            Span::from(format!(" ⏱ {} ", app.now_clock())).cyan().bold(),
+        ])
+        .right_aligned(),
+    );
+    let clock = header;
     let tabs = Tabs::new(titles)
         .select(app.view.index())
         .block(clock)
@@ -217,17 +228,21 @@ fn draw_order(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(app.message.clone().cyan()));
         lines.push(Line::from(""));
     }
-    // Known elevators (natural order) as a hint of valid names.
-    let mut names: Vec<&String> = app.latest.keys().collect();
-    names.sort_by(|a, b| crate::natural_key(a).cmp(&crate::natural_key(b)));
-    let known = if names.is_empty() {
+    // Session memory: the whole fleet seen so far (not just currently-reporting cars) and the
+    // tallest floor observed, so the hint stays accurate even after a car goes quiet.
+    let fleet = app.fleet();
+    let known = if fleet.is_empty() {
         "(none seen yet)".to_string()
     } else {
-        names.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        fleet.join(", ")
     };
     lines.push(Line::from(vec![
-        Span::from("known elevators: ").dark_gray(),
+        Span::from("fleet (session): ").dark_gray(),
         Span::from(known).green(),
+    ]));
+    lines.push(Line::from(vec![
+        Span::from("floors seen:     ").dark_gray(),
+        Span::from(format!("0..{}", app.seen_floor_max)).green(),
     ]));
 
     frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
@@ -388,6 +403,50 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(shown).block(block), area);
 }
 
+fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" KUBERNETES · elevator (kind) ");
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Mode banner.
+    let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
+        "fast" => ("FAST  (~instant moves)", Color::Cyan),
+        "slow" => ("SLOW  (CPU-burning moves)", Color::Magenta),
+        other => (other, Color::DarkGray),
+    };
+    lines.push(Line::from(vec![
+        Span::from("mode  ").white(),
+        Span::styled(format!(" {mode_txt} "), Style::new().fg(Color::Black).bg(mode_color).bold()),
+    ]));
+    lines.push(Line::from(""));
+
+    if !app.k8s.reachable {
+        lines.push(Line::from(format!("kubectl unavailable — {}", app.k8s.note).red()));
+        frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+        return;
+    }
+
+    // Pod table.
+    lines.push(Line::from(
+        format!("  {:<34}{:<10}{:<8}{}", "POD", "STATUS", "READY", "RESTARTS").dark_gray(),
+    ));
+    for p in &app.k8s.pods {
+        let st = match p.status.as_str() {
+            "Running" => Style::new().fg(Color::Green),
+            "Pending" | "ContainerCreating" => Style::new().fg(Color::Yellow),
+            _ => Style::new().fg(Color::Red),
+        };
+        let ready_color = if p.ready == "true" { Color::Green } else { Color::Yellow };
+        lines.push(Line::from(vec![
+            Span::from(format!("  {:<34}", p.name)).white(),
+            Span::styled(format!("{:<10}", p.status), st),
+            Span::from(format!("{:<8}", p.ready)).fg(ready_color),
+            Span::from(p.restarts.clone()).dark_gray(),
+        ]));
+    }
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
     let content = match app.view {
@@ -442,6 +501,20 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         View::Health => Line::from(
             "Tab/Shift-Tab: switch view   ·   Esc: quit".dim(),
         ),
+        View::K8s => {
+            let mut spans = vec![
+                Span::from("change configmap ▸ ").green().bold(),
+                Span::from("f").fg(Color::Black).bg(Color::Cyan).bold(),
+                Span::from(": fast  ").dark_gray(),
+                Span::from("s").fg(Color::Black).bg(Color::Magenta).bold(),
+                Span::from(": slow").dark_gray(),
+                Span::from("   (swaps the app configmap + rolls the pod)").dark_gray(),
+            ];
+            if !app.message.is_empty() {
+                spans.push(Span::from(format!("   {}", app.message)).cyan());
+            }
+            Line::from(spans)
+        }
     };
     frame.render_widget(Paragraph::new(content).block(block).wrap(Wrap { trim: false }), area);
 }

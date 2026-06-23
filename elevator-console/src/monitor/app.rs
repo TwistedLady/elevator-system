@@ -1,13 +1,15 @@
 //! Application state and the logic that mutates it (no rendering, no I/O threads here).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::{Regex, RegexBuilder};
 use serde::Deserialize;
+
+use super::k8s::K8sSnapshot;
 
 /// Max log lines kept per source (older ones are dropped).
 pub const MAX_LOG_LINES: usize = 1000;
@@ -119,7 +121,7 @@ impl LogSource {
     }
 }
 
-/// The three tabs.
+/// The tabs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Chart,
@@ -128,11 +130,12 @@ pub enum View {
     Sim,
     Health,
     Logs,
+    K8s,
 }
 
 impl View {
-    pub const ALL: [View; 6] =
-        [View::Chart, View::Trend, View::Order, View::Sim, View::Health, View::Logs];
+    pub const ALL: [View; 7] =
+        [View::Chart, View::Trend, View::Order, View::Sim, View::Health, View::Logs, View::K8s];
 
     pub fn index(self) -> usize {
         match self {
@@ -142,6 +145,7 @@ impl View {
             View::Sim => 3,
             View::Health => 4,
             View::Logs => 5,
+            View::K8s => 6,
         }
     }
 
@@ -154,6 +158,7 @@ impl View {
             View::Sim => "④ SIM",
             View::Health => "⑤ HEALTH",
             View::Logs => "⑥ LOGS",
+            View::K8s => "⑦ K8S",
         }
     }
 
@@ -172,6 +177,15 @@ pub struct App {
     pub latest: BTreeMap<String, ElevatorState>,
     /// Per-elevator floor history as (seconds-since-start, floor), for the TREND chart.
     pub history: BTreeMap<String, VecDeque<(f64, f64)>>,
+    /// Every elevator name seen this session (never pruned, unlike `latest`/`history`), so the
+    /// Order tab remembers the whole fleet even after a car stops reporting.
+    pub seen_elevators: BTreeSet<String>,
+    /// Highest floor seen this session — the observed building height for the Order tab hint.
+    pub seen_floor_max: i32,
+    /// Live cluster state for the K8s tab (mode + pods), refreshed by a kubectl poller.
+    pub k8s: K8sSnapshot,
+    /// Result of an async K8s action (mode switch), surfaced into `message` next frame.
+    k8s_action: Arc<Mutex<Option<String>>>,
     start: Instant,
     /// Wall-clock (unix seconds) at startup, paired with `start`, to label chart times.
     start_unix: i64,
@@ -210,6 +224,10 @@ impl App {
             view: View::Chart,
             latest: BTreeMap::new(),
             history: BTreeMap::new(),
+            seen_elevators: BTreeSet::new(),
+            seen_floor_max: 0,
+            k8s: K8sSnapshot::default(),
+            k8s_action: Arc::new(Mutex::new(None)),
             start: Instant::now(),
             start_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -236,12 +254,16 @@ impl App {
         }
     }
 
-    /// Per-frame upkeep: freeze a finished run's elapsed time so it stops ticking.
+    /// Per-frame upkeep: freeze a finished run's elapsed time, and surface any async K8s action
+    /// result into the footer message.
     pub fn refresh_sim(&mut self) {
         if let Some(sim) = &mut self.sim {
             if sim.elapsed.is_none() && sim.done.load(Ordering::Relaxed) {
                 sim.elapsed = Some(sim.start.elapsed());
             }
+        }
+        if let Some(msg) = self.k8s_action.lock().ok().and_then(|mut g| g.take()) {
+            self.message = msg;
         }
     }
 
@@ -253,6 +275,9 @@ impl App {
         while matches!(hist.front(), Some(&(t0, _)) if t - t0 > TREND_WINDOW_SECS) {
             hist.pop_front();
         }
+        // Session memory: remember the fleet + tallest floor for the Order tab (never pruned).
+        self.seen_elevators.insert(state.elevator_name.clone());
+        self.seen_floor_max = self.seen_floor_max.max(state.floor);
         self.latest.insert(state.elevator_name.clone(), state);
     }
 
@@ -295,14 +320,21 @@ impl App {
         }
     }
 
-    /// Elevators for `sim`: those seen so far, or a default e1..e8 if none yet (matches the
-    /// demo's naming, so an early sim targets the real fleet instead of spawning phantoms).
+    /// Elevators for `sim`: the whole session fleet remembered so far, or a default e1..e10 if
+    /// none seen yet (matches the demo's naming, so an early sim targets the real fleet).
     fn elevator_pool(&self) -> Vec<String> {
-        if self.latest.is_empty() {
-            (1..=8).map(|i| format!("e{i}")).collect()
+        if self.seen_elevators.is_empty() {
+            (1..=10).map(|i| format!("e{i}")).collect()
         } else {
-            self.latest.keys().cloned().collect()
+            self.seen_elevators.iter().cloned().collect()
         }
+    }
+
+    /// The session fleet, natural-sorted (e1, e2, … e10), for the Order tab hint.
+    pub fn fleet(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.seen_elevators.iter().cloned().collect();
+        v.sort_by(|a, b| crate::natural_key(a).cmp(&crate::natural_key(b)));
+        v
     }
 
     /// Single entry point for keyboard input; dispatches per active view.
@@ -335,8 +367,32 @@ impl App {
             View::Order => self.on_key_order(key),
             View::Sim => self.on_key_sim(key),
             View::Logs => self.on_key_logs(key),
+            View::K8s => self.on_key_k8s(key),
             View::Health => {}
         }
+    }
+
+    /// K8s tab: 'f' / 's' flip the app to fast / slow (swap the configmap on the deployment +
+    /// rollout). The kubectl calls run off-thread so the UI never blocks; the result lands in the
+    /// footer next frame and the poller reflects the new mode within a few seconds.
+    fn on_key_k8s(&mut self, key: KeyEvent) {
+        let target = match key.code {
+            KeyCode::Char('f') | KeyCode::Char('F') => "fast",
+            KeyCode::Char('s') | KeyCode::Char('S') => "slow",
+            _ => return,
+        };
+        if self.k8s.mode == target {
+            self.message = format!("already {target}");
+            return;
+        }
+        self.message = format!("switching to {target}…");
+        let slot = Arc::clone(&self.k8s_action);
+        std::thread::spawn(move || {
+            let result = super::k8s::set_mode(target).unwrap_or_else(|e| format!("switch failed: {e}"));
+            if let Ok(mut g) = slot.lock() {
+                *g = Some(result);
+            }
+        });
     }
 
     fn on_key_order(&mut self, key: KeyEvent) {

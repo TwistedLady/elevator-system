@@ -8,6 +8,7 @@
 //! This module just wires them together and runs the draw/event loop.
 
 mod app;
+mod k8s;
 mod selftest;
 mod sources;
 mod ui;
@@ -25,6 +26,7 @@ use ratatui::crossterm::event::{self, Event};
 
 use crate::BoxErr;
 use app::{App, ElevatorState, HealthSnapshot, LogSource};
+use k8s::K8sSnapshot;
 
 pub fn run(
     brokers: &str,
@@ -61,10 +63,14 @@ pub fn run(
     sources::spawn_log_tail(LogSource::App, app_log.to_string(), log_tx.clone());
     sources::spawn_log_tail(LogSource::Api, api_log.to_string(), log_tx);
 
+    // Cluster state (mode + pods) -> shared snapshot, via kubectl.
+    let k8s_state = Arc::new(Mutex::new(K8sSnapshot::default()));
+    k8s::spawn_k8s_poll(Arc::clone(&k8s_state));
+
     // ratatui::init() enables raw mode + alternate screen and installs a panic hook
     // that restores the terminal; ratatui::restore() undoes it on the way out.
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut app, &state_rx, &log_rx, &health);
+    let result = event_loop(&mut terminal, &mut app, &state_rx, &log_rx, &health, &k8s_state);
     ratatui::restore();
     result
 }
@@ -75,6 +81,7 @@ fn event_loop(
     state_rx: &mpsc::Receiver<ElevatorState>,
     log_rx: &mpsc::Receiver<(LogSource, String)>,
     health: &Arc<Mutex<HealthSnapshot>>,
+    k8s_state: &Arc<Mutex<K8sSnapshot>>,
 ) -> Result<(), BoxErr> {
     loop {
         // Drain whatever the background threads produced.
@@ -86,6 +93,9 @@ fn event_loop(
         }
         if let Ok(h) = health.lock() {
             app.health = h.clone();
+        }
+        if let Ok(k) = k8s_state.lock() {
+            app.k8s = k.clone();
         }
         app.refresh_sim();
 

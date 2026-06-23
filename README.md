@@ -135,6 +135,47 @@ Maven multi-module, Java 21. `mvn package` builds the JVM modules (a `maven-enfo
 rule guards dependency convergence). The Rust console is a separate `cargo` build,
 wired in behind `-Pconsole` / `-Dcargo.skip=false` — see the console README.
 
+## Testing
+
+Beyond the JVM unit/IT tests (`mvn test` / `mvn verify`), the **console is the integration
+harness** — it talks to the running system over Kafka + HTTP, so it tests the whole loop:
+
+```bash
+# headless console self-checks (no TUI; safe in any shell):
+elevator-console selftest          # api health UP + Kafka consuming -> PASS/FAIL + exit code
+elevator-console watch             # live state stream to stdout
+
+# big integration test: send N tagged orders, poll the api per order until DONE, then
+# CROSS-CHECK the run against the elevator-app + elevator-api pod logs, and report
+# requests / latency / loss. One self-contained Rust binary — no Python/Go.
+KAFKA_BOOTSTRAP=localhost:9094 elevator-console itest --count 20 --timeout 90
+#   -> logs/itest-report.{json,md}; exit 0 only if 0 lost, api confirms every tag DONE,
+#      the app actually moved, and there's no "Kafka stream failed".
+```
+
+**Commit gate.** A pre-commit hook runs the integration test and **blocks the commit if it
+fails**. Enable it once per clone:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+It skips (rather than blocks every commit) when the kind cluster is unreachable, or with
+`SKIP_ITEST=1 git commit …`.
+
+### Order validation (api)
+
+`POST /api/order` is validated with Jakarta Bean Validation against config params
+`elevator.max-floor` (15) and `elevator.elevators` (e1..e10) — a bad floor or unknown
+elevator returns **400** with the offending field. Tune via env `ELEVATOR_MAXFLOOR` /
+`ELEVATOR_ELEVATORS` (the api ConfigMap).
+
+### Fast / slow mode (k8s)
+
+The app runs `FastOperator` or `SlowOperator`, chosen by which ConfigMap the deployment's
+`envFrom` points at — `elevator-app-config-fast` or `elevator-app-config-slow`. Flip it from
+the console's **K8s tab** (`f` / `s`), which swaps the ConfigMap + rolls the pod via `kubectl`.
+
 ## Why this project exists
 
 A sandbox for the patterns behind resilient distributed systems — the actor model,

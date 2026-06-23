@@ -5,6 +5,7 @@
 //!   order     — send one order (an elevator to a floor)
 //!   simulate  — fire a bulk load of random orders (load simulator)
 
+mod itest;
 mod monitor;
 mod sender;
 
@@ -97,6 +98,24 @@ enum Command {
         #[arg(long, default_value = "logs/console-selftest.log")]
         log: String,
     },
+    /// End-to-end test: send N tagged orders, poll the api until each is DONE, and write a JSON
+    /// report (latency + loss + throughput). Exits non-zero on loss or api-down — CI / the
+    /// integration harness gate on this.
+    Itest {
+        /// Number of orders to send + verify.
+        #[arg(long, default_value_t = 20)]
+        count: u64,
+        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
+        topic: String,
+        #[arg(long, env = "HEALTH_URL", default_value = "http://localhost:8080/actuator/health")]
+        health_url: String,
+        /// Seconds to wait for all orders to reach DONE.
+        #[arg(long, default_value_t = 90)]
+        timeout: u64,
+        /// JSON report path.
+        #[arg(long, default_value = "logs/itest-report.json")]
+        out: String,
+    },
     /// Headless live view: stream elevator states to stdout (no TUI). Runs in any shell,
     /// including the in-session `!` bash where the full-screen `monitor` can't start.
     Watch {
@@ -130,6 +149,9 @@ fn main() {
         }
         Command::Watch { topic, refresh_ms, duration } => {
             monitor::run_watch(&cli.brokers, &topic, refresh_ms, duration)
+        }
+        Command::Itest { count, topic, health_url, timeout, out } => {
+            itest::run_itest(&cli.brokers, &topic, &health_url, count, timeout, &out)
         }
     };
     if let Err(e) = result {
