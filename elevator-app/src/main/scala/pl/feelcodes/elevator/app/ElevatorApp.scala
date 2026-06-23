@@ -24,10 +24,21 @@ object ElevatorApp extends App {
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
 
         sharding.init(Entity(Operator.TypeKey) { _ =>
-          Operator(
-            reportMove = (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc),
-            reportStop = (name, state) => controllerProvider(name) ! Controller.Stopped(state)
-          )
+          val reportMove: Operator.ReportMove =
+            (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc)
+          val reportStop: Operator.ReportStop =
+            (name, state) => controllerProvider(name) ! Controller.Stopped(state)
+          // Pick the operator subclass from config key `elevator.operator-class` at startup.
+          // Adding a new operator is one `final class` in Operator.scala plus one case here;
+          // the compiler still sees every class (no reflection, so renames/find-usages work).
+          Behaviors.setup { ctx =>
+            ctx.system.settings.config.getString("elevator.operator-class") match
+              case "FastOperator" => new FastOperator(ctx, reportMove, reportStop)
+              case "SlowOperator" => new SlowOperator(ctx, reportMove, reportStop)
+              case other =>
+                throw new IllegalArgumentException(
+                  s"Unknown elevator.operator-class '$other'. Known: FastOperator, SlowOperator")
+          }
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
           Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
