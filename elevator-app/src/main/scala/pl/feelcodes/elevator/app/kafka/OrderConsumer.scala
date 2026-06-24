@@ -14,12 +14,11 @@ import org.apache.pekko.stream.scaladsl.{Flow, Keep}
 import org.apache.pekko.util.Timeout
 import pl.feelcodes.elevator.app.actors.Coordinator
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.*
 
-/** Inbound Kafka boundary: stream orders off the command topic, drop duplicates ([[OrderDedup]]),
-  * and hand the first-seen ones to the matching [[Coordinator]]. */
 object OrderConsumer {
   private final case class KafkaConf(bootstrapServers: String,
                                      groupId: String,
@@ -48,16 +47,12 @@ object OrderConsumer {
         .mapAsync(1) { msg =>
           val dto = Json.decode(msg.record.value(), classOf[ElevatorOrderDto])
 
-          // Durable dedup at the boundary. CHECK first to drop re-sent tags; CLAIM only AFTER the
-          // Coordinator has durably accepted, so a crash between accept and claim is recoverable
-          // (the tag stays unclaimed and the redelivered message is reprocessed) rather than
-          // silently lost. The Coordinator's accept is idempotent, covering that redelivery.
           dedup.alreadyProcessed(dto.tag).flatMap {
             case true =>
-              Future.successful(msg.committableOffset) // duplicate, already processed — drop
+              Future.successful(msg.committableOffset)
             case false =>
               coordinatorProvider(dto.elevatorName)
-                .ask[Coordinator.Ack](replyTo => Coordinator.Process(dto, replyTo))
+                .ask[Coordinator.Ack](replyTo => Coordinator.Process(AddOriginalStream(List(dto)), replyTo))
                 .flatMap(_ => dedup.markProcessed(dto.tag))
                 .map(_ => msg.committableOffset)
           }

@@ -8,10 +8,6 @@ import pl.feelcodes.elevator.common.core.Elevator
 import pl.feelcodes.elevator.app.kafka.{OrderConsumer, OrderDedup, StatePublisher}
 import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusProjection}
 
-/** Single-node Pekko app. Events are persisted to Postgres via the reactive R2DBC journal
-  * (see application.conf) and projected into the `elevator_state_view` read-model by
-  * [[pl.feelcodes.elevator.app.readside.ElevatorStateProjection]]. Orders come from Kafka,
-  * moves are published back to Kafka. */
 object ElevatorApp extends App {
 
   val system: ActorSystem[Nothing] =
@@ -25,12 +21,8 @@ object ElevatorApp extends App {
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
 
         sharding.init(Entity(Operator.TypeKey) { _ =>
-          val reportMove: Operator.ReportMove =
+          val publishMove: Operator.PublishMove =
             (name, state) => controllerProvider(name) ! Controller.PublishState(state)
-          val reportStop: Operator.ReportStop =
-            (name, state) => controllerProvider(name) ! Controller.PublishState(state)
-          // Pick the elevator-build strategy from config key `elevator.operator-class` at startup.
-          // Adding a new variant is one case here (no reflection, so find-usages still works).
           val buildElevator: Operator.BuildElevator =
             ctx.system.settings.config.getString("elevator.operator-class") match
               case "FastOperator" => (name, state) => Elevator.fast(name)(state)
@@ -38,10 +30,10 @@ object ElevatorApp extends App {
               case other =>
                 throw new IllegalArgumentException(
                   s"Unknown elevator.operator-class '$other'. Known: FastOperator, SlowOperator")
-          Operator(reportMove, reportStop, buildElevator)
+          Operator(publishMove, buildElevator)
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
+          Controller(e.entityId, operatorProvider, statePublisher.publish)
         })
         sharding.init(Entity(Coordinator.TypeKey) { e =>
           Coordinator(e.entityId, controllerProvider)
@@ -50,8 +42,6 @@ object ElevatorApp extends App {
         val dedup = OrderDedup(ctx.system.settings.config)
         OrderConsumer.run(ctx.system, coordinatorProvider, dedup)
 
-        // Read-side: project Controller events into the elevator_state_view read-model, and
-        // Coordinator events into the order_status read-model (queryable by order tag).
         ElevatorStateProjection.init(ctx.system)
         OrderStatusProjection.init(ctx.system)
 
