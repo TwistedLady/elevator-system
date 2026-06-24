@@ -20,15 +20,6 @@ object Controller:
 
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Controller")
 
-  private def toDto(elevatorName: String, state: ElevatorState, tag: String): ElevatorStateDto =
-    ElevatorStateDto(
-      tag = tag,
-      elevatorName = elevatorName,
-      direction = state.direction.toString,
-      motion = state.motion.toString,
-      floor = state.floor.num
-    )
-
   def apply(elevatorName: String,
             operatorProvider: (elevatorName: String) => EntityRef[Operator.Command],
             coordinatorProvider: (elevatorName: String) => EntityRef[Coordinator.Command],
@@ -70,13 +61,27 @@ object Controller:
               // Coordinator the floor to confirm them all.
               val servedHere = state.requests.exists(_.floor == newState.floor)
               Effect.persist(events).thenRun { s =>
-                publish(toDto(s.elevatorName, newState, orderWithCommand.order.tag))
+                publish(ElevatorStateDto(
+                  tag = orderWithCommand.order.tag,
+                  elevatorName = s.elevatorName,
+                  direction = newState.direction.toString,
+                  motion = newState.motion.toString,
+                  floor = newState.floor.num
+                ))
                 if servedHere then
                   coordinatorProvider(s.elevatorName) ! Coordinator.Reached(newState.floor.num)
               }
 
             case Stopped(newState) =>
-              Effect.persist(events).thenRun(s => publish(toDto(s.elevatorName, newState, "")))
+              Effect.persist(events).thenRun { s =>
+                publish(ElevatorStateDto(
+                  tag = "",
+                  elevatorName = s.elevatorName,
+                  direction = newState.direction.toString,
+                  motion = newState.motion.toString,
+                  floor = newState.floor.num
+                ))
+              }
 
             case Tick =>
               // `decide` returns WaitingSet(true) exactly when we should act; latch and dispatch.
