@@ -85,14 +85,14 @@ object ElevatorStateProjection {
   private final class Handler extends R2dbcHandler[EventEnvelope[Controller.Event]] {
     override def process(session: R2dbcSession, envelope: EventEnvelope[Controller.Event]): Future[Done] =
       envelope.event match {
-        case Controller.ElevatorStateUpdated(state, orderWithCommand) =>
+        case Controller.ElevatorStateUpdated(state) =>
           val statement = session
             .createStatement(UpsertSql)
             .bind(0, entityId(envelope.persistenceId))
             .bind(1, state.floor.num)
             .bind(2, state.direction.toString)
             .bind(3, state.motion.toString)
-            .bind(4, orderWithCommand.order.tag)
+            .bind(4, "")
           session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
 
         // RequestAdded / WaitingSet don't change the visible state — skip them.

@@ -36,39 +36,3 @@ final class ElevatorTests extends AnyFunSuite:
     assert(e.direction() == Up)
 
 
-/**
- * The brain: Policy.next decides command + which order to serve next, SCAN-style.
- * Read each test as a truth-table row:  (floor, direction, orders) -> (command, target).
- */
-final class PolicyTests extends AnyFunSuite:
-
-  private def order(tag: String, floor: Int): ElevatorOrder =
-    ElevatorOrder(tag, Floor(floor))
-
-  test("order above while going Up -> Go(Up), target that order"):
-    val result = Policy.next(Floor(0), Up, Set(order("a", 3)))
-    assert(result.command == Go(Up))
-    assert(result.order == order("a", 3))
-
-  test("order at current floor -> Stop(), target that order"):
-    val result = Policy.next(Floor(2), Up, Set(order("a", 2)))
-    assert(result.command == Stop())
-    assert(result.order == order("a", 2))
-
-  test("only order is behind us (below while Up) -> swap to Go(Down)"):
-    val result = Policy.next(Floor(5), Up, Set(order("a", 2)))
-    assert(result.command == Go(Down))
-    assert(result.order == order("a", 2))
-
-  test("several orders above while Up -> serve the NEAREST first"):
-    val result = Policy.next(Floor(0), Up, Set(order("far", 5), order("near", 2)))
-    assert(result.command == Go(Up))
-    assert(result.order == order("near", 2))
-
-  test("order below while going Down -> keep Go(Down), serve highest below"):
-    val result = Policy.next(Floor(5), Down, Set(order("a", 2), order("b", 1)))
-    assert(result.command == Go(Down))
-    assert(result.order == order("a", 2))
-
-  test("empty orders is illegal -> Policy.next rejects it"):
-    assertThrows[IllegalArgumentException](Policy.next(Floor(0), Up, Set.empty))

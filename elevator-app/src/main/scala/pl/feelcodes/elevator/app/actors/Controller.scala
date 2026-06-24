@@ -8,39 +8,34 @@ import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
 import pl.feelcodes.elevator.common.protocol.ControllerProtocol
+import pl.feelcodes.elevator.common.strategy.NextFloorStrategy
 
-import scala.concurrent.duration.*
-
-/** Pekko shell around [[ControllerProtocol]]. The decision (`decide`) and the state machine
-  * (`evolve`) are pure and live in the protocol module; this EventSourcedBehavior wires them into
-  * Pekko and runs the side effects the pure core deliberately leaves out: publishing the new state,
-  * confirming a reached floor with the Coordinator, re-dispatching the move/stop, and the timer. */
 object Controller:
   export ControllerProtocol.*
 
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Controller")
 
+  sealed trait Event
+  final case class OrderAdded(order: ElevatorOrder) extends Event
+  final case class WaitingSet(waiting: Boolean) extends Event
+  final case class ElevatorStateUpdated(state: ElevatorState) extends Event
+
+  final case class State(waiting: Boolean,
+                         elevatorName: ElevatorName,
+                         elevatorState: ElevatorState,
+                         orders: Set[ElevatorOrder])
+
   def apply(elevatorName: String,
             operatorProvider: (elevatorName: String) => EntityRef[Operator.Command],
             coordinatorProvider: (elevatorName: String) => EntityRef[Coordinator.Command],
             publish: ElevatorStateDto => Unit): Behavior[Command] =
-    Behaviors.withTimers { timers =>
-      timers.startTimerAtFixedRate(Tick, 500.millis)
+    Behaviors.setup { context =>
 
-      // Issue the move/stop the current state calls for. Used by Tick and — crucially — on
-      // RecoveryCompleted: the Move/Stop we send to the (ephemeral, non-persistent) Operator is
-      // lost if the node crashes before the Operator reports back. Because `waiting` IS persisted,
-      // a plain recovery would replay `waiting=true` and every Tick would short-circuit, freezing
-      // the car forever. Re-dispatching here redelivers that lost command; `waiting` stays true so
-      // we never issue a duplicate, and the Operator's report clears it as usual.
-      def dispatch(s: State): Unit =
-        if s.requests.nonEmpty then
-          val next = Policy.next(
-            orders = s.requests,
-            floor = s.elevatorState.floor,
-            direction = s.elevatorState.direction
-          )
-          operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, next)
+      def sendNext(s: State, orders: Set[ElevatorOrder]): Unit =
+        if orders.nonEmpty then
+          val command = NextFloorStrategy.chooseNextAndBuildCommand(
+            s.elevatorState.floor, s.elevatorState.direction, orders.map(_.floor))
+          operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, command)
         else if s.elevatorState.motion == Motion.Moving then
           operatorProvider(s.elevatorName) ! Operator.Stop(s.elevatorName, s.elevatorState)
 
@@ -50,52 +45,46 @@ object Controller:
           waiting = false,
           elevatorName = elevatorName,
           elevatorState = ElevatorState(Direction.Up, Motion.Stopped, Floor(0)),
-          requests = Set.empty
+          orders = Set.empty
         ),
-        // Pure decision in the protocol; the per-command side effects stay here in the shell.
         commandHandler = (state, msg) =>
-          val events = ControllerProtocol.decide(state, msg)
           msg match
-            case MoveExecuted(newState, orderWithCommand) =>
-              // Reaching a floor serves EVERY order waiting there (merge by floor); tell the
-              // Coordinator the floor to confirm them all.
-              val servedHere = state.requests.exists(_.floor == newState.floor)
-              Effect.persist(events).thenRun { s =>
-                publish(ElevatorStateDto(
-                  tag = orderWithCommand.order.tag,
-                  elevatorName = s.elevatorName,
-                  direction = newState.direction.toString,
-                  motion = newState.motion.toString,
-                  floor = newState.floor.num
-                ))
+            case AddOrder(order) =>
+              val events =
+                if state.orders.exists(_.tag == order.tag) then Nil
+                else List(OrderAdded(order))
+              Effect.persist(events).thenRun(s => context.self ! ChooseNextOrder(s.orders))
+
+            case PublishState(newState) =>
+              val servedHere = state.orders.exists(_.floor == newState.floor)
+              Effect.persist(WaitingSet(false), ElevatorStateUpdated(newState)).thenRun { s =>
+                publish(ElevatorStateDto("", s.elevatorName,
+                  newState.direction.toString, newState.motion.toString, newState.floor.num))
                 if servedHere then
                   coordinatorProvider(s.elevatorName) ! Coordinator.Reached(newState.floor.num)
+                context.self ! ChooseNextOrder(s.orders)
               }
 
-            case Stopped(newState) =>
-              Effect.persist(events).thenRun { s =>
-                publish(ElevatorStateDto(
-                  tag = "",
-                  elevatorName = s.elevatorName,
-                  direction = newState.direction.toString,
-                  motion = newState.motion.toString,
-                  floor = newState.floor.num
-                ))
-              }
-
-            case Tick =>
-              // `decide` returns WaitingSet(true) exactly when we should act; latch and dispatch.
-              if events.isEmpty then Effect.none
-              else Effect.persist(events).thenRun(dispatch)
-
-            case AddRequest(_) =>
-              if events.isEmpty then Effect.none else Effect.persist(events)
+            case ChooseNextOrder(orders) =>
+              val act = !state.waiting && (orders.nonEmpty || state.elevatorState.motion == Motion.Moving)
+              if act then Effect.persist(WaitingSet(true)).thenRun(s => sendNext(s, orders))
+              else Effect.none
         ,
-        eventHandler = ControllerProtocol.evolve
+        eventHandler = (state, event) =>
+          event match
+            case OrderAdded(order) =>
+              state.copy(orders = state.orders + order)
+            case WaitingSet(waiting) =>
+              state.copy(waiting = waiting)
+            case ElevatorStateUpdated(newState) =>
+              state.copy(
+                elevatorState = newState,
+                orders = state.orders.filterNot(_.floor == newState.floor))
       ).receiveSignal {
-        // The Move/Stop in flight to the Operator is lost on a crash, but `waiting` was persisted.
-        // Redeliver it so the car doesn't freeze waiting for a report that will never come.
-        case (state, RecoveryCompleted) if state.waiting => dispatch(state)
+        case (state, RecoveryCompleted) if state.waiting =>
+          sendNext(state, state.orders)
+        case (state, RecoveryCompleted) if state.orders.nonEmpty || state.elevatorState.motion == Motion.Moving =>
+          context.self ! ChooseNextOrder(state.orders)
       }.withTagger {
         case _: ElevatorStateUpdated => Set("controller-state")
         case _ => Set.empty

@@ -16,8 +16,7 @@ final class OperatorProtocolTests extends AnyFunSuite:
   private val fast: BuildElevator = (name, state) => Elevator.fast(name)(state)
 
   test("afterMove | Go(Up) from floor 0 -> floor 1, Up, Moving"):
-    val owc = OrderElevatorCommand(ElevatorOrder("o-1", Floor(1)), Go(Up))
-    val next = afterMove(fast, "lift-a", ElevatorState(Up, Stopped, Floor(0)), owc)
+    val next = afterMove(fast, "lift-a", ElevatorState(Up, Stopped, Floor(0)), Go(Up))
     assert(next == ElevatorState(Up, Moving, Floor(1)))
 
   test("afterStop | a moving car stops, floor and direction unchanged"):

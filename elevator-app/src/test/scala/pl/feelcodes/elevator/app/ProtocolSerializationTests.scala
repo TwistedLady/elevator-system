@@ -42,29 +42,27 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val manifest = Serializers.manifestFor(serializer, msg)
     serialization.deserialize(bytes, serializer.identifier, manifest).get.asInstanceOf[T]
 
-  private val owc =
-    OrderElevatorCommand(ElevatorOrder("tag-1", Floor(5)), Command.Go(Direction.Up))
   private val state =
     ElevatorState(Direction.Up, Motion.Moving, Floor(3))
 
-  test("Controller.AddRequest round-trips"):
-    val msg = Controller.AddRequest(ElevatorOrder("tag-1", Floor(5)))
+  test("Controller.AddOrder round-trips"):
+    val msg = Controller.AddOrder(ElevatorOrder("tag-1", Floor(5)))
     assert(roundTrip(msg) == msg)
 
-  test("Controller.MoveExecuted round-trips (data only — no Elevator/Engine)"):
-    val msg = Controller.MoveExecuted(state, owc)
+  test("Controller.PublishState round-trips (data only — no Elevator/Engine)"):
+    val msg = Controller.PublishState(state)
+    assert(roundTrip(msg) == msg)
+
+  test("Controller.ChooseNextOrder round-trips"):
+    val msg = Controller.ChooseNextOrder(Set(ElevatorOrder("tag-1", Floor(5))))
     assert(roundTrip(msg) == msg)
 
   test("Operator.Move round-trips (data only — no Elevator/Engine)"):
-    val msg = Operator.Move("lift-a", state, owc)
+    val msg = Operator.Move("lift-a", state, Command.Go(Direction.Up))
     assert(roundTrip(msg) == msg)
 
   test("Operator.Stop round-trips"):
     val msg = Operator.Stop("lift-a", state)
-    assert(roundTrip(msg) == msg)
-
-  test("Controller.Stopped round-trips (Operator -> Controller)"):
-    val msg = Controller.Stopped(state)
     assert(roundTrip(msg) == msg)
 
   test("Coordinator.Reached round-trips (Controller -> Coordinator across nodes)"):

@@ -60,7 +60,7 @@ object Coordinator:
         val effect: EffectBuilder[Event, State] =
           if events.isEmpty then Effect.none else Effect.persist(events)
         effect.thenRun { _ =>
-          controllerProvider(elevatorName) ! Controller.AddRequest(ElevatorOrder(dto.tag, Floor(dto.floor)))
+          controllerProvider(elevatorName) ! Controller.AddOrder(ElevatorOrder(dto.tag, Floor(dto.floor)))
           replyTo ! Ack.Ok
         }
 

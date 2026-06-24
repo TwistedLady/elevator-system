@@ -14,6 +14,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>elevator-common-core</module>
+        <module>elevator-common-strategy</module>
         <module>elevator-common-protocol</module>
         <module>elevator-common-dto</module>
     </modules>
