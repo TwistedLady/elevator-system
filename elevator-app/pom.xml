@@ -35,6 +35,11 @@
         </dependency>
         <dependency>
             <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-common-strategy</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
             <artifactId>elevator-common-protocol</artifactId>
             <version>${project.version}</version>
         </dependency>

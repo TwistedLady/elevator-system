@@ -42,8 +42,6 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val manifest = Serializers.manifestFor(serializer, msg)
     serialization.deserialize(bytes, serializer.identifier, manifest).get.asInstanceOf[T]
 
-  private val owc =
-    OrderElevatorCommand(ElevatorOrder("tag-1", Floor(5)), Command.Go(Direction.Up))
   private val state =
     ElevatorState(Direction.Up, Motion.Moving, Floor(3))
 
@@ -60,7 +58,7 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     assert(roundTrip(msg) == msg)
 
   test("Operator.Move round-trips (data only — no Elevator/Engine)"):
-    val msg = Operator.Move("lift-a", state, owc)
+    val msg = Operator.Move("lift-a", state, Command.Go(Direction.Up))
     assert(roundTrip(msg) == msg)
 
   test("Operator.Stop round-trips"):

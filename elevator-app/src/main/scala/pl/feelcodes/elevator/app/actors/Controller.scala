@@ -7,12 +7,23 @@ import org.apache.pekko.persistence.typed.{PersistenceId, RecoveryCompleted}
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
-import pl.feelcodes.elevator.common.protocol.{ControllerProtocol, ControllerDecider}
+import pl.feelcodes.elevator.common.protocol.ControllerProtocol
+import pl.feelcodes.elevator.common.strategy.NextFloorStrategy
+
 object Controller:
   export ControllerProtocol.*
-  export ControllerDecider.*
 
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Controller")
+
+  sealed trait Event
+  final case class OrderAdded(order: ElevatorOrder) extends Event
+  final case class WaitingSet(waiting: Boolean) extends Event
+  final case class ElevatorStateUpdated(state: ElevatorState) extends Event
+
+  final case class State(waiting: Boolean,
+                         elevatorName: ElevatorName,
+                         elevatorState: ElevatorState,
+                         orders: Set[ElevatorOrder])
 
   def apply(elevatorName: String,
             operatorProvider: (elevatorName: String) => EntityRef[Operator.Command],
@@ -22,7 +33,8 @@ object Controller:
 
       def sendNext(s: State, orders: Set[ElevatorOrder]): Unit =
         if orders.nonEmpty then
-          val command = Policy.next(s.elevatorState.floor, s.elevatorState.direction, orders)
+          val command = NextFloorStrategy.chooseNextAndBuildCommand(
+            s.elevatorState.floor, s.elevatorState.direction, orders.map(_.floor))
           operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, command)
         else if s.elevatorState.motion == Motion.Moving then
           operatorProvider(s.elevatorName) ! Operator.Stop(s.elevatorName, s.elevatorState)
@@ -36,14 +48,16 @@ object Controller:
           orders = Set.empty
         ),
         commandHandler = (state, msg) =>
-          val events = ControllerDecider.decide(state, msg)
           msg match
-            case AddOrder(_) =>
+            case AddOrder(order) =>
+              val events =
+                if state.orders.exists(_.tag == order.tag) then Nil
+                else List(OrderAdded(order))
               Effect.persist(events).thenRun(s => context.self ! ChooseNextOrder(s.orders))
 
             case PublishState(newState) =>
               val servedHere = state.orders.exists(_.floor == newState.floor)
-              Effect.persist(events).thenRun { s =>
+              Effect.persist(WaitingSet(false), ElevatorStateUpdated(newState)).thenRun { s =>
                 publish(ElevatorStateDto("", s.elevatorName,
                   newState.direction.toString, newState.motion.toString, newState.floor.num))
                 if servedHere then
@@ -52,10 +66,20 @@ object Controller:
               }
 
             case ChooseNextOrder(orders) =>
-              if events.isEmpty then Effect.none
-              else Effect.persist(events).thenRun(s => sendNext(s, orders))
+              val act = !state.waiting && (orders.nonEmpty || state.elevatorState.motion == Motion.Moving)
+              if act then Effect.persist(WaitingSet(true)).thenRun(s => sendNext(s, orders))
+              else Effect.none
         ,
-        eventHandler = ControllerDecider.evolve
+        eventHandler = (state, event) =>
+          event match
+            case OrderAdded(order) =>
+              state.copy(orders = state.orders + order)
+            case WaitingSet(waiting) =>
+              state.copy(waiting = waiting)
+            case ElevatorStateUpdated(newState) =>
+              state.copy(
+                elevatorState = newState,
+                orders = state.orders.filterNot(_.floor == newState.floor))
       ).receiveSignal {
         case (state, RecoveryCompleted) if state.waiting =>
           sendNext(state, state.orders)

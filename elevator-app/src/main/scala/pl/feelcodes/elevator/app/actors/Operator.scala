@@ -23,12 +23,11 @@ object Operator:
             buildElevator: BuildElevator): Behavior[Command] =
     Behaviors.receive { (context, msg) =>
       msg match
-        case Move(elevatorName, state, orderWithCommand) =>
-          val newState = OperatorProtocol.afterMove(buildElevator, elevatorName, state, orderWithCommand)
-          reportMove(elevatorName, newState, orderWithCommand)
-          // Log only when the car actually moves a floor (a parked car still gets Move ticks).
+        case Move(elevatorName, state, command) =>
+          val newState = OperatorProtocol.afterMove(buildElevator, elevatorName, state, command)
+          reportMove(elevatorName, newState)
           if newState.floor.num != state.floor.num then
-            context.log.info(s" [$elevatorName] ${state.floor.num} >>> ${newState.floor.num}  (target ${orderWithCommand.order.floor.num})")
+            context.log.info(s" [$elevatorName] ${state.floor.num} >>> ${newState.floor.num}")
           Behaviors.same
 
         case Stop(elevatorName, state) =>

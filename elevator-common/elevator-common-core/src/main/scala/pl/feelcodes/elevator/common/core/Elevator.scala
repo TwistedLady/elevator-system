@@ -6,28 +6,7 @@ import pl.feelcodes.elevator.common.core.Motion.{Moving, Stopped}
 
 import scala.language.postfixOps
 
-type FloorNum = Int
-type OrderTag = String
 type ElevatorName = String
-
-trait HasFloorNum:
-  def num: FloorNum
-
-final case class Floor(num: FloorNum) extends HasFloorNum, Ordered[Floor]:
-  def ++ : Floor = Floor(num + 1)
-
-  def -- : Floor = Floor(num - 1)
-
-  override def compare(that: Floor): FloorNum = num.compare(that.num)
-
-trait HasOrderTag:
-  def tag: OrderTag
-
-final case class ElevatorOrder(tag: OrderTag, floor: Floor) extends HasFloorNum, HasOrderTag, Ordered[ElevatorOrder]:
-  override def compare(that: ElevatorOrder): Int = this.floor.num.compare(that.floor.num)
-
-  override def num: FloorNum = floor.num
-
 
 enum Direction:
   case Up, Down
@@ -42,8 +21,6 @@ enum Motion:
 enum Command:
   case Go(direction: Direction)
   case Stop()
-
-final case class OrderElevatorCommand(order: ElevatorOrder, command: Command)
 
 final case class ElevatorState(direction: Direction,
                                motion: Motion,
@@ -107,43 +84,3 @@ object Elevator:
 
   def fast(name: ElevatorName)(state: ElevatorState = defaultState): Elevator =
     Elevator(name, FastEngine(), state)
-
-object Policy:
-  private final case class Facts(direction: Direction,
-                                 stopHere: Boolean,
-                                 hasOrdersInCurrentDirection: Boolean,
-                                 hasOrdersInOppositeDirection: Boolean):
-    require(stopHere || hasOrdersInCurrentDirection || hasOrdersInOppositeDirection,
-      "one of: stopHere, hasOrdersInCurrentDirection, hasOrdersInOppositeDirection must be true")
-
-  def next(floor: Floor, direction: Direction, orders: Set[ElevatorOrder]): OrderElevatorCommand = {
-    require(orders.nonEmpty, "Policy.next requires at least one order")
-    val facts = Facts(
-      direction = direction,
-      stopHere = orders.exists(_.floor == floor),
-      hasOrdersInCurrentDirection =
-        (orders.exists(_.floor > floor) && direction == Direction.Up) ||
-          (orders.exists(_.floor < floor) && direction == Direction.Down),
-      hasOrdersInOppositeDirection =
-        (orders.exists(_.floor > floor) && direction == Direction.Down) ||
-          (orders.exists(_.floor < floor) && direction == Direction.Up),
-    )
-    val cmd = facts match {
-      case Facts(direction, false, true, _) => Go(direction)
-      case Facts(direction, false, _, true) => Go(direction swap)
-      case Facts(_, _, _, _) => Stop()
-    }
-    val req = facts match {
-      case Facts(_, true, _, _) => orders.find(_.floor == floor).get
-      case Facts(direction, _, true, _) => direction match {
-        case Up => orders.filter(_.floor > floor).min
-        case Down => orders.filter(_.floor < floor).max
-      }
-      case Facts(direction, _, _, true) => direction.swap match {
-        case Up => orders.filter(_.floor > floor).min
-        case Down => orders.filter(_.floor < floor).max
-      }
-      case Facts(_, false, false, false) => throw new IllegalStateException("No request could be selected")
-    }
-    OrderElevatorCommand(order = req, command = cmd)
-  }

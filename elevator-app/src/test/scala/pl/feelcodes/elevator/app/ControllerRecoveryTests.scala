@@ -28,8 +28,8 @@ object ControllerRecoveryTests {
         |  allow-java-serialization = off
         |  serialization-bindings {
         |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.ControllerDecider$Event"    = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.ControllerDecider$State"     = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Controller$Event"                = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Controller$State"                = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
         |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"             = jackson-cbor
         |  }
@@ -124,8 +124,7 @@ final class ControllerRecoveryTests
       // Before the fix the Controller froze here (waiting = true, no report ever coming).
       // Recovery now redelivers the lost command instead.
       val redelivered = operatorProbe.expectMessageType[Operator.Move]
-      redelivered.orderWithCommand.order shouldBe order
-      redelivered.orderWithCommand.command shouldBe Command.Go(Direction.Up)
+      redelivered.command shouldBe Command.Go(Direction.Up)
     }
   }
 }

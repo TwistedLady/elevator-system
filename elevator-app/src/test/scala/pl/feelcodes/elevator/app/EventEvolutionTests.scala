@@ -33,7 +33,7 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
       |pekko.actor {
       |  allow-java-serialization = off
       |  serialization-bindings {
-      |    "pl.feelcodes.elevator.common.protocol.ControllerDecider$Event"  = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.Controller$Event"  = jackson-cbor
       |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Event" = jackson-cbor
       |  }
       |}
@@ -53,21 +53,21 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("Controller.OrderAdded (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.protocol.ControllerDecider$OrderAdded",
+      "pl.feelcodes.elevator.app.actors.Controller$OrderAdded",
       "v2VvcmRlcr9jdGFnY28tMWVmbG9vcr9jbnVtA////w=="
     )
     assert(recovered == Controller.OrderAdded(ElevatorOrder("o-1", Floor(3))))
 
   test("Controller.WaitingSet (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.protocol.ControllerDecider$WaitingSet",
+      "pl.feelcodes.elevator.app.actors.Controller$WaitingSet",
       "v2d3YWl0aW5n9f8="
     )
     assert(recovered == Controller.WaitingSet(true))
 
   test("Controller.ElevatorStateUpdated (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.protocol.ControllerDecider$ElevatorStateUpdated",
+      "pl.feelcodes.elevator.app.actors.Controller$ElevatorStateUpdated",
       "v2VzdGF0Zb9pZGlyZWN0aW9uYlVwZm1vdGlvbmZNb3ZpbmdlZmxvb3K/Y251bQP///8="
     )
     assert(recovered == Controller.ElevatorStateUpdated(ElevatorState(Direction.Up, Motion.Moving, Floor(3))))
