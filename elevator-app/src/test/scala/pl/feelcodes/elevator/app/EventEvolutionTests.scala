@@ -33,8 +33,8 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
       |pekko.actor {
       |  allow-java-serialization = off
       |  serialization-bindings {
-      |    "pl.feelcodes.elevator.app.actors.Controller$Event"  = jackson-cbor
-      |    "pl.feelcodes.elevator.app.actors.Coordinator$Event" = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Event"  = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Event" = jackson-cbor
       |  }
       |}
       |""".stripMargin
@@ -53,21 +53,21 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("Controller.RequestAdded (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.app.actors.Controller$RequestAdded",
+      "pl.feelcodes.elevator.common.protocol.ControllerProtocol$RequestAdded",
       "v2dyZXF1ZXN0v2N0YWdjby0xZWZsb29yv2NudW0D////"
     )
     assert(recovered == Controller.RequestAdded(ElevatorOrder("o-1", Floor(3))))
 
   test("Controller.WaitingSet (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.app.actors.Controller$WaitingSet",
+      "pl.feelcodes.elevator.common.protocol.ControllerProtocol$WaitingSet",
       "v2d3YWl0aW5n9f8="
     )
     assert(recovered == Controller.WaitingSet(true))
 
   test("Controller.ElevatorStateUpdated (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.app.actors.Controller$ElevatorStateUpdated",
+      "pl.feelcodes.elevator.common.protocol.ControllerProtocol$ElevatorStateUpdated",
       "v2VzdGF0Zb9pZGlyZWN0aW9uYlVwZm1vdGlvbmZNb3ZpbmdlZmxvb3K/Y251bQP//3BvcmRlcldpdGhDb21tYW5kv2VvcmRlcr9jdGFnY28tMWVmbG9vcr9jbnVtA///Z2NvbW1hbmRlR286VXD//w=="
     )
     assert(
@@ -79,7 +79,7 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("Coordinator.Accepted (v1) still recovers"):
     val recovered = fromGolden[Coordinator.Event](
-      "pl.feelcodes.elevator.app.actors.Coordinator$Accepted",
+      "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Accepted",
       "v2N0YWdldGFnLTFsZWxldmF0b3JOYW1lZmxpZnQtYWVmbG9vcgP/"
     )
     assert(recovered == Coordinator.Accepted("tag-1", "lift-a", 3))

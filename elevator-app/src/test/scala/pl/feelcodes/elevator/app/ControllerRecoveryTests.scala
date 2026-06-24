@@ -27,11 +27,11 @@ object ControllerRecoveryTests {
         |pekko.actor {
         |  allow-java-serialization = off
         |  serialization-bindings {
-        |    "pl.feelcodes.elevator.app.actors.Controller$Command" = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Controller$Event"   = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Controller$State"    = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Operator$Command"    = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command" = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Event"   = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$State"    = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"             = jackson-cbor
         |  }
         |}
         |""".stripMargin

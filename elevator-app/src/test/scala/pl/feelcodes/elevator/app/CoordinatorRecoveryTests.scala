@@ -23,11 +23,11 @@ object CoordinatorRecoveryTests {
         |pekko.actor {
         |  allow-java-serialization = off
         |  serialization-bindings {
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command" = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Event"   = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$State"   = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Ack"     = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Controller$Command"  = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"               = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Event"    = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$State"    = jackson-cbor
+        |    "pl.feelcodes.elevator.app.actors.Coordinator$Ack"                   = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"   = jackson-cbor
         |  }
         |}
         |""".stripMargin

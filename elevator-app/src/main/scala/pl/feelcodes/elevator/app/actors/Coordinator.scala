@@ -6,16 +6,24 @@ import org.apache.pekko.persistence.typed.PersistenceId
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EffectBuilder, EventSourcedBehavior}
 import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol
 
 /**
- * One per elevator (cluster-sharded, event-sourced). Accepts orders and confirms them.
+ * Pekko shell around [[CoordinatorProtocol]]. One per elevator (cluster-sharded, event-sourced).
+ * Accepts orders and confirms them; the decide/evolve logic is the pure core in the protocol.
  *
- * Dedup is NOT done here anymore — it happens durably at ingestion (the Kafka stream claims each
- * tag in `processed_orders`), so the Coordinator only ever sees first-time orders. It groups
- * outstanding orders by target floor (`byFloor`) and, when the Controller reports the car reached
- * a floor, confirms EVERY order waiting there at once (co-floor orders are merged).
+ * Its `Command` and `Ack` stay here (not in the protocol module) because `Process` carries a Pekko
+ * `ActorRef[Ack]` (the ask reply-to) and a DTO. The shell maps each command to a pure
+ * `CoordinatorProtocol.Decision` before deciding, then runs the side effects (forward to the
+ * Controller, ack the sender).
+ *
+ * Dedup is NOT done here — it happens durably at ingestion, so the Coordinator only ever sees
+ * first-time orders. It groups outstanding orders by target floor and, when the Controller reports
+ * the car reached a floor, confirms EVERY order waiting there at once (co-floor orders are merged).
  */
-object Coordinator {
+object Coordinator:
+  export CoordinatorProtocol.*
+
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Coordinator")
 
   sealed trait Command
@@ -26,71 +34,36 @@ object Coordinator {
   private[app] final case class Reached(floor: Int) extends Command
 
   sealed trait Ack
-  object Ack {
+  object Ack:
     case object Ok extends Ack
-  }
-
-  sealed trait Event
-  final case class Accepted(tag: String, elevatorName: String, floor: Int) extends Event
-  /** Durable confirmation that the order finished. */
-  final case class Completed(tag: String) extends Event
-
-  /** Outstanding (accepted-not-completed) tags grouped by target floor. */
-  final case class State(byFloor: Map[Int, Set[String]] = Map.empty)
-
-  object State {
-    val empty: State = State()
-  }
 
   def apply(elevatorName: String,
-            controllerProvider: String => EntityRef[Controller.Command]): Behavior[Command] = {
+            controllerProvider: String => EntityRef[Controller.Command]): Behavior[Command] =
     EventSourcedBehavior[Command, Event, State](
       // PersistenceId.of (entityType|entityId) — not ofUniqueId — so the journal records an
       // entity_type and OrderStatusProjection can stream these events by slice.
       persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
       emptyState = State.empty,
       commandHandler = commandHandler(elevatorName, controllerProvider),
-      eventHandler = eventHandler
+      eventHandler = CoordinatorProtocol.evolve
     )
-  }
 
   private def commandHandler(elevatorName: String,
                              controllerProvider: String => EntityRef[Controller.Command])
-                            (state: State, cmd: Command): Effect[Event, State] = {
+                            (state: State, cmd: Command): Effect[Event, State] =
     cmd match
       case Process(dto, replyTo) =>
-        // Idempotent accept. A crash between the Coordinator persisting `Accepted` and the
-        // ingestion stream claiming the tag (see OrderDedup) makes Kafka redeliver the order; we
-        // must not record it twice. If the tag is already outstanding at this floor, skip the
-        // event — but still (re)forward to the Controller (idempotent there too) so a handoff lost
-        // in that same crash window is healed. Either way we ack so the offset advances.
-        val alreadyOutstanding = state.byFloor.getOrElse(dto.floor, Set.empty).contains(dto.tag)
+        // Idempotent accept (decide returns no event for an already-outstanding tag). Even then we
+        // still (re)forward to the Controller and ack, so a handoff lost in a crash window is healed
+        // and the Kafka offset advances.
+        val events = CoordinatorProtocol.decide(state, Accept(dto.tag, dto.elevatorName, dto.floor))
         val effect: EffectBuilder[Event, State] =
-          if alreadyOutstanding then Effect.none
-          else Effect.persist(Accepted(dto.tag, dto.elevatorName, dto.floor))
+          if events.isEmpty then Effect.none else Effect.persist(events)
         effect.thenRun { _ =>
           controllerProvider(elevatorName) ! Controller.AddRequest(ElevatorOrder(dto.tag, Floor(dto.floor)))
           replyTo ! Ack.Ok
         }
 
       case Reached(floor) =>
-        // Confirm every order still waiting for this floor. A revisited floor has nothing left
-        // outstanding (the tags were removed on Completed), so it's a no-op.
-        val tags = state.byFloor.getOrElse(floor, Set.empty).toList
-        if tags.isEmpty then Effect.none
-        else Effect.persist(tags.map(Completed.apply))
-  }
-
-  private val eventHandler: (State, Event) => State = { (state, event) =>
-    event match
-      case Accepted(tag, _, floor) =>
-        state.copy(byFloor = state.byFloor.updated(floor, state.byFloor.getOrElse(floor, Set.empty) + tag))
-
-      case Completed(tag) =>
-        state.copy(byFloor = removeTag(state.byFloor, tag))
-  }
-
-  /** Drop `tag` from whichever floor bucket holds it, removing now-empty buckets. */
-  private def removeTag(byFloor: Map[Int, Set[String]], tag: String): Map[Int, Set[String]] =
-    byFloor.view.mapValues(_ - tag).filter(_._2.nonEmpty).toMap
-}
+        val events = CoordinatorProtocol.decide(state, Reach(floor))
+        if events.isEmpty then Effect.none else Effect.persist(events)

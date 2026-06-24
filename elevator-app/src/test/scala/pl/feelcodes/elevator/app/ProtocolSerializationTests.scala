@@ -23,9 +23,9 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
       |  allow-java-serialization = off
       |  warn-about-java-serializer-usage = on
       |  serialization-bindings {
-      |    "pl.feelcodes.elevator.app.actors.Controller$Command"   = jackson-cbor
-      |    "pl.feelcodes.elevator.app.actors.Operator$Command"     = jackson-cbor
-      |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"  = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"   = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"             = jackson-cbor
       |  }
       |}
       |""".stripMargin
