@@ -1,5 +1,6 @@
 package pl.feelcodes.elevator.common.core
 
+// Reviewed — core domain: an order = tag + target floor, ordered by floor.
 type OrderTag = String
 
 trait HasOrderTag:
