@@ -28,8 +28,8 @@ object ControllerRecoveryTests {
         |  allow-java-serialization = off
         |  serialization-bindings {
         |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Event"   = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$State"    = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerDecider$Event"    = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerDecider$State"     = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
         |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"             = jackson-cbor
         |  }
@@ -46,40 +46,38 @@ final class ControllerRecoveryTests
     with AnyWordSpecLike
     with Matchers {
 
-  private val operatorProbe = createTestProbe[Operator.Command]()
-  private val operatorProvider =
-    (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
-
-  private val coordinatorProbe = createTestProbe[Coordinator.Command]()
-  private val coordinatorProvider =
-    (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
-
   private def newTestKit() =
-    EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
+    val operatorProbe = createTestProbe[Operator.Command]()
+    val coordinatorProbe = createTestProbe[Coordinator.Command]()
+    val operatorProvider =
+      (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
+    val coordinatorProvider =
+      (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
+    val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
       Controller("lift-a", operatorProvider, coordinatorProvider, _ => ()) // publish is a no-op here
     )
+    (kit, operatorProbe, coordinatorProbe)
 
   "The Controller journal" should {
 
     "rebuild the full state after a crash when the order was served" in {
-      val esTestKit = newTestKit()
+      val (esTestKit, _, coordinatorProbe) = newTestKit()
       val order = ElevatorOrder("o-1", Floor(3))
 
-      esTestKit.runCommand(Controller.AddRequest(order)).event shouldBe Controller.RequestAdded(order)
+      esTestKit.runCommand(Controller.AddOrder(order)).event shouldBe Controller.OrderAdded(order)
 
       // The Operator reports a move that REACHES floor 3 (and stops there) -> the order is cleared.
       // Stopped (not Moving) so the idle-stop tick doesn't fire during this test.
       val reached = ElevatorState(Direction.Up, Motion.Stopped, Floor(3))
-      val owc = OrderElevatorCommand(order, Command.Go(Direction.Up))
-      esTestKit.runCommand(Controller.MoveExecuted(reached, owc))
+      esTestKit.runCommand(Controller.PublishState(reached))
 
       // Reaching the floor serves the order — the Controller tells the Coordinator the floor.
       coordinatorProbe.expectMessage(Coordinator.Reached(3))
 
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached
-      before.requests shouldBe empty // served order removed
+      before.orders shouldBe empty // served order removed
 
       esTestKit.restart() // <-- the "disaster": drop memory, recover from the journal
 
@@ -87,38 +85,37 @@ final class ControllerRecoveryTests
     }
 
     "keep an outstanding (unserved) request after a crash" in {
-      val esTestKit = newTestKit()
+      val (esTestKit, _, coordinatorProbe) = newTestKit()
       val order = ElevatorOrder("o-2", Floor(7))
 
-      esTestKit.runCommand(Controller.AddRequest(order))
+      esTestKit.runCommand(Controller.AddOrder(order))
 
       // A move that does NOT reach floor 7 -> the request must remain pending.
       val midway = ElevatorState(Direction.Up, Motion.Moving, Floor(4))
-      val owc = OrderElevatorCommand(order, Command.Go(Direction.Up))
-      esTestKit.runCommand(Controller.MoveExecuted(midway, owc))
+      esTestKit.runCommand(Controller.PublishState(midway))
 
       // Not reached -> the order is not served, so the Coordinator is NOT told it's done.
       coordinatorProbe.expectNoMessage()
 
-      esTestKit.getState().requests should contain(order)
+      esTestKit.getState().orders should contain(order)
 
       esTestKit.restart()
 
       // The pending request survived the crash, rebuilt from the journal.
-      esTestKit.getState().requests should contain(order)
+      esTestKit.getState().orders should contain(order)
       esTestKit.getState().elevatorState.floor shouldBe Floor(4)
     }
 
     "redeliver the in-flight move after a crash that happened while waiting for the Operator" in {
-      val esTestKit = newTestKit()
+      val (esTestKit, operatorProbe, _) = newTestKit()
       val order = ElevatorOrder("o-3", Floor(9))
 
-      esTestKit.runCommand(Controller.AddRequest(order))
+      esTestKit.runCommand(Controller.AddOrder(order))
 
       // A Tick dispatches the move to the Operator and latches `waiting`. We deliberately do NOT
       // deliver MoveExecuted — this is the crash window: the car was told to move, but the node
       // dies before the (ephemeral) Operator reports back.
-      esTestKit.runCommand(Controller.Tick)
+      esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
       operatorProbe.expectMessageType[Operator.Move] // the original command, now "lost"
       esTestKit.getState().waiting shouldBe true
 

@@ -26,9 +26,9 @@ object ElevatorApp extends App {
 
         sharding.init(Entity(Operator.TypeKey) { _ =>
           val reportMove: Operator.ReportMove =
-            (name, state, owc) => controllerProvider(name) ! Controller.MoveExecuted(state, owc)
+            (name, state, _) => controllerProvider(name) ! Controller.PublishState(state)
           val reportStop: Operator.ReportStop =
-            (name, state) => controllerProvider(name) ! Controller.Stopped(state)
+            (name, state) => controllerProvider(name) ! Controller.PublishState(state)
           // Pick the elevator-build strategy from config key `elevator.operator-class` at startup.
           // Adding a new variant is one case here (no reflection, so find-usages still works).
           val buildElevator: Operator.BuildElevator =

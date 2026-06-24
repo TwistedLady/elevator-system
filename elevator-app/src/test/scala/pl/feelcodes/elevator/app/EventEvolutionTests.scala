@@ -33,7 +33,7 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
       |pekko.actor {
       |  allow-java-serialization = off
       |  serialization-bindings {
-      |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Event"  = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.ControllerDecider$Event"  = jackson-cbor
       |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Event" = jackson-cbor
       |  }
       |}
@@ -51,31 +51,26 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
     val bytes = Base64.getDecoder.decode(base64)
     serialization.deserialize(bytes, JacksonCborId, manifest).get.asInstanceOf[T]
 
-  test("Controller.RequestAdded (v1) still recovers"):
+  test("Controller.OrderAdded (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.protocol.ControllerProtocol$RequestAdded",
-      "v2dyZXF1ZXN0v2N0YWdjby0xZWZsb29yv2NudW0D////"
+      "pl.feelcodes.elevator.common.protocol.ControllerDecider$OrderAdded",
+      "v2VvcmRlcr9jdGFnY28tMWVmbG9vcr9jbnVtA////w=="
     )
-    assert(recovered == Controller.RequestAdded(ElevatorOrder("o-1", Floor(3))))
+    assert(recovered == Controller.OrderAdded(ElevatorOrder("o-1", Floor(3))))
 
   test("Controller.WaitingSet (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.protocol.ControllerProtocol$WaitingSet",
+      "pl.feelcodes.elevator.common.protocol.ControllerDecider$WaitingSet",
       "v2d3YWl0aW5n9f8="
     )
     assert(recovered == Controller.WaitingSet(true))
 
   test("Controller.ElevatorStateUpdated (v1) still recovers"):
     val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.protocol.ControllerProtocol$ElevatorStateUpdated",
-      "v2VzdGF0Zb9pZGlyZWN0aW9uYlVwZm1vdGlvbmZNb3ZpbmdlZmxvb3K/Y251bQP//3BvcmRlcldpdGhDb21tYW5kv2VvcmRlcr9jdGFnY28tMWVmbG9vcr9jbnVtA///Z2NvbW1hbmRlR286VXD//w=="
+      "pl.feelcodes.elevator.common.protocol.ControllerDecider$ElevatorStateUpdated",
+      "v2VzdGF0Zb9pZGlyZWN0aW9uYlVwZm1vdGlvbmZNb3ZpbmdlZmxvb3K/Y251bQP///8="
     )
-    assert(
-      recovered == Controller.ElevatorStateUpdated(
-        ElevatorState(Direction.Up, Motion.Moving, Floor(3)),
-        OrderElevatorCommand(ElevatorOrder("o-1", Floor(3)), Command.Go(Direction.Up))
-      )
-    )
+    assert(recovered == Controller.ElevatorStateUpdated(ElevatorState(Direction.Up, Motion.Moving, Floor(3))))
 
   test("Coordinator.Accepted (v1) still recovers"):
     val recovered = fromGolden[Coordinator.Event](

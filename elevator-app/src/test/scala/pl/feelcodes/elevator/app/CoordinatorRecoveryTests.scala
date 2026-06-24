@@ -61,7 +61,7 @@ final class CoordinatorRecoveryTests
         Coordinator.Process(ElevatorOrderDto("t1", "lift-a", 3), rt))
       r.event shouldBe Coordinator.Accepted("t1", "lift-a", 3)
       r.reply shouldBe Coordinator.Ack.Ok
-      controllerProbe.expectMessageType[Controller.AddRequest]
+      controllerProbe.expectMessageType[Controller.AddOrder]
       esTestKit.getState().byFloor shouldBe Map(3 -> Set("t1"))
     }
 
@@ -72,7 +72,7 @@ final class CoordinatorRecoveryTests
       List(("a", 7), ("b", 7), ("c", 7), ("d", 2)).foreach { case (tag, floor) =>
         esTestKit.runCommand[Coordinator.Ack](rt =>
           Coordinator.Process(ElevatorOrderDto(tag, "lift-a", floor), rt))
-        controllerProbe.expectMessageType[Controller.AddRequest]
+        controllerProbe.expectMessageType[Controller.AddOrder]
       }
 
       val res = esTestKit.runCommand(Coordinator.Reached(7))
@@ -92,7 +92,7 @@ final class CoordinatorRecoveryTests
 
       val first = esTestKit.runCommand[Coordinator.Ack](rt => Coordinator.Process(dto, rt))
       first.event shouldBe Coordinator.Accepted("dup", "lift-a", 5)
-      controllerProbe.expectMessageType[Controller.AddRequest]
+      controllerProbe.expectMessageType[Controller.AddOrder]
 
       // Same tag again: this is Kafka redelivery after a crash between accept and dedup-claim.
       // No new event is recorded, but the order is re-forwarded to the Controller (idempotent
@@ -100,7 +100,7 @@ final class CoordinatorRecoveryTests
       val second = esTestKit.runCommand[Coordinator.Ack](rt => Coordinator.Process(dto, rt))
       second.hasNoEvents shouldBe true
       second.reply shouldBe Coordinator.Ack.Ok
-      controllerProbe.expectMessageType[Controller.AddRequest]
+      controllerProbe.expectMessageType[Controller.AddOrder]
       esTestKit.getState().byFloor shouldBe Map(5 -> Set("dup"))
     }
 
