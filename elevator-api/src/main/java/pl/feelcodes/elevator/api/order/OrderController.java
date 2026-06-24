@@ -12,19 +12,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-/**
- * The {@code /api/order} resource — one controller for the whole order lifecycle:
- *
- * <pre>
- *   POST /api/order        place an order (publishes a command to Kafka); echoes the body with the tag filled in
- *   GET  /api/order/{tag}  the order's status from the {@code order_status} read-model:
- *                          {"tag":..,"elevatorId":..,"floor":N,"status":"PROGRESS|DONE",..}; 404 if the tag is unknown
- * </pre>
- *
- * Placement (write → Kafka) and status (read → R2DBC) are the two sides of the same resource,
- * so they share this controller but keep separate services: {@link OrderService} writes,
- * {@link OrderStatusService} reads.
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/order")
@@ -38,19 +25,15 @@ class OrderController {
         this.orderStatusService = orderStatusService;
     }
 
-    /** Place an order — fills a tag if absent, publishes the command, echoes the body. */
     @PostMapping
     public Mono<OrderRequestDto> place(@Valid @RequestBody OrderRequestDto dto) {
         OrderRequestDto order = dto.withTagIfAbsent();
         log.info("[order place ] {} -> floor {} (tag {})",
                 order.elevatorName(), order.floor(), order.tag());
-        // Publish the command and echo the body once the broker has acknowledged it; a send
-        // failure propagates as an error response rather than being silently swallowed.
         return orderService.order(order.tag(), order.elevatorName(), order.floor())
                 .thenReturn(order);
     }
 
-    /** The order's current status, or 404 if the tag is unknown. */
     @GetMapping(value = "/{tag}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<OrderStatusDto>> status(@PathVariable("tag") String tag) {
         return orderStatusService.byTag(tag)

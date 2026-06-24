@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** A shared Kafka AdminClient, reused by {@link KafkaHealthIndicator}. */
 @Configuration
 class KafkaAdminConfig {
 

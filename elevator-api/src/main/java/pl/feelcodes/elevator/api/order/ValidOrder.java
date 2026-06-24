@@ -8,12 +8,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * Class-level Jakarta Bean Validation constraint on an {@link OrderRequestDto}: the floor must be
- * within 0..max-floor and the elevator must be in the configured fleet. The bounds come from
- * {@code ElevatorProperties} (config), so {@link OrderValidator} is config-driven rather than using
- * constant annotations like {@code @Max(15)}.
- */
 @Documented
 @Constraint(validatedBy = OrderValidator.class)
 @Target(ElementType.TYPE)

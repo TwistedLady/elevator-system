@@ -1,8 +1,3 @@
-//! Background data sources. Each runs on its own thread and feeds the UI:
-//!   - Kafka consumer  -> channel of ElevatorState
-//!   - health poller   -> shared HealthSnapshot
-//!   - log tailer      -> channel of (LogSource, line)
-
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -18,12 +13,11 @@ use serde_json::Value;
 use super::app::{ElevatorState, HealthComp, HealthSnapshot, LogSource, MAX_LOG_LINES};
 use crate::BoxErr;
 
-/// Kafka consumer thread: feeds states into `tx`, reconnecting on failure.
 pub fn spawn_consumer(brokers: String, topic: String, tx: Sender<ElevatorState>) {
     std::thread::spawn(move || loop {
         match consume_into(&brokers, &topic, &tx) {
-            Ok(()) => break,                                      // receiver gone -> stop
-            Err(_) => std::thread::sleep(Duration::from_secs(2)), // setup failed -> retry
+            Ok(()) => break,
+            Err(_) => std::thread::sleep(Duration::from_secs(2)),
         }
     });
 }
@@ -45,17 +39,16 @@ fn consume_into(brokers: &str, topic: &str, tx: &Sender<ElevatorState>) -> Resul
                 if let Some(payload) = msg.payload() {
                     if let Ok(state) = serde_json::from_slice::<ElevatorState>(payload) {
                         if tx.send(state).is_err() {
-                            return Ok(()); // UI gone
+                            return Ok(());
                         }
                     }
                 }
             }
-            Some(Err(_)) => {} // transient; librdkafka reconnects
+            Some(Err(_)) => {}
         }
     }
 }
 
-/// Poll the api actuator every 3s and publish a parsed snapshot.
 pub fn spawn_health_poll(health_url: String, shared: Arc<Mutex<HealthSnapshot>>) {
     std::thread::spawn(move || {
         let agent = ureq::AgentBuilder::new()
@@ -63,8 +56,6 @@ pub fn spawn_health_poll(health_url: String, shared: Arc<Mutex<HealthSnapshot>>)
             .timeout_read(Duration::from_secs(2))
             .build();
         loop {
-            // /actuator/health returns 200 when UP and 503 when DOWN — both carry a JSON
-            // body, so we parse either and only treat transport errors as "unreachable".
             let snapshot = match agent.get(&health_url).call() {
                 Ok(resp) => parse_health(&resp.into_string().unwrap_or_default()),
                 Err(ureq::Error::Status(_, resp)) => {
@@ -100,7 +91,6 @@ fn parse_health(body: &str) -> HealthSnapshot {
     HealthSnapshot { reachable: true, overall, components }
 }
 
-/// Compact one-line summary of a component's `details` object (first couple of fields).
 fn summarize(details: &Value) -> String {
     match details.as_object() {
         Some(obj) => obj
@@ -120,8 +110,6 @@ fn compact(v: &Value) -> String {
     }
 }
 
-/// Tail `path`, sending its last `MAX_LOG_LINES` then following appended lines.
-/// Re-opens on error/rotation. Stops when the receiver is gone.
 pub fn spawn_log_tail(source: LogSource, path: String, tx: Sender<(LogSource, String)>) {
     std::thread::spawn(move || loop {
         let Ok(file) = File::open(&path) else {
@@ -131,12 +119,11 @@ pub fn spawn_log_tail(source: LogSource, path: String, tx: Sender<(LogSource, St
         let mut reader = BufReader::new(file);
         let mut line = String::new();
 
-        // Load existing content, keeping only the most recent lines.
         let mut recent: VecDeque<String> = VecDeque::new();
         loop {
             line.clear();
             match reader.read_line(&mut line) {
-                Ok(0) => break, // reached EOF -> done with the initial load
+                Ok(0) => break,
                 Ok(_) => {
                     if recent.len() >= MAX_LOG_LINES {
                         recent.pop_front();
@@ -152,17 +139,16 @@ pub fn spawn_log_tail(source: LogSource, path: String, tx: Sender<(LogSource, St
             }
         }
 
-        // Follow new lines.
         loop {
             line.clear();
             match reader.read_line(&mut line) {
-                Ok(0) => std::thread::sleep(Duration::from_millis(300)), // wait for more
+                Ok(0) => std::thread::sleep(Duration::from_millis(300)),
                 Ok(_) => {
                     if tx.send((source, line.trim_end().to_string())).is_err() {
                         return;
                     }
                 }
-                Err(_) => break, // re-open from the outer loop
+                Err(_) => break,
             }
         }
     });

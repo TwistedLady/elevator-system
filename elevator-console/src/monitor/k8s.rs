@@ -1,7 +1,3 @@
-//! K8s tab data + actions. Shells out to `kubectl` (already required for the port-forwards the
-//! console runs against the cluster) to read the app's current mode + pod state, and to flip the
-//! mode by repointing the elevator-app deployment's envFrom at the fast/slow configmap.
-
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,13 +14,12 @@ pub struct PodLine {
     pub restarts: String,
 }
 
-/// Snapshot of cluster state shown in the K8s tab.
 #[derive(Clone)]
 pub struct K8sSnapshot {
-    pub reachable: bool, // kubectl ran successfully
-    pub mode: String,    // "fast" | "slow" | "?"
+    pub reachable: bool,
+    pub mode: String,
     pub pods: Vec<PodLine>,
-    pub note: String, // error / status text when not reachable
+    pub note: String,
 }
 
 impl Default for K8sSnapshot {
@@ -45,7 +40,6 @@ fn kubectl(args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// Current mode = which configmap the deployment's first envFrom points at.
 fn read_mode() -> Result<String, String> {
     let cm = kubectl(&[
         "get",
@@ -62,7 +56,6 @@ fn read_mode() -> Result<String, String> {
 }
 
 fn read_pods() -> Result<Vec<PodLine>, String> {
-    // custom-columns avoids the default RESTARTS column's "6 (7h ago)" spaces breaking the split.
     let out = kubectl(&[
         "get",
         "pods",
@@ -85,7 +78,6 @@ fn read_pods() -> Result<Vec<PodLine>, String> {
     Ok(pods)
 }
 
-/// Background poller: refresh the snapshot every 3s.
 pub fn spawn_k8s_poll(shared: Arc<Mutex<K8sSnapshot>>) {
     std::thread::spawn(move || loop {
         let snap = match (read_mode(), read_pods()) {
@@ -103,8 +95,6 @@ pub fn spawn_k8s_poll(shared: Arc<Mutex<K8sSnapshot>>) {
     });
 }
 
-/// Flip the mode: repoint the deployment's envFrom configmap + rollout restart. Blocking, so call
-/// off-thread. Returns a short status message.
 pub fn set_mode(mode: &str) -> Result<String, String> {
     let cm = match mode {
         "fast" => CM_FAST,

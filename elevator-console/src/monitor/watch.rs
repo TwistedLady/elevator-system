@@ -1,10 +1,3 @@
-//! Headless live view: stream elevator states to stdout (no TUI).
-//!
-//! Reuses the same Kafka consumer as the TUI ([`super::sources::spawn_consumer`]), but
-//! prints a compact text block each refresh instead of taking over the screen. This runs
-//! in ANY shell — including the in-session `!` bash, where the full-screen `monitor` can't
-//! initialize a terminal.
-
 use std::collections::BTreeMap;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -24,7 +17,6 @@ pub fn run_watch(
 
     println!("watching '{state_topic}' on {brokers} (Ctrl-C to stop)…");
     let start = Instant::now();
-    // Keyed by natural order (e2 before e10), so the block is stable and sorted.
     let mut latest: BTreeMap<(String, u64), ElevatorState> = BTreeMap::new();
     loop {
         while let Ok(s) = rx.try_recv() {
@@ -45,7 +37,6 @@ pub fn run_watch(
     Ok(())
 }
 
-/// Natural-order key: non-digit prefix + trailing number, so "e2" sorts before "e10".
 fn natural_key(name: &str) -> (String, u64) {
     match name.find(|c: char| c.is_ascii_digit()) {
         Some(i) => {

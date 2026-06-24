@@ -7,8 +7,6 @@ import pl.feelcodes.elevator.common.dto.ElevatorStateDto
 
 import java.util.Properties
 
-/** Outbound Kafka boundary: publishes confirmed elevator state to the `elevator-state` topic so
-  * the Spring API (and anything else) can monitor movement. Keyed by elevator name. */
 final class StatePublisher(producer: KafkaProducer[String, String], topic: String) {
   def publish(dto: ElevatorStateDto): Unit =
     producer.send(new ProducerRecord[String, String](topic, dto.elevatorName, Json.encode(dto)))

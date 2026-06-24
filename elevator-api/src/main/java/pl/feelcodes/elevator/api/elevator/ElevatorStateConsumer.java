@@ -20,11 +20,6 @@ import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 
-/**
- * Background Kafka consumer that tails the elevator-state topic and keeps the
- * {@link ElevatorStateStore} updated with the latest state per elevator. Plain kafka-clients
- * on a daemon thread — no extra framework, easy to reason about.
- */
 @Component
 public class ElevatorStateConsumer {
 
@@ -59,8 +54,6 @@ public class ElevatorStateConsumer {
     private void run() {
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        // Unique group per boot + earliest => replay the whole topic on every start,
-        // so the in-memory cache always rebuilds the latest state for every elevator.
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "elevator-api-monitor-" + UUID.randomUUID());
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
@@ -82,7 +75,6 @@ public class ElevatorStateConsumer {
                 }
             }
         } catch (WakeupException expectedOnShutdown) {
-            // ignore
         } catch (Exception e) {
             log.error("state consumer stopped unexpectedly", e);
         } finally {

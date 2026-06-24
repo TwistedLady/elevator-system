@@ -9,13 +9,6 @@ import pl.feelcodes.elevator.common.dto.ElevatorStateDto;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-/**
- * Live elevator state, served from the in-memory cache that {@link ElevatorStateConsumer} fills
- * from the Kafka elevator-state topic.
- *
- *   GET /api/elevator         ->  JSON array of every known elevator's latest state
- *   GET /api/elevator/{name}  ->  that elevator's latest {@link ElevatorStateDto}, or 404
- */
 @RestController
 @RequestMapping("/api/elevator")
 class ElevatorController {
@@ -26,7 +19,6 @@ class ElevatorController {
         this.store = store;
     }
 
-    /** The latest state of every known elevator. */
     @GetMapping
     public Flux<ElevatorStateDto> all() {
         return Flux.fromIterable(store.all());

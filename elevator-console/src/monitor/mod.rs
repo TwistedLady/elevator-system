@@ -1,12 +1,3 @@
-//! `monitor` subcommand: a retro multi-view TUI (Chart / Health / Logs).
-//!
-//! Structure:
-//!   app      — all UI state + key handling (no I/O)
-//!   sources  — background threads feeding state in (Kafka / health / logs)
-//!   ui       — rendering only
-//!   selftest — headless PASS/FAIL check reusing `sources` (no TUI)
-//! This module just wires them together and runs the draw/event loop.
-
 mod app;
 mod k8s;
 mod selftest;
@@ -36,9 +27,6 @@ pub fn run(
     app_log: &str,
     api_log: &str,
 ) -> Result<(), BoxErr> {
-    // The full-screen TUI needs a real terminal. In a captured shell (e.g. the in-session
-    // `!` bash) ratatui::init() would panic with "No such device or address"; fail with a
-    // clear message pointing at the headless alternatives instead.
     if !std::io::stdout().is_terminal() {
         return Err("`monitor` needs a real terminal (TTY); it can't run in a captured shell \
                     like the in-session `!` bash. Run it in your own terminal window, or use \
@@ -46,29 +34,22 @@ pub fn run(
             .into());
     }
 
-    // The api base is the health URL minus the actuator path (e.g. http://localhost:8080).
     let api_base = health_url.strip_suffix("/actuator/health").unwrap_or(health_url);
     let mut app = App::new(brokers, command_topic, api_base);
 
-    // Kafka state -> channel.
     let (state_tx, state_rx) = mpsc::channel::<ElevatorState>();
     sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), state_tx);
 
-    // Actuator health -> shared snapshot.
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(health_url.to_string(), Arc::clone(&health));
 
-    // Backend logs -> channel (both files share one channel, tagged by source).
     let (log_tx, log_rx) = mpsc::channel::<(LogSource, String)>();
     sources::spawn_log_tail(LogSource::App, app_log.to_string(), log_tx.clone());
     sources::spawn_log_tail(LogSource::Api, api_log.to_string(), log_tx);
 
-    // Cluster state (mode + pods) -> shared snapshot, via kubectl.
     let k8s_state = Arc::new(Mutex::new(K8sSnapshot::default()));
     k8s::spawn_k8s_poll(Arc::clone(&k8s_state));
 
-    // ratatui::init() enables raw mode + alternate screen and installs a panic hook
-    // that restores the terminal; ratatui::restore() undoes it on the way out.
     let mut terminal = ratatui::init();
     let result = event_loop(&mut terminal, &mut app, &state_rx, &log_rx, &health, &k8s_state);
     ratatui::restore();
@@ -84,7 +65,6 @@ fn event_loop(
     k8s_state: &Arc<Mutex<K8sSnapshot>>,
 ) -> Result<(), BoxErr> {
     loop {
-        // Drain whatever the background threads produced.
         while let Ok(state) = state_rx.try_recv() {
             app.record_state(state);
         }
@@ -101,7 +81,6 @@ fn event_loop(
 
         terminal.draw(|frame| ui::draw(frame, app))?;
 
-        // Block up to 150ms for a key, so we stay responsive without busy-looping.
         if event::poll(Duration::from_millis(150))? {
             if let Event::Key(key) = event::read()? {
                 app.on_key(key);
