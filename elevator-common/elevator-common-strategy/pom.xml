@@ -13,12 +13,17 @@
     <artifactId>elevator-common-strategy</artifactId>
     <packaging>jar</packaging>
 
-    <!-- The movement decision: given target floors, pick the next Command. Pekko-free, floors only
-         (knows nothing about orders). Depends only on the domain core. -->
+    <!-- Pekko-free decisions: movement (NextFloorStrategy), floor-merge (CoordinatorStrategy),
+         and the Controller/Operator decide-evolve logic. Depends on the domain core and the events. -->
     <dependencies>
         <dependency>
             <groupId>pl.feelcodes.elevator</groupId>
             <artifactId>elevator-common-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-common-events</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

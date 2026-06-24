@@ -22,13 +22,6 @@ class OrderService {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * Publish the order command to Kafka. The returned {@link Mono} completes only when the broker
-     * has acknowledged the record, and errors if the send fails — so the caller sees a real result
-     * instead of fire-and-forget. The send runs on a {@code boundedElastic} thread because the
-     * first send to a topic can block while producer metadata is fetched; we keep that off the
-     * WebFlux event loop.
-     */
     Mono<Void> order(String tag, String elevatorName, Integer floor) {
         return Mono.<Void>create(sink -> {
             String json;

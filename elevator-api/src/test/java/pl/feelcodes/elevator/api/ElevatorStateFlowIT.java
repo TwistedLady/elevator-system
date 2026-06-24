@@ -19,21 +19,10 @@ import java.util.Properties;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 
-/**
- * End-to-end monitor read path against a REAL Kafka broker (Testcontainers).
- *
- * Where {@link ElevatorApiTests} mocks Kafka to prove the context wires up, this boots the
- * real {@link pl.feelcodes.elevator.api.elevator.ElevatorStateConsumer}:
- *   publish a state event -> consumer stores it -> REST endpoint serves it.
- *
- * Opt-in: named *IT so it runs under failsafe (`mvn verify`), never under surefire (`mvn test`).
- * Requires a running Docker daemon.
- */
 @Testcontainers
 @SpringBootTest(classes = ElevatorApi.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ElevatorStateFlowIT {
 
-    // Same broker version as the demo/k8s brokers (kafka.version in the root pom).
     @Container
     static final KafkaContainer KAFKA =
             new KafkaContainer(DockerImageName.parse("apache/kafka:3.8.1"));
@@ -61,7 +50,6 @@ class ElevatorStateFlowIT {
                 .baseUrl("http://localhost:" + port)
                 .build();
 
-        // StateConsumer reads from earliest on a fresh group, so the event lands shortly after boot.
         await().atMost(30, SECONDS).untilAsserted(() ->
                 client.get().uri("/api/elevator/{name}", elevator)
                         .exchange()

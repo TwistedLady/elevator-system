@@ -1,5 +1,6 @@
 package pl.feelcodes.elevator.common.core
 
+// Reviewed — core domain: floor number type, ordered, with ++/-- navigation.
 type FloorNum = Int
 
 trait HasFloorNum:

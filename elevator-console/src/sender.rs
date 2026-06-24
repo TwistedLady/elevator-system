@@ -1,5 +1,3 @@
-//! `order` and `simulate` subcommands: produce orders to the command topic.
-
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -11,7 +9,6 @@ use serde::Serialize;
 
 use crate::BoxErr;
 
-/// Mirrors `ElevatorOrderDto` consumed by elevator-app from the command topic.
 #[derive(Serialize)]
 struct ElevatorOrder<'a> {
     tag: &'a str,
@@ -24,8 +21,6 @@ fn make_producer(brokers: &str) -> Result<BaseProducer, KafkaError> {
     ClientConfig::new().set("bootstrap.servers", brokers).create()
 }
 
-/// Send one order. If librdkafka's send queue is full (it fills under bulk load),
-/// poll to let it drain and retry the same record — that's the backpressure.
 fn send_order(
     producer: &BaseProducer,
     topic: &str,
@@ -38,23 +33,19 @@ fn send_order(
         elevator_name: elevator,
         floor,
     })?;
-    // Keyed by elevator name, same as the Spring api's producer.
     let mut record = BaseRecord::to(topic).key(elevator).payload(&payload);
     loop {
         match producer.send(record) {
             Ok(()) => return Ok(()),
             Err((KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull), rejected)) => {
                 producer.poll(Duration::from_millis(100));
-                record = rejected; // retry the bounced record
+                record = rejected;
             }
             Err((e, _)) => return Err(e.into()),
         }
     }
 }
 
-/// Send one order and wait for it to flush. Prints nothing — the TUI calls this on a
-/// background thread, so stdout output would corrupt the alternate screen. The CLI caller
-/// prints its own confirmation.
 pub fn send_one(brokers: &str, topic: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     let producer = make_producer(brokers)?;
     let tag = format!("cli-{}", std::process::id());
@@ -63,15 +54,10 @@ pub fn send_one(brokers: &str, topic: &str, elevator: &str, floor: i32) -> Resul
     Ok(())
 }
 
-/// The deterministic tag for the i-th order of simulation worker `tid` in run `run_id`. Shared so
-/// the TUI can reconstruct the tags it sent and check them against the API's order-status endpoint.
-/// `run_id` makes each run's tags unique so a re-run isn't deduped away (and shows fresh progress).
 pub fn sim_tag(run_id: u64, tid: u64, i: u64) -> String {
     format!("sim-{run_id}-{tid}-{i}")
 }
 
-/// Enumerate up to `limit` of the tags a simulation of `count` orders on `threads` workers will
-/// produce — same per-worker split as `run_simulation`, so these match what was actually sent.
 pub fn sim_tags(run_id: u64, count: u64, threads: u64, limit: usize) -> Vec<String> {
     let threads = threads.max(1);
     let per = count / threads;
@@ -89,15 +75,7 @@ pub fn sim_tags(run_id: u64, count: u64, threads: u64, limit: usize) -> Vec<Stri
     tags
 }
 
-/// Core simulation loop, shared by the CLI and the TUI. Sends `count` random orders across
-/// `elevators` using `threads` producers, bumping `sent` after each one so a caller on another
-/// thread can poll progress. Does no printing — that's the caller's concern.
-///
-/// `pace` is an optional target wall-clock duration for the whole run: each worker spreads its
-/// share of the orders evenly across it, so the TUI progress bar visibly fills instead of
-/// jumping to 100% instantly. Pass `None` (the CLI) to send as fast as possible. Pacing only
-/// ever slows things down — when the orders take longer to send than `pace`, it has no effect.
-#[allow(clippy::too_many_arguments)] // a config struct would be more ceremony than it's worth here
+#[allow(clippy::too_many_arguments)]
 pub fn run_simulation(
     brokers: &str,
     topic: &str,
@@ -116,7 +94,6 @@ pub fn run_simulation(
     let per = count / threads;
     let rem = count % threads;
 
-    // Scoped threads can borrow `sent`, `elevators`, `brokers`, `topic` without Arc/clone.
     std::thread::scope(|s| -> Result<(), BoxErr> {
         let mut handles = Vec::new();
         for t in 0..threads {
@@ -148,7 +125,6 @@ pub fn simulate(
     );
     let start = Instant::now();
 
-    // Unique per CLI invocation so seeds across runs don't collide (dedup) on tags.
     let run_id = std::process::id() as u64;
     run_simulation(brokers, topic, count, threads, elevators, max_floor, &sent, None, run_id)?;
 
@@ -173,8 +149,6 @@ fn worker(
 ) -> Result<(), BoxErr> {
     let producer = make_producer(brokers)?;
     let mut rng = rand::thread_rng();
-    // Spread this worker's `n` orders across `pace`. Skip sub-millisecond delays: thread::sleep
-    // can't honour them and big runs (tiny per-order share) should just go full speed anyway.
     let delay = pace
         .filter(|_| n > 0)
         .map(|p| p / n as u32)
@@ -185,7 +159,7 @@ fn worker(
         let tag = sim_tag(run_id, tid, i);
         send_order(&producer, topic, elevator, floor, &tag)?;
         if i % 1000 == 0 {
-            producer.poll(Duration::from_millis(0)); // serve delivery callbacks
+            producer.poll(Duration::from_millis(0));
         }
         sent.fetch_add(1, Ordering::Relaxed);
         if let Some(d) = delay {

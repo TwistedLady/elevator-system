@@ -8,10 +8,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Holds the latest known {@link ElevatorStateDto} per elevator, fed by {@link ElevatorStateConsumer}
- * from the Kafka elevator-state topic. Read by {@link ElevatorController}.
- */
 @Component
 class ElevatorStateStore {
 
@@ -27,7 +23,6 @@ class ElevatorStateStore {
         return Optional.ofNullable(latestByElevator.get(elevatorName));
     }
 
-    /** Latest state for every elevator seen so far. */
     public Collection<ElevatorStateDto> all() {
         return latestByElevator.values();
     }

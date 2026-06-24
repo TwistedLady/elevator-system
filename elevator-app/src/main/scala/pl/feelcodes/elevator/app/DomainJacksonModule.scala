@@ -6,12 +6,6 @@ import com.fasterxml.jackson.databind.{DeserializationContext, JsonDeserializer,
 import pl.feelcodes.elevator.common.core.{Command, Direction, Motion}
 import pl.feelcodes.elevator.common.core.Command.{Go, Stop}
 
-/**
- * Jackson support for the domain's Scala 3 enums/ADTs. jackson-module-scala treats them as
- * plain enums and chokes on the parameterized `Command.Go(direction)` ("Failed to create Enum
- * instance for Go(Up)"). We encode them as compact strings here — keeping the pure core module
- * free of any Jackson dependency. Registered via pekko.serialization.jackson.jackson-modules.
- */
 private class DirectionSer extends JsonSerializer[Direction]:
   override def serialize(v: Direction, g: JsonGenerator, p: SerializerProvider): Unit = g.writeString(v.toString)
 

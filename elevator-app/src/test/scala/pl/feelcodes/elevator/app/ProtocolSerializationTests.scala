@@ -5,15 +5,11 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.serialization.{SerializationExtension, Serializers}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Operator}
 import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
 
-/**
- * Proves every actor message survives a real serialize -> deserialize round trip with the
- * same jackson-cbor serializer cluster sharding uses across nodes. On a single node Pekko
- * skips serialization, so these bugs (e.g. shipping the behavioral `Elevator`/`Engine`) only
- * show up here or in production — never in the demo. This is the regression guard for that.
- */
 final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
   private val config = ConfigFactory.parseString(
@@ -23,9 +19,9 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
       |  allow-java-serialization = off
       |  warn-about-java-serializer-usage = on
       |  serialization-bindings {
-      |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
-      |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"   = jackson-cbor
-      |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"             = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"  = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
       |  }
       |}
       |""".stripMargin
@@ -45,8 +41,8 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
   private val state =
     ElevatorState(Direction.Up, Motion.Moving, Floor(3))
 
-  test("Controller.AddOrder round-trips"):
-    val msg = Controller.AddOrder(ElevatorOrder("tag-1", Floor(5)))
+  test("Controller.AddUniqueOrderSet round-trips"):
+    val msg = Controller.AddUniqueOrderSet(Set(ElevatorOrder("tag-1", Floor(5))))
     assert(roundTrip(msg) == msg)
 
   test("Controller.PublishState round-trips (data only — no Elevator/Engine)"):
@@ -61,10 +57,10 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val msg = Operator.Move("lift-a", state, Command.Go(Direction.Up))
     assert(roundTrip(msg) == msg)
 
-  test("Operator.Stop round-trips"):
-    val msg = Operator.Stop("lift-a", state)
+  test("Operator.Move(Stop) round-trips"):
+    val msg = Operator.Move("lift-a", state, Command.Stop())
     assert(roundTrip(msg) == msg)
 
-  test("Coordinator.Reached round-trips (Controller -> Coordinator across nodes)"):
-    val msg = Coordinator.Reached(5)
+  test("Coordinator.AddOriginalStream round-trips (original Kafka orders)"):
+    val msg = AddOriginalStream(List(ElevatorOrderDto("tag-1", "lift-a", 3)))
     assert(roundTrip(msg) == msg)

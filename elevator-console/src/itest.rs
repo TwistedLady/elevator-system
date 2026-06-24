@@ -1,17 +1,3 @@
-//! `itest` subcommand: the whole integration test in one self-contained binary (no Python/Go).
-//!
-//! Pipeline:
-//!   1. health-gate the api,
-//!   2. send N deterministically-tagged orders to the command topic (same path as `simulate`),
-//!   3. poll `GET /api/order/{tag}` per order until DONE or timeout (latency + loss),
-//!   4. CROSS-CHECK the run against the live pod logs via `kubectl logs`:
-//!        - api log must confirm each tag reached DONE   (api side),
-//!        - app log must show the elevators moved + no "Kafka stream failed"   (app side),
-//!   5. write a JSON + Markdown report (requests / time / loss) and exit non-zero on any failure,
-//!      so the pre-commit hook / CI can gate on it.
-//!
-//! The run is isolated by a unique run_id in every tag, so it doesn't need a clean cluster.
-
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -36,7 +22,7 @@ pub fn run_itest(
     count: u64,
     timeout_secs: u64,
     out_path: &str,
-    quiet: bool, // true when launched from the TUI (stdout would corrupt the alternate screen)
+    quiet: bool,
 ) -> Result<(), BoxErr> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
@@ -44,7 +30,6 @@ pub fn run_itest(
         .build();
     let api_base = health_url.strip_suffix("/actuator/health").unwrap_or(health_url);
 
-    // 1) health gate
     let health_ok = matches!(
         agent.get(health_url).call().map(|r| r.into_string().unwrap_or_default()),
         Ok(body) if body.contains("\"status\":\"UP\"")
@@ -53,7 +38,6 @@ pub fn run_itest(
         eprintln!("[itest] health {} ({health_url})", if health_ok { "UP" } else { "DOWN" });
     }
 
-    // 2) send N tagged orders
     let run_id = now_ms();
     let fleet: Vec<String> = FLEET.iter().map(|s| s.to_string()).collect();
     let sent = AtomicU64::new(0);
@@ -65,7 +49,6 @@ pub fn run_itest(
         eprintln!("[itest] sent {count} orders in {send_secs:.2}s (run {run_id})");
     }
 
-    // 3) poll the api per tag until DONE or timeout
     let mut pending: BTreeSet<String> =
         sim_tags(run_id, count, THREADS, count as usize).into_iter().collect();
     let mut latencies: Vec<u64> = Vec::new();
@@ -76,7 +59,6 @@ pub fn run_itest(
     let total_secs = (now_ms() - sent_ms) as f64 / 1000.0;
     let throughput = if total_secs > 0.0 { done as f64 / total_secs } else { 0.0 };
 
-    // 4) cross-check against the live pod logs
     let api_log = kubectl_logs("elevator-api");
     let app_log = kubectl_logs("elevator-app");
     let done_re = Regex::new(&format!(r"\[order status\] (sim-{run_id}-\S+) -> DONE")).unwrap();
@@ -87,7 +69,6 @@ pub fn run_itest(
     let stream_failed = app_log.contains("Kafka stream failed");
     let mode = current_mode();
 
-    // 5) verdict
     let checks: Vec<(String, bool)> = vec![
         ("console: lost == 0".into(), lost == 0),
         ("console: health UP".into(), health_ok),
@@ -166,7 +147,6 @@ fn poll_done(
     done
 }
 
-/// `kubectl logs deployment/<dep>`, ANSI-stripped. Empty string if kubectl is unavailable.
 fn kubectl_logs(dep: &str) -> String {
     let out = Command::new("kubectl")
         .args(["logs", &format!("deployment/{dep}"), "--tail=12000"])
@@ -263,7 +243,6 @@ fn write_report(path: &str, report: &serde_json::Value) -> Result<(), BoxErr> {
     Ok(())
 }
 
-/// Markdown sibling of the JSON report (path with .md), for humans / PRs.
 fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, bool)]) {
     let md_path = json_path.strip_suffix(".json").unwrap_or(json_path).to_string() + ".md";
     let lm = &r["latency_ms"];

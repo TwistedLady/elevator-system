@@ -1,5 +1,6 @@
 package pl.feelcodes.elevator.common.core
 
+// Reviewed — core domain: direction/motion/command, elevator state, and the engine (fast/slow) that moves it.
 import pl.feelcodes.elevator.common.core.Command.{Go, Stop}
 import pl.feelcodes.elevator.common.core.Direction.*
 import pl.feelcodes.elevator.common.core.Motion.{Moving, Stopped}

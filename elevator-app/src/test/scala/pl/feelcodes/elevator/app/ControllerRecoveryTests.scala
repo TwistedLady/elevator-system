@@ -6,20 +6,10 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Operator}
 import pl.feelcodes.elevator.common.core.*
 
-/**
- * Disaster-recovery test for the Controller's event-sourced state.
- *
- * `EventSourcedBehaviorTestKit.restart()` is the in-test equivalent of a crash: it throws away
- * the actor's in-memory state and rebuilds it purely by replaying the journal. If recovery is
- * sound, the state after the "crash" is identical to the state before it.
- */
 object ControllerRecoveryTests {
-  // The persistence-testkit journal + the same jackson-cbor bindings used in production, so the
-  // testkit's serialize/deserialize round-trip of every event and the state actually exercises
-  // the real wire format (not Java serialization).
   val config = ConfigFactory
     .parseString(
       """
@@ -28,10 +18,9 @@ object ControllerRecoveryTests {
         |  allow-java-serialization = off
         |  serialization-bindings {
         |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Controller$Event"                = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Controller$State"                = jackson-cbor
+        |    "pl.feelcodes.elevator.common.events.ControllerEvents$Event"        = jackson-cbor
+        |    "pl.feelcodes.elevator.common.strategy.ControllerStrategy$State"     = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"             = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -48,81 +37,62 @@ final class ControllerRecoveryTests
 
   private def newTestKit() =
     val operatorProbe = createTestProbe[Operator.Command]()
-    val coordinatorProbe = createTestProbe[Coordinator.Command]()
     val operatorProvider =
       (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
-    val coordinatorProvider =
-      (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, coordinatorProvider, _ => ()) // publish is a no-op here
+      Controller("lift-a", operatorProvider, _ => ())
     )
-    (kit, operatorProbe, coordinatorProbe)
+    (kit, operatorProbe)
 
   "The Controller journal" should {
 
     "rebuild the full state after a crash when the order was served" in {
-      val (esTestKit, _, coordinatorProbe) = newTestKit()
+      val (esTestKit, _) = newTestKit()
       val order = ElevatorOrder("o-1", Floor(3))
 
-      esTestKit.runCommand(Controller.AddOrder(order)).event shouldBe Controller.OrderAdded(order)
+      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
+        .events should contain(Controller.OrderAdded(order))
 
-      // The Operator reports a move that REACHES floor 3 (and stops there) -> the order is cleared.
-      // Stopped (not Moving) so the idle-stop tick doesn't fire during this test.
       val reached = ElevatorState(Direction.Up, Motion.Stopped, Floor(3))
       esTestKit.runCommand(Controller.PublishState(reached))
 
-      // Reaching the floor serves the order — the Controller tells the Coordinator the floor.
-      coordinatorProbe.expectMessage(Coordinator.Reached(3))
-
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached
-      before.orders shouldBe empty // served order removed
+      before.orders shouldBe empty
 
-      esTestKit.restart() // <-- the "disaster": drop memory, recover from the journal
-
-      esTestKit.getState() shouldBe before // recovered identically
+      esTestKit.restart()
+      esTestKit.getState() shouldBe before
     }
 
     "keep an outstanding (unserved) request after a crash" in {
-      val (esTestKit, _, coordinatorProbe) = newTestKit()
+      val (esTestKit, _) = newTestKit()
       val order = ElevatorOrder("o-2", Floor(7))
 
-      esTestKit.runCommand(Controller.AddOrder(order))
+      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
 
-      // A move that does NOT reach floor 7 -> the request must remain pending.
       val midway = ElevatorState(Direction.Up, Motion.Moving, Floor(4))
       esTestKit.runCommand(Controller.PublishState(midway))
-
-      // Not reached -> the order is not served, so the Coordinator is NOT told it's done.
-      coordinatorProbe.expectNoMessage()
 
       esTestKit.getState().orders should contain(order)
 
       esTestKit.restart()
-
-      // The pending request survived the crash, rebuilt from the journal.
       esTestKit.getState().orders should contain(order)
       esTestKit.getState().elevatorState.floor shouldBe Floor(4)
     }
 
     "redeliver the in-flight move after a crash that happened while waiting for the Operator" in {
-      val (esTestKit, operatorProbe, _) = newTestKit()
+      val (esTestKit, operatorProbe) = newTestKit()
       val order = ElevatorOrder("o-3", Floor(9))
 
-      esTestKit.runCommand(Controller.AddOrder(order))
+      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
 
-      // A Tick dispatches the move to the Operator and latches `waiting`. We deliberately do NOT
-      // deliver MoveExecuted — this is the crash window: the car was told to move, but the node
-      // dies before the (ephemeral) Operator reports back.
       esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
-      operatorProbe.expectMessageType[Operator.Move] // the original command, now "lost"
+      operatorProbe.expectMessageType[Operator.Move]
       esTestKit.getState().waiting shouldBe true
 
-      esTestKit.restart() // crash + recover from the journal, replaying waiting = true
+      esTestKit.restart()
 
-      // Before the fix the Controller froze here (waiting = true, no report ever coming).
-      // Recovery now redelivers the lost command instead.
       val redelivered = operatorProbe.expectMessageType[Operator.Move]
       redelivered.command shouldBe Command.Go(Direction.Up)
     }

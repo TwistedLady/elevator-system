@@ -5,10 +5,6 @@ import pl.feelcodes.elevator.common.core.Direction.*
 import pl.feelcodes.elevator.common.core.Motion.*
 import pl.feelcodes.elevator.common.core.Command.*
 
-/**
- * Mechanics of a single elevator: does `move` change floor / direction / motion correctly?
- * Pure, no infrastructure. Uses the FAST engine so the burn() loop is negligible.
- */
 final class ElevatorTests extends AnyFunSuite:
 
   private def at(floor: Int, dir: Direction = Up, motion: Motion = Stopped): Elevator =

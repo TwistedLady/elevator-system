@@ -4,12 +4,6 @@ import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import pl.feelcodes.elevator.api.config.ElevatorProperties;
 
-/**
- * Validates an {@link OrderRequestDto} against the project params (floor range + fleet). Spring
- * constructs constraint validators through its own factory, so {@link ElevatorProperties} can be
- * injected here. Violations are attached to the {@code floor} / {@code elevatorName} fields, so the
- * error response points at the offending field.
- */
 public class OrderValidator implements ConstraintValidator<ValidOrder, OrderRequestDto> {
 
     private final ElevatorProperties props;
@@ -21,7 +15,7 @@ public class OrderValidator implements ConstraintValidator<ValidOrder, OrderRequ
     @Override
     public boolean isValid(OrderRequestDto dto, ConstraintValidatorContext ctx) {
         if (dto == null) {
-            return true; // a null body is a separate concern (missing request body -> 400 already)
+            return true;
         }
         boolean valid = true;
         ctx.disableDefaultConstraintViolation();

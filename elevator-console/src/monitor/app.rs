@@ -1,5 +1,3 @@
-//! Application state and the logic that mutates it (no rendering, no I/O threads here).
-
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,14 +9,10 @@ use serde::Deserialize;
 
 use super::k8s::K8sSnapshot;
 
-/// Max log lines kept per source (older ones are dropped).
 pub const MAX_LOG_LINES: usize = 1000;
-/// Floors used by the `sim` command when generating random orders.
 pub const SIM_MAX_FLOOR: i32 = 15;
-/// How many seconds of floor history the TREND chart keeps/shows.
 pub const TREND_WINDOW_SECS: f64 = 60.0;
 
-/// Mirrors `ElevatorStateDto` published by elevator-app.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ElevatorState {
     #[serde(rename = "elevatorName")]
@@ -28,7 +22,6 @@ pub struct ElevatorState {
     pub floor: i32,
 }
 
-/// One component from the actuator /actuator/health response.
 #[derive(Clone)]
 pub struct HealthComp {
     pub name: String,
@@ -36,7 +29,6 @@ pub struct HealthComp {
     pub detail: String,
 }
 
-/// Snapshot of the api's actuator health.
 #[derive(Clone)]
 pub struct HealthSnapshot {
     pub reachable: bool,
@@ -50,21 +42,15 @@ impl Default for HealthSnapshot {
     }
 }
 
-/// State of an in-flight (or finished) simulation — drives the SIM tab's progress bar.
-/// A worker thread bumps `sent`; the UI thread only reads it.
 pub struct SimRun {
     pub total: u64,
     pub elevators: usize,
     pub sent: Arc<AtomicU64>,
     pub done: Arc<AtomicBool>,
     pub start: Instant,
-    /// Set once when the run finishes, so the elapsed time stops ticking.
     pub elapsed: Option<Duration>,
-    /// How many of the sent orders we verify against the API (= total; we check them all).
     pub checked: u64,
-    /// Orders the API reports as status DONE; set by the poller each round.
     pub status_done: Arc<AtomicU64>,
-    /// Orders the API reports as status PROGRESS (accepted, on the way); set by the poller.
     pub status_progress: Arc<AtomicU64>,
 }
 
@@ -73,7 +59,6 @@ impl SimRun {
         self.sent.load(Ordering::Relaxed)
     }
 
-    /// Fraction sent, clamped to 0.0..=1.0 (safe to hand straight to a Gauge).
     pub fn ratio(&self) -> f64 {
         if self.total == 0 {
             0.0
@@ -90,7 +75,6 @@ impl SimRun {
         self.status_progress.load(Ordering::Relaxed)
     }
 
-    /// Orders not yet seen in the read-model (sent but no PROGRESS/DONE row yet).
     pub fn pending(&self) -> u64 {
         self.checked.saturating_sub(self.done() + self.in_progress())
     }
@@ -99,13 +83,11 @@ impl SimRun {
         self.elapsed.is_some()
     }
 
-    /// Seconds elapsed: frozen once finished, otherwise live.
     pub fn secs(&self) -> f64 {
         self.elapsed.unwrap_or_else(|| self.start.elapsed()).as_secs_f64()
     }
 }
 
-/// Which backend log the Logs view is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LogSource {
     App,
@@ -121,7 +103,6 @@ impl LogSource {
     }
 }
 
-/// The tabs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Chart,
@@ -153,7 +134,6 @@ impl View {
         }
     }
 
-    /// Funny old-school tab labels with circled-number icons.
     pub fn title(self) -> &'static str {
         match self {
             View::Chart => "① CHART",
@@ -176,56 +156,36 @@ impl View {
     }
 }
 
-/// All UI state. Background threads feed it through channels (see `sources`).
 pub struct App {
     pub view: View,
     pub latest: BTreeMap<String, ElevatorState>,
-    /// Per-elevator floor history as (seconds-since-start, floor), for the TREND chart.
     pub history: BTreeMap<String, VecDeque<(f64, f64)>>,
-    /// Every elevator name seen this session (never pruned, unlike `latest`/`history`), so the
-    /// Order tab remembers the whole fleet even after a car stops reporting.
     pub seen_elevators: BTreeSet<String>,
-    /// Highest floor seen this session — the observed building height for the Order tab hint.
     pub seen_floor_max: i32,
-    /// Live cluster state for the K8s tab (mode + pods), refreshed by a kubectl poller.
     pub k8s: K8sSnapshot,
-    /// Result of an async K8s action (mode switch), surfaced into `message` next frame.
     k8s_action: Arc<Mutex<Option<String>>>,
-    /// Last integration-test report (parsed logs/itest-report.json), shown on the Test tab.
     pub test_report: Option<serde_json::Value>,
-    /// True while an integration test launched from the Test tab is running.
     pub test_running: Arc<std::sync::atomic::AtomicBool>,
-    /// Edge-detect for `test_running` so we reload the report exactly when a run finishes.
     test_was_running: bool,
     start: Instant,
-    /// Wall-clock (unix seconds) at startup, paired with `start`, to label chart times.
     start_unix: i64,
     pub health: HealthSnapshot,
     pub app_logs: VecDeque<String>,
     pub api_logs: VecDeque<String>,
     pub log_source: LogSource,
-    /// Raw regex text the user is typing in the Logs view.
     pub log_filter: String,
-    /// Compiled filter (None = show all, or pattern is empty/invalid).
     pub log_re: Option<Regex>,
-    /// True when `log_filter` is non-empty but not a valid regex.
     pub log_re_err: bool,
-    /// Elevator-name filter for the Chart and Trend views (regex, case-insensitive).
     pub elevator_filter: String,
     pub elevator_re: Option<Regex>,
     pub elevator_re_err: bool,
-    /// Count typed in the SIM view (how many random orders to fire).
     pub sim_input: String,
-    /// "<elevator> <floor>" typed in the ORDER view.
     pub order_input: String,
-    /// Current/last simulation run, for the SIM tab's progress bar.
     pub sim: Option<SimRun>,
-    /// Short feedback message shown in the ORDER/SIM footers (last action result).
     pub message: String,
     pub should_quit: bool,
     brokers: String,
     command_topic: String,
-    /// Base URL of the elevator-api (e.g. http://localhost:8080), for the order-status check.
     api_base: String,
 }
 
@@ -270,18 +230,14 @@ impl App {
         app
     }
 
-    /// Path of the integration-test report the `itest` mode writes (relative to the run dir).
     const TEST_REPORT_PATH: &'static str = "logs/itest-report.json";
 
-    /// Load the last integration-test report from disk (if any), for the Test tab.
     fn reload_test_report(&mut self) {
         self.test_report = std::fs::read_to_string(Self::TEST_REPORT_PATH)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok());
     }
 
-    /// Per-frame upkeep: freeze a finished run's elapsed time, and surface any async K8s action
-    /// result into the footer message.
     pub fn refresh_sim(&mut self) {
         if let Some(sim) = &mut self.sim {
             if sim.elapsed.is_none() && sim.done.load(Ordering::Relaxed) {
@@ -291,7 +247,6 @@ impl App {
         if let Some(msg) = self.k8s_action.lock().ok().and_then(|mut g| g.take()) {
             self.message = msg;
         }
-        // When a Test-tab run finishes, reload the fresh report and report the verdict.
         let running = self.test_running.load(Ordering::Relaxed);
         if self.test_was_running && !running {
             self.reload_test_report();
@@ -306,32 +261,25 @@ impl App {
     }
 
     pub fn record_state(&mut self, state: ElevatorState) {
-        // Append to the floor-over-time history and drop points older than the window.
         let t = self.start.elapsed().as_secs_f64();
         let hist = self.history.entry(state.elevator_name.clone()).or_default();
         hist.push_back((t, state.floor as f64));
         while matches!(hist.front(), Some(&(t0, _)) if t - t0 > TREND_WINDOW_SECS) {
             hist.pop_front();
         }
-        // Session memory: remember the fleet + tallest floor for the Order tab (never pruned).
         self.seen_elevators.insert(state.elevator_name.clone());
         self.seen_floor_max = self.seen_floor_max.max(state.floor);
         self.latest.insert(state.elevator_name.clone(), state);
     }
 
-    /// Seconds since the monitor started — the trend's scrolling "now" (right edge of the window).
     pub fn now_secs(&self) -> f64 {
         self.start.elapsed().as_secs_f64()
     }
 
-    /// Local wall-clock time (HH:MM:SS) for a chart x-value, i.e. `secs_since_start` seconds after
-    /// startup. Lets the trend axis show *when the data is from*, not a relative offset.
     pub fn clock_at(&self, secs_since_start: f64) -> String {
         local_hms(self.start_unix + secs_since_start.round() as i64)
     }
 
-    /// Current local wall-clock time (HH:MM:SS) — a live header clock for eyeballing lag between
-    /// the sim progress bar finishing and the trend chart settling.
     pub fn now_clock(&self) -> String {
         let unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -358,8 +306,6 @@ impl App {
         }
     }
 
-    /// Elevators for `sim`: the whole session fleet remembered so far, or a default e1..e10 if
-    /// none seen yet (matches the demo's naming, so an early sim targets the real fleet).
     fn elevator_pool(&self) -> Vec<String> {
         if self.seen_elevators.is_empty() {
             (1..=10).map(|i| format!("e{i}")).collect()
@@ -368,19 +314,16 @@ impl App {
         }
     }
 
-    /// The session fleet, natural-sorted (e1, e2, … e10), for the Order tab hint.
     pub fn fleet(&self) -> Vec<String> {
         let mut v: Vec<String> = self.seen_elevators.iter().cloned().collect();
         v.sort_by(|a, b| crate::natural_key(a).cmp(&crate::natural_key(b)));
         v
     }
 
-    /// Single entry point for keyboard input; dispatches per active view.
     pub fn on_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press && key.kind != KeyEventKind::Repeat {
             return;
         }
-        // Global keys first.
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
@@ -411,8 +354,6 @@ impl App {
         }
     }
 
-    /// Test tab: 'r' runs the integration test (console `itest`) off-thread. Output is suppressed
-    /// (quiet=true) so it can't corrupt the TUI; when it finishes, `refresh_sim` reloads the report.
     fn on_key_test(&mut self, key: KeyEvent) {
         if !matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
             return;
@@ -436,9 +377,6 @@ impl App {
         });
     }
 
-    /// K8s tab: 'f' / 's' flip the app to fast / slow (swap the configmap on the deployment +
-    /// rollout). The kubectl calls run off-thread so the UI never blocks; the result lands in the
-    /// footer next frame and the poller reflects the new mode within a few seconds.
     fn on_key_k8s(&mut self, key: KeyEvent) {
         let target = match key.code {
             KeyCode::Char('f') | KeyCode::Char('F') => "fast",
@@ -487,7 +425,6 @@ impl App {
         }
     }
 
-    /// Kick off a simulation on a background thread, tracking progress via a shared counter.
     fn start_sim(&mut self, count: u64) {
         let pool = self.elevator_pool();
         let elevators = pool.len();
@@ -496,13 +433,10 @@ impl App {
         let done = Arc::new(AtomicBool::new(false));
         let (sent_t, done_t) = (Arc::clone(&sent), Arc::clone(&done));
         let threads = count.clamp(1, 4);
-        // Unique per run so a re-run uses fresh tags (not deduped) and shows fresh progress.
         let run_id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        // Spread the run over ~2.5s so the progress bar visibly fills; big runs that take
-        // longer than that to send simply ignore the pacing and go full speed.
         let pace = Some(Duration::from_millis(2500));
         std::thread::spawn(move || {
             let _ = crate::sender::run_simulation(
@@ -511,8 +445,6 @@ impl App {
             done_t.store(true, Ordering::Relaxed);
         });
 
-        // Verify ALL the sent orders against the API's order-status endpoint, polling until every
-        // one is DONE. The poller classifies each tag (DONE / PROGRESS / not-yet-seen).
         let tags = crate::sender::sim_tags(run_id, count, threads, count as usize);
         let checked = tags.len() as u64;
         let status_done = Arc::new(AtomicU64::new(0));
@@ -534,7 +466,6 @@ impl App {
         });
     }
 
-    /// Chart/Trend filter: type to narrow which elevators are shown; Enter clears it.
     fn on_key_elevator_filter(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
@@ -564,14 +495,13 @@ impl App {
                     self.elevator_re_err = false;
                 }
                 Err(_) => {
-                    self.elevator_re = None; // keep showing all while the pattern is half-typed
+                    self.elevator_re = None;
                     self.elevator_re_err = true;
                 }
             }
         }
     }
 
-    /// Whether an elevator passes the Chart/Trend name filter (all pass if no/invalid filter).
     pub fn elevator_matches(&self, name: &str) -> bool {
         match &self.elevator_re {
             Some(re) => re.is_match(name),
@@ -584,7 +514,7 @@ impl App {
             KeyCode::Left => self.log_source = LogSource::App,
             KeyCode::Right => self.log_source = LogSource::Api,
             KeyCode::Enter => {
-                self.log_filter.clear(); // Enter resets the filter
+                self.log_filter.clear();
                 self.recompile_filter();
             }
             KeyCode::Backspace => {
@@ -599,7 +529,6 @@ impl App {
         }
     }
 
-    /// Recompile the regex (case-insensitive) whenever the filter text changes.
     fn recompile_filter(&mut self) {
         if self.log_filter.is_empty() {
             self.log_re = None;
@@ -611,21 +540,18 @@ impl App {
                     self.log_re_err = false;
                 }
                 Err(_) => {
-                    self.log_re = None; // keep showing all lines while the pattern is half-typed
+                    self.log_re = None;
                     self.log_re_err = true;
                 }
             }
         }
     }
 
-    /// SIM input: a count (bare number, or "sim 300"). Runs that many random orders off-thread,
-    /// tracked by the progress bar. Returns a footer status message.
     fn run_sim(&mut self, line: &str) -> String {
         let line = line.trim();
         if line.is_empty() {
             return String::new();
         }
-        // Tolerate a leading "sim" keyword ("sim 300", "sim300") — it's natural to type.
         let lower = line.to_ascii_lowercase();
         let rest = if lower.starts_with("sim") { line[3..].trim() } else { line };
         match rest.parse::<u64>() {
@@ -638,7 +564,6 @@ impl App {
         }
     }
 
-    /// ORDER input: "<elevator> <floor>" sends one order off-thread (so the UI never blocks).
     fn run_order(&mut self, line: &str) -> String {
         let parts: Vec<&str> = line.split_whitespace().collect();
         match parts.as_slice() {
@@ -659,8 +584,6 @@ impl App {
     }
 }
 
-/// Format a unix timestamp as local HH:MM:SS. `localtime_r` is reentrant/thread-safe and uses
-/// the machine's local timezone.
 fn local_hms(unix: i64) -> String {
     let t = unix as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
@@ -668,9 +591,6 @@ fn local_hms(unix: i64) -> String {
     format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
-/// Poll the API's `GET /api/order/{tag}` for every tag until they are ALL done. Each round it
-/// re-checks the still-pending tags and classifies them, updating `done` and `in_progress` so the
-/// SIM tab can draw the per-status bar. Runs on its own thread.
 fn poll_statuses(api_base: &str, tags: Vec<String>, done: &AtomicU64, in_progress: &AtomicU64) {
     if tags.is_empty() {
         return;
@@ -680,9 +600,8 @@ fn poll_statuses(api_base: &str, tags: Vec<String>, done: &AtomicU64, in_progres
         .timeout_read(Duration::from_secs(2))
         .build();
     let total = tags.len() as u64;
-    let mut pending = tags; // tags not yet seen DONE
+    let mut pending = tags;
     let start = Instant::now();
-    // Keep going until every order is DONE (generous safety cap so it never spins forever).
     while !pending.is_empty() && start.elapsed() < Duration::from_secs(600) {
         let mut progress = 0u64;
         pending.retain(|tag| {
@@ -691,15 +610,15 @@ fn poll_statuses(api_base: &str, tags: Vec<String>, done: &AtomicU64, in_progres
                 Ok(resp) => {
                     let body = resp.into_string().unwrap_or_default();
                     if body.contains("\"status\":\"DONE\"") {
-                        false // done -> drop from pending
+                        false
                     } else {
                         if body.contains("\"status\":\"PROGRESS\"") {
                             progress += 1;
                         }
-                        true // PROGRESS or not-yet-projected -> keep polling
+                        true
                     }
                 }
-                Err(_) => true, // 404 (not projected yet) or transient -> retry
+                Err(_) => true,
             }
         });
         done.store(total - pending.len() as u64, Ordering::Relaxed);

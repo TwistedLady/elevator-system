@@ -11,11 +11,6 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-/**
- * Reports the broker as UP/DOWN by asking it for its cluster id. Registered under the
- * name "kafka" (Spring strips the HealthIndicator suffix) so it joins the readiness group.
- * The blocking AdminClient call is pushed off the WebFlux event loop.
- */
 @Component
 class KafkaHealthIndicator implements ReactiveHealthIndicator {
 

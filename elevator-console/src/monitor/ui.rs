@@ -1,5 +1,3 @@
-//! Rendering only. Reads `App` and draws the current view; never mutates state.
-
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::symbols::Marker;
@@ -11,7 +9,6 @@ use ratatui::Frame;
 
 use super::app::{App, ElevatorState, View, TREND_WINDOW_SECS};
 
-/// Line colors cycled across elevators in the trend chart.
 const PALETTE: [Color; 7] = [
     Color::Green,
     Color::Cyan,
@@ -22,14 +19,13 @@ const PALETTE: [Color; 7] = [
     Color::White,
 ];
 
-/// Column width per elevator in the chart.
 const COL_W: usize = 8;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::vertical([
-        Constraint::Length(3), // tab bar
-        Constraint::Min(0),    // active view
-        Constraint::Length(3), // footer / input
+        Constraint::Length(3),
+        Constraint::Min(0),
+        Constraint::Length(3),
     ])
     .split(frame.area());
 
@@ -56,7 +52,6 @@ fn retro_block(title: &str) -> Block<'_> {
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     let titles: Vec<Line> = View::ALL.iter().map(|v| Line::from(v.title())).collect();
-    // Header title carries the live cluster MODE so fast/slow is visible on every tab.
     let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
         "fast" => ("FAST", Color::Cyan),
         "slow" => ("SLOW", Color::Magenta),
@@ -81,7 +76,6 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" BUILDING ");
-    // Backend unreachable, or reachable but no state yet -> show a clear waiting banner.
     if !app.health.reachable || app.latest.is_empty() {
         frame.render_widget(Paragraph::new(waiting_line(app)).block(block), area);
         return;
@@ -97,14 +91,12 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
         return;
     }
-    // Natural order so columns read e1, e2, … e10 (not the lexicographic e1, e10, e2).
     cars.sort_by(|a, b| crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name)));
     let top = cars.iter().map(|c| c.floor).max().unwrap_or(0).max(0);
     let bottom = cars.iter().map(|c| c.floor).min().unwrap_or(0).min(0);
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // Header: floor-axis label + elevator names.
     let mut header = vec![Span::from(format!("{:>4} ", "Fl")).dark_gray()];
     for c in &cars {
         header.push(Span::from(center(&c.elevator_name, COL_W)).cyan());
@@ -134,15 +126,9 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // Scroll continuously with real time (EKG-style): the right edge is "now", so idle cars draw
-    // flat horizontal lines that keep moving left. The x-axis is labelled with local clock time
-    // (below), so you still read exactly when each point is from.
     let x_hi = app.now_secs();
     let x_lo = x_hi - TREND_WINDOW_SECS;
 
-    // Own the point vectors locally so the datasets can borrow them for this frame.
-    // Each line is held flat to the right edge (now) at the elevator's current floor, so an idle
-    // car shows a horizontal line scrolling left instead of stopping at its last update.
     let mut series: Vec<(String, Vec<(f64, f64)>)> = app
         .history
         .iter()
@@ -160,10 +146,8 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
         return;
     }
-    // Natural order so the legend reads e1, e2, … e10 and colours stay stable.
     series.sort_by(|a, b| crate::natural_key(&a.0).cmp(&crate::natural_key(&b.0)));
 
-    // Y range from the data, padded so a flat line isn't on the border.
     let mut y_lo = f64::MAX;
     let mut y_hi = f64::MIN;
     for (_, pts) in &series {
@@ -200,7 +184,6 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
             Axis::default()
                 .style(Style::new().dark_gray())
                 .bounds([x_lo, x_hi])
-                // Local wall-clock time of the data at each x-position (left / middle / right edge).
                 .labels([
                     Span::from(app.clock_at(x_lo)),
                     Span::from(app.clock_at((x_lo + x_hi) / 2.0)),
@@ -229,8 +212,6 @@ fn draw_order(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(app.message.clone().cyan()));
         lines.push(Line::from(""));
     }
-    // Session memory: the whole fleet seen so far (not just currently-reporting cars) and the
-    // tallest floor observed, so the hint stays accurate even after a car goes quiet.
     let fleet = app.fleet();
     let known = if fleet.is_empty() {
         "(none seen yet)".to_string()
@@ -255,11 +236,11 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(block, area);
 
     let rows = Layout::vertical([
-        Constraint::Length(3), // status text
-        Constraint::Length(1), // "sent" gauge
-        Constraint::Length(1), // labels
-        Constraint::Length(1), // "processed" gauge (verified via the API)
-        Constraint::Min(0),    // help
+        Constraint::Length(3),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(0),
     ])
     .split(inner);
 
@@ -292,7 +273,6 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
             ]);
             frame.render_widget(info, rows[0]);
 
-            // "sent" gauge — how many orders reached Kafka.
             let sent_pct = (sim.ratio() * 100.0).round() as u16;
             let sent_fill = if sim.finished() { Color::Green } else { Color::Cyan };
             frame.render_widget(
@@ -303,8 +283,6 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
                 rows[1],
             );
 
-            // Per-status verification (polled from the API until all DONE): a single bar split
-            // into DONE (green) · PROGRESS (yellow) · not-yet-seen (grey).
             let total = sim.checked.max(1);
             let done = sim.done();
             let prog = sim.in_progress();
@@ -364,7 +342,6 @@ fn draw_health(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
-    // Apply the regex filter (if any) to the selected source's lines.
     let matched: Vec<&String> = match &app.log_re {
         Some(re) => app.logs().iter().filter(|l| re.is_match(l)).collect(),
         None => app.logs().iter().collect(),
@@ -383,9 +360,6 @@ fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
     );
     let block = retro_block(&title);
 
-    // Wrap long lines to the panel width so nothing is cut off at the border, then keep only the
-    // last `visible` rows so the newest output stays at the bottom. Wrap from the bottom up so we
-    // never process more than a screenful of lines.
     let inner_w = area.width.saturating_sub(2).max(1) as usize;
     let visible = area.height.saturating_sub(2) as usize;
 
@@ -408,7 +382,6 @@ fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" KUBERNETES · elevator (kind) ");
     let mut lines: Vec<Line> = Vec::new();
 
-    // Mode banner.
     let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
         "fast" => ("FAST  (~instant moves)", Color::Cyan),
         "slow" => ("SLOW  (CPU-burning moves)", Color::Magenta),
@@ -426,7 +399,6 @@ fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // Pod table.
     lines.push(Line::from(
         format!("  {:<34}{:<10}{:<8}{}", "POD", "STATUS", "READY", "RESTARTS").dark_gray(),
     ));
@@ -602,9 +574,6 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(content).block(block).wrap(Wrap { trim: false }), area);
 }
 
-// ---- small helpers --------------------------------------------------------
-
-/// Banner for the data views: tells "backend is down" apart from "backend up, no traffic yet".
 fn waiting_line(app: &App) -> Line<'static> {
     if !app.health.reachable {
         Line::from("⏳  waiting for backend — elevator-api unreachable on :8080".yellow())
@@ -613,7 +582,6 @@ fn waiting_line(app: &App) -> Line<'static> {
     }
 }
 
-/// Colour for a log line, by severity keyword.
 fn log_style(s: &str) -> Style {
     let upper = s.to_ascii_uppercase();
     if upper.contains("ERROR") {
@@ -625,8 +593,6 @@ fn log_style(s: &str) -> Style {
     }
 }
 
-/// Render one log line for the Logs view: shorten its thread name, then hard-wrap it to `width`
-/// columns so long lines aren't cut off at the border. One styled row per wrapped chunk.
 fn wrap_log_line(s: &str, width: usize) -> Vec<Line<'static>> {
     let text = shorten_thread(s);
     let style = log_style(&text);
@@ -640,9 +606,6 @@ fn wrap_log_line(s: &str, width: usize) -> Vec<Line<'static>> {
         .collect()
 }
 
-/// Display-only: shorten the thread name in the first `[...]` so lines fit the narrow Logs view.
-/// e.g. `[elevator-cluster-pekko.actor.default-dispatcher-18]` -> `[e-c-p.a.d-d-18]`.
-/// Each run of letters collapses to its first letter; digits and the `-`/`.`/`_` separators stay.
 fn shorten_thread(s: &str) -> String {
     let (Some(open), Some(close)) = (s.find('['), s.find(']')) else {
         return s.to_string();
@@ -659,12 +622,12 @@ fn abbreviate(name: &str) -> String {
     let mut chars = name.chars().peekable();
     while let Some(c) = chars.next() {
         if c.is_alphabetic() {
-            out.push(c); // keep the first letter of the run, drop the rest
+            out.push(c);
             while chars.peek().is_some_and(|n| n.is_alphabetic()) {
                 chars.next();
             }
         } else {
-            out.push(c); // digits and separators pass through
+            out.push(c);
         }
     }
     out
@@ -687,7 +650,6 @@ fn status_style(status: &str) -> Style {
 }
 
 fn car_glyph(direction: &str, motion: &str) -> char {
-    // Stopped (idle) cars show an X; moving cars show their direction arrow.
     if !motion.eq_ignore_ascii_case("moving") {
         return 'X';
     }
@@ -709,7 +671,6 @@ fn car_style(direction: &str, motion: &str) -> Style {
     }
 }
 
-/// Center `s` within `w` columns (counts chars so arrows/dots align).
 fn center(s: &str, w: usize) -> String {
     let len = s.chars().count();
     if len >= w {

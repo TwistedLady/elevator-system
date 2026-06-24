@@ -14,11 +14,16 @@
     <packaging>jar</packaging>
 
     <!-- The Pekko-free "heart": messages, state, and the pure decide/evolve logic.
-         Depends only on the domain core — no Pekko, no DTOs. -->
+         No Pekko — depends only on the domain core and DTOs. -->
     <dependencies>
         <dependency>
             <groupId>pl.feelcodes.elevator</groupId>
             <artifactId>elevator-common-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-common-dto</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

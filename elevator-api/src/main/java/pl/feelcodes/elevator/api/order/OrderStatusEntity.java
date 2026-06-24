@@ -6,7 +6,6 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.OffsetDateTime;
 
-/** Maps a row of the {@code order_status} read-model. The tag is the primary key. */
 @Table("order_status")
 class OrderStatusEntity {
 
