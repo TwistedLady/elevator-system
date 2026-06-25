@@ -3,6 +3,8 @@ package pl.feelcodes.elevator.app.inbound
 import com.typesafe.config.Config
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.common.serialization.{ByteArrayDeserializer, StringDeserializer}
+import org.apache.pekko.Done
+import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityRef
 import org.apache.pekko.kafka.ConsumerMessage.{CommittableMessage, CommittableOffset}
@@ -63,9 +65,17 @@ object OrderConsumer {
 
     done.failed.foreach(ex => system.log.error("Kafka stream failed", ex))
 
-    system
-      .classicSystem
-      .registerOnTermination(() => killSwitch.shutdown())
+    // Drain on graceful shutdown (SIGTERM during a rolling restart): in PhaseServiceUnbind —
+    // which runs BEFORE the cluster member leaves and shards hand off — stop pulling new orders
+    // and let in-flight ones finish processing and commit their offsets. Uncommitted orders
+    // simply redeliver to the surviving pod (at-least-once + dedup), so no order is lost.
+    CoordinatedShutdown(system).addTask(
+      CoordinatedShutdown.PhaseServiceUnbind,
+      "stop-order-consumer"
+    ) { () =>
+      killSwitch.shutdown()
+      done.map(_ => Done).recover { case _ => Done }
+    }
   }
 
   private def readConsumerConf(root: Config): ConsumerConf = {

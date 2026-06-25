@@ -79,6 +79,27 @@
             <artifactId>pekko-persistence-typed_${scala.binary.version}</artifactId>
         </dependency>
 
+        <!-- Cluster formation on Kubernetes: bootstrap discovers sibling pods via the k8s API
+             (pod-label selector) and joins them into one cluster, replacing static seed-nodes.
+             cluster-http exposes /ready + /alive on the management port for k8s probes.
+             Own release line (${pekko.management.version}); explicit so the enforcer's
+             requireUpperBoundDeps sees one converged version. -->
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-management-cluster-bootstrap_${scala.binary.version}</artifactId>
+            <version>${pekko.management.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-management-cluster-http_${scala.binary.version}</artifactId>
+            <version>${pekko.management.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pekko</groupId>
+            <artifactId>pekko-discovery-kubernetes-api_${scala.binary.version}</artifactId>
+            <version>${pekko.management.version}</version>
+        </dependency>
+
         <!-- Read-side: reactive R2DBC journal/query + Pekko Projection over Postgres.
              Explicit versions (like pekko-connectors-kafka) so the enforcer's
              requireUpperBoundDeps sees a single, converged version. -->

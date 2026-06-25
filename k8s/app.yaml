@@ -1,11 +1,22 @@
-# The Pekko brain. No inbound HTTP, so no Service — it only talks to Kafka.
-# One replica: single-node cluster + in-memory journal (state resets on restart).
+# The Pekko brain. No inbound HTTP for traffic — it only talks to Kafka — but it DOES expose
+# Pekko Management on :8558 (/ready, /alive) for k8s probes and cluster bootstrap.
+#
+# TWO replicas forming ONE Pekko cluster via Cluster Bootstrap + Kubernetes API discovery
+# (ELEVATOR_CLUSTER_BOOTSTRAP=on). Cluster sharding spreads the entities across both pods, so a
+# rolling restart (e.g. a ConfigMap mode switch) hands shards over to the surviving pod and stays
+# available throughout. State lives in the Postgres R2DBC journal, so it survives restarts.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: elevator-app
 spec:
-  replicas: 1
+  replicas: 2
+  # Keep at least one old pod serving until a new one is Ready: never drop below 2 ready pods.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: elevator-app
@@ -14,6 +25,10 @@ spec:
       labels:
         app: elevator-app
     spec:
+      # Needed by kubernetes-api discovery to list sibling pods (see rbac.yaml).
+      serviceAccountName: elevator-app
+      # Allow graceful drain: stop the Kafka consumer + hand off shards before the pod dies.
+      terminationGracePeriodSeconds: 60
       containers:
         - name: elevator-app
           image: elevator-app:local
@@ -23,6 +38,37 @@ spec:
             # (they differ only in ELEVATOR_OPERATOR_CLASS). Swap + rollout to flip mode.
             - configMapRef:
                 name: elevator-app-config-fast
+          env:
+            # Pekko remoting + management bind to the pod's own IP so peers can reach it.
+            - name: ELEVATOR_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ELEVATOR_CLUSTER_BOOTSTRAP
+              value: "on"
+            # A node only reports Ready once it has joined a real (>=2 member) cluster.
+            - name: ELEVATOR_CLUSTER_MIN_MEMBERS
+              value: "2"
+          ports:
+            - name: remoting
+              containerPort: 2551
+            # Discovery looks up the port named "management" (default pod-port-name).
+            - name: management
+              containerPort: 8558
+          # Gate the liveness/readiness probes until management is up — cluster formation +
+          # journal recovery can take a while; don't let a slow start get the pod killed.
+          startupProbe:
+            httpGet: { path: /alive, port: 8558 }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /ready, port: 8558 }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /alive, port: 8558 }
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1",    memory: "512Mi" }

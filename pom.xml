@@ -26,6 +26,10 @@
              current release line and converges cleanly under Pekko 1.3.0. -->
         <pekko.r2dbc.version>1.1.0</pekko.r2dbc.version>
         <pekko.projection.version>1.1.0</pekko.projection.version>
+        <!-- Pekko Management: cluster bootstrap + Kubernetes API discovery, so pods form one
+             multi-node cluster instead of each booting a lone node. Its own release line
+             (1.2.1); needs Pekko >= 1.1.5, converges cleanly under Pekko 1.3.0. -->
+        <pekko.management.version>1.2.1</pekko.management.version>
         <!-- The reactive Postgres driver. pekko-persistence-r2dbc only brings r2dbc-spi/-pool,
              not a concrete driver, so we add it ourselves. 1.0.7 targets r2dbc-spi 1.0.0. -->
         <r2dbc.postgresql.version>1.0.7.RELEASE</r2dbc.postgresql.version>

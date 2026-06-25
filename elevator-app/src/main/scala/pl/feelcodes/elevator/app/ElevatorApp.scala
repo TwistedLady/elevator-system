@@ -1,8 +1,11 @@
 package pl.feelcodes.elevator.app
 
+import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
+import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
+import org.apache.pekko.management.scaladsl.PekkoManagement
 import pl.feelcodes.elevator.app.actors.*
 import pl.feelcodes.elevator.common.core.Elevator
 import pl.feelcodes.elevator.app.inbound.{OrderConsumer, OrderDedup}
@@ -11,9 +14,23 @@ import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusP
 
 object ElevatorApp extends App {
 
+  // On Kubernetes the pods form one cluster via Pekko Management + Cluster Bootstrap (k8s-api
+  // discovery). Bootstrap only runs if the static seed-nodes are empty, so we clear them here.
+  // Locally (flag off) the seed-nodes from application.conf give a single-node cluster.
+  private val bootstrapEnabled = sys.env.get("ELEVATOR_CLUSTER_BOOTSTRAP").contains("on")
+  private val config =
+    val base = ConfigFactory.load()
+    if bootstrapEnabled then
+      base.withValue("pekko.cluster.seed-nodes", ConfigValueFactory.fromIterable(java.util.List.of()))
+    else base
+
   val system: ActorSystem[Nothing] =
     ActorSystem(
       Behaviors.setup[Nothing] { ctx =>
+        if bootstrapEnabled then
+          PekkoManagement(ctx.system).start()
+          ClusterBootstrap(ctx.system).start()
+
         val statePublisher = StatePublisher(ctx.system)
 
         val sharding = ClusterSharding(ctx.system)
@@ -48,6 +65,7 @@ object ElevatorApp extends App {
 
         Behaviors.empty
       },
-      "elevator-cluster"
+      "elevator-cluster",
+      config
     )
 }
