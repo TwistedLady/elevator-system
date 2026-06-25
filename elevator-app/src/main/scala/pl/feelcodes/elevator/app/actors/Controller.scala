@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.app.actors
+  package pl.feelcodes.elevator.app.actors
 
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
@@ -21,6 +21,7 @@ object Controller:
 
   def apply(elevatorName: String,
             operatorProvider: (elevatorName: String) => EntityRef[Operator.Command],
+            coordinatorProvider: (elevatorName: String) => EntityRef[Coordinator.Command],
             publish: ElevatorStateDto => Unit): Behavior[Command] =
     Behaviors.setup { context =>
 
@@ -34,9 +35,11 @@ object Controller:
                 .thenRun(s => context.self ! ChooseNextOrder(s.orders))
 
             case PublishState(newState) =>
+              val served = state.orders.filter(_.floor == newState.floor)
               Effect.persist(ControllerStrategy.publishState(newState)).thenRun { s =>
                 publish(ElevatorStateDto("", s.elevatorName,
                   newState.direction.toString, newState.motion.toString, newState.floor.num))
+                served.foreach(o => coordinatorProvider(s.elevatorName) ! Coordinator.MarkOrderDone(o.tag))
                 context.self ! ChooseNextOrder(s.orders)
               }
 

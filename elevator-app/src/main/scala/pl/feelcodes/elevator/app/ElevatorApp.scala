@@ -33,7 +33,7 @@ object ElevatorApp extends App {
           Operator(publishMove, buildElevator)
         })
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider, statePublisher.publish)
+          Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
         })
         sharding.init(Entity(Coordinator.TypeKey) { e =>
           Coordinator(e.entityId, controllerProvider)

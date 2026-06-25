@@ -27,6 +27,9 @@ object OrderStatusProjection {
       |  elevator_name = $2,
       |  floor         = $3""".stripMargin
 
+  private val MarkDoneSql =
+    "UPDATE order_status SET status = 'DONE', done_at = now() WHERE tag = $1"
+
   def init(system: ActorSystem[?]): Unit = {
     val ranges = EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, NumberOfInstances)
 
@@ -68,6 +71,10 @@ object OrderStatusProjection {
             .bind(0, tag)
             .bind(1, elevatorName)
             .bind(2, floor)
+          session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
+
+        case CoordinatorEvents.OrderDone(tag) =>
+          val statement = session.createStatement(MarkDoneSql).bind(0, tag)
           session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
       }
   }

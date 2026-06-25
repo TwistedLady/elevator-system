@@ -4,20 +4,17 @@ import com.typesafe.config.Config
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.common.serialization.{ByteArrayDeserializer, StringDeserializer}
 import org.apache.pekko.actor.typed.ActorSystem
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityRef
 import org.apache.pekko.kafka.ConsumerMessage.{CommittableMessage, CommittableOffset}
 import org.apache.pekko.kafka.scaladsl.{Committer, Consumer}
 import org.apache.pekko.kafka.{CommitterSettings, ConsumerSettings, Subscriptions}
 import org.apache.pekko.stream.KillSwitches
 import org.apache.pekko.stream.scaladsl.{Flow, Keep}
-import org.apache.pekko.util.Timeout
 import pl.feelcodes.elevator.app.actors.Coordinator
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.*
 
 object OrderConsumer {
   private final case class KafkaConf(bootstrapServers: String,
@@ -29,7 +26,6 @@ object OrderConsumer {
           dedup: OrderDedup): Unit = {
     given ActorSystem[?] = system
     given ExecutionContext = system.executionContext
-    given Timeout = 3.seconds
 
     val cfg = readKafkaConf(system.settings.config)
 
@@ -51,10 +47,8 @@ object OrderConsumer {
             case true =>
               Future.successful(msg.committableOffset)
             case false =>
-              coordinatorProvider(dto.elevatorName)
-                .ask[Coordinator.Ack](replyTo => Coordinator.Process(AddOriginalStream(List(dto)), replyTo))
-                .flatMap(_ => dedup.markProcessed(dto.tag))
-                .map(_ => msg.committableOffset)
+              coordinatorProvider(dto.elevatorName) ! AddOriginalStream(List(dto))
+              dedup.markProcessed(dto.tag).map(_ => msg.committableOffset)
           }
         }
 

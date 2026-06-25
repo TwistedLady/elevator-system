@@ -10,7 +10,6 @@ import pl.feelcodes.elevator.app.actors.{Controller, Coordinator}
 import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
-import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
 
 object CoordinatorRecoveryTests {
   val config = ConfigFactory
@@ -20,11 +19,9 @@ object CoordinatorRecoveryTests {
         |pekko.actor {
         |  allow-java-serialization = off
         |  serialization-bindings {
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Command"              = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$Ack"                  = jackson-cbor
-        |    "pl.feelcodes.elevator.app.actors.Coordinator$State"                = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
         |    "pl.feelcodes.elevator.common.events.CoordinatorEvents$Event"       = jackson-cbor
+        |    "pl.feelcodes.elevator.common.strategy.CoordinatorStrategy$State"   = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"  = jackson-cbor
         |  }
         |}
@@ -55,30 +52,24 @@ final class CoordinatorRecoveryTests
     "persist one event per original order and forward the floor-merged set to the Controller" in {
       val esTestKit = newTestKit()
 
-      val r = esTestKit.runCommand[Coordinator.Ack](rt =>
-        Coordinator.Process(AddOriginalStream(List(
+      val r = esTestKit.runCommand(
+        Coordinator.AddOriginalStream(List(
           ElevatorOrderDto("t1", "lift-a", 3),
           ElevatorOrderDto("t2", "lift-a", 3),
-          ElevatorOrderDto("t3", "lift-a", 5))), rt))
+          ElevatorOrderDto("t3", "lift-a", 5))))
 
       r.events should contain allOf (
         CoordinatorEvents.OrderAccepted("t1", "lift-a", 3),
         CoordinatorEvents.OrderAccepted("t2", "lift-a", 3),
         CoordinatorEvents.OrderAccepted("t3", "lift-a", 5))
-      r.reply shouldBe Coordinator.Ack.Ok
 
       val forwarded = controllerProbe.expectMessageType[Controller.AddUniqueOrderSet]
       forwarded.orders shouldBe Set(ElevatorOrder("t1", Floor(3)), ElevatorOrder("t3", Floor(5)))
     }
 
-    "recover its (trivial) state after a crash" in {
+    "record an order as done" in {
       val esTestKit = newTestKit()
-      esTestKit.runCommand[Coordinator.Ack](rt =>
-        Coordinator.Process(AddOriginalStream(List(ElevatorOrderDto("a", "lift-a", 2))), rt))
-      controllerProbe.expectMessageType[Controller.AddUniqueOrderSet]
-
-      esTestKit.restart()
-      esTestKit.getState() shouldBe Coordinator.State.empty
+      esTestKit.runCommand(Coordinator.MarkOrderDone("t1")).event shouldBe CoordinatorEvents.OrderDone("t1")
     }
   }
 }
