@@ -6,7 +6,7 @@ import pl.feelcodes.elevator.common.core.Direction.*
 import pl.feelcodes.elevator.common.core.Command.*
 
 final class NextFloorStrategyTests extends AnyFunSuite:
-  import NextFloorStrategy.chooseNextAndBuildCommand as choose
+  import NextFloorStrategy.default.next as choose
 
   test("target above while going Up -> Go(Up)"):
     assert(choose(Floor(0), Up, Set(Floor(3))) == Go(Up))

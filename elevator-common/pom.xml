@@ -15,6 +15,7 @@
     <modules>
         <module>elevator-common-core</module>
         <module>elevator-common-strategy</module>
+        <module>elevator-common-logic</module>
         <module>elevator-common-protocol</module>
         <module>elevator-common-dto</module>
         <module>elevator-common-events</module>

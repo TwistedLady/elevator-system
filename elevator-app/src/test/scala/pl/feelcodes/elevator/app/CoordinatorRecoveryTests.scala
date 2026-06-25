@@ -21,7 +21,7 @@ object CoordinatorRecoveryTests {
         |  serialization-bindings {
         |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
         |    "pl.feelcodes.elevator.common.events.CoordinatorEvents$Event"       = jackson-cbor
-        |    "pl.feelcodes.elevator.common.strategy.CoordinatorStrategy$State"   = jackson-cbor
+        |    "pl.feelcodes.elevator.common.logic.CoordinatorLogic$State"        = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"  = jackson-cbor
         |  }
         |}

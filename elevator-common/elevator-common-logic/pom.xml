@@ -10,18 +10,30 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>elevator-common-strategy</artifactId>
+    <artifactId>elevator-common-logic</artifactId>
     <packaging>jar</packaging>
 
-    <!-- Pekko-free next-floor decision (NextFloorStrategy). Depends only on the domain core. -->
+    <!-- Pekko-free actor decide/evolve logic (Controller, Coordinator). Drives the next-floor
+         strategy and folds events; depends on the domain core, the events and the strategy. -->
     <dependencies>
         <dependency>
             <groupId>pl.feelcodes.elevator</groupId>
             <artifactId>elevator-common-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-common-events</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-common-strategy</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
+    <!-- Versions, executions and config come from the parent's pluginManagement. -->
     <build>
         <plugins>
             <plugin>

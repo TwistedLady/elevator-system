@@ -35,7 +35,7 @@
         </dependency>
         <dependency>
             <groupId>pl.feelcodes.elevator</groupId>
-            <artifactId>elevator-common-strategy</artifactId>
+            <artifactId>elevator-common-logic</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

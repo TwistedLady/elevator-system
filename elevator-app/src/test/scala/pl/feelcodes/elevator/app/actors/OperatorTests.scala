@@ -1,20 +1,24 @@
 package pl.feelcodes.elevator.app.actors
 
+import org.apache.pekko.actor.testkit.typed.scaladsl.BehaviorTestKit
 import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.core.Direction.*
 import pl.feelcodes.elevator.common.core.Motion.*
 import pl.feelcodes.elevator.common.core.Command.*
-import pl.feelcodes.elevator.common.strategy.OperatorStrategy
 
 final class OperatorTests extends AnyFunSuite:
 
   private val fast: Operator.BuildElevator = (name, state) => Elevator.fast(name)(state)
 
-  test("afterMove | Go(Up) from floor 0 -> floor 1, Up, Moving"):
-    val next = OperatorStrategy.afterMove(fast, "lift-a", ElevatorState(Up, Stopped, Floor(0)), Go(Up))
-    assert(next == ElevatorState(Up, Moving, Floor(1)))
+  private def moveYields(state: ElevatorState, command: Command): ElevatorState =
+    var published: ElevatorState = null
+    val kit = BehaviorTestKit(Operator((_, s) => published = s, fast))
+    kit.run(Operator.Move("lift-a", state, command))
+    published
 
-  test("afterMove | Stop() halts a moving car, floor and direction unchanged"):
-    val next = OperatorStrategy.afterMove(fast, "lift-a", ElevatorState(Up, Moving, Floor(3)), Stop())
-    assert(next == ElevatorState(Up, Stopped, Floor(3)))
+  test("Move | Go(Up) from floor 0 -> floor 1, Up, Moving"):
+    assert(moveYields(ElevatorState(Up, Stopped, Floor(0)), Go(Up)) == ElevatorState(Up, Moving, Floor(1)))
+
+  test("Move | Stop() halts a moving car, floor and direction unchanged"):
+    assert(moveYields(ElevatorState(Up, Moving, Floor(3)), Stop()) == ElevatorState(Up, Stopped, Floor(3)))
