@@ -5,7 +5,8 @@ import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import pl.feelcodes.elevator.app.actors.*
 import pl.feelcodes.elevator.common.core.Elevator
-import pl.feelcodes.elevator.app.kafka.{OrderConsumer, OrderDedup, StatePublisher}
+import pl.feelcodes.elevator.app.inbound.{OrderConsumer, OrderDedup}
+import pl.feelcodes.elevator.app.outbound.StatePublisher
 import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusProjection}
 
 object ElevatorApp extends App {

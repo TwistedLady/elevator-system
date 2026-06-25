@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.app.kafka
+package pl.feelcodes.elevator.common.serializable
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule

@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.app.kafka
+package pl.feelcodes.elevator.app.inbound
 
 import com.typesafe.config.Config
 import org.apache.kafka.clients.consumer.ConsumerConfig
@@ -13,13 +13,14 @@ import org.apache.pekko.stream.scaladsl.{Flow, Keep}
 import pl.feelcodes.elevator.app.actors.Coordinator
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
+import pl.feelcodes.elevator.common.serializable.Json
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object OrderConsumer {
-  private final case class KafkaConf(bootstrapServers: String,
-                                     groupId: String,
-                                     commandTopic: String)
+  private final case class ConsumerConf(bootstrapServers: String,
+                                        groupId: String,
+                                        commandTopic: String)
 
   def run(system: ActorSystem[?],
           coordinatorProvider: String => EntityRef[Coordinator.Command],
@@ -27,7 +28,7 @@ object OrderConsumer {
     given ActorSystem[?] = system
     given ExecutionContext = system.executionContext
 
-    val cfg = readKafkaConf(system.settings.config)
+    val cfg = readConsumerConf(system.settings.config)
 
     val consumerSettings =
       ConsumerSettings(system, new StringDeserializer, new ByteArrayDeserializer)
@@ -67,10 +68,10 @@ object OrderConsumer {
       .registerOnTermination(() => killSwitch.shutdown())
   }
 
-  private def readKafkaConf(root: Config): KafkaConf = {
+  private def readConsumerConf(root: Config): ConsumerConf = {
     val cfg = root.getConfig("elevator.kafka")
 
-    KafkaConf(
+    ConsumerConf(
       bootstrapServers = cfg.getString("bootstrap-servers"),
       groupId = cfg.getString("group-id"),
       commandTopic = cfg.getString("command-topic")

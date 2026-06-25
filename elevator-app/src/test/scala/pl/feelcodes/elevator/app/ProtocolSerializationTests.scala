@@ -14,7 +14,7 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
   private val config = ConfigFactory.parseString(
     """
-      |pekko.serialization.jackson.jackson-modules += "pl.feelcodes.elevator.app.DomainJacksonModule"
+      |pekko.serialization.jackson.jackson-modules += "pl.feelcodes.elevator.common.serializable.ElevatorDomainSerialization"
       |pekko.actor {
       |  allow-java-serialization = off
       |  warn-about-java-serializer-usage = on

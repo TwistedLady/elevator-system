@@ -53,6 +53,11 @@
             <artifactId>elevator-common-dto</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-common-serializable</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.scala-lang</groupId>
