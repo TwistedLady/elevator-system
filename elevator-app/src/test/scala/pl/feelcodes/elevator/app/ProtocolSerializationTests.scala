@@ -8,7 +8,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.app.actors.{Controller, Operator}
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
-import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.{AddOriginalStream, MarkOrderDone}
 
 final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
@@ -63,4 +63,8 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("Coordinator.AddOriginalStream round-trips (original Kafka orders)"):
     val msg = AddOriginalStream(List(ElevatorOrderDto("tag-1", "lift-a", 3)))
+    assert(roundTrip(msg) == msg)
+
+  test("Coordinator.MarkOrderDone round-trips"):
+    val msg = MarkOrderDone("tag-1")
     assert(roundTrip(msg) == msg)

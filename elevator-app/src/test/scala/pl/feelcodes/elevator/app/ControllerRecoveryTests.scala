@@ -6,7 +6,7 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
 import pl.feelcodes.elevator.common.core.*
 
 object ControllerRecoveryTests {
@@ -17,10 +17,11 @@ object ControllerRecoveryTests {
         |pekko.actor {
         |  allow-java-serialization = off
         |  serialization-bindings {
-        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command" = jackson-cbor
-        |    "pl.feelcodes.elevator.common.events.ControllerEvents$Event"        = jackson-cbor
-        |    "pl.feelcodes.elevator.common.strategy.ControllerStrategy$State"     = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"  = jackson-cbor
+        |    "pl.feelcodes.elevator.common.events.ControllerEvents$Event"         = jackson-cbor
+        |    "pl.feelcodes.elevator.common.strategy.ControllerStrategy$State"      = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"     = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command"  = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -37,18 +38,21 @@ final class ControllerRecoveryTests
 
   private def newTestKit() =
     val operatorProbe = createTestProbe[Operator.Command]()
+    val coordinatorProbe = createTestProbe[Coordinator.Command]()
     val operatorProvider =
       (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
+    val coordinatorProvider =
+      (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, _ => ())
+      Controller("lift-a", operatorProvider, coordinatorProvider, _ => ())
     )
-    (kit, operatorProbe)
+    (kit, operatorProbe, coordinatorProbe)
 
   "The Controller journal" should {
 
-    "rebuild the full state after a crash when the order was served" in {
-      val (esTestKit, _) = newTestKit()
+    "rebuild state after a crash and mark the served order done" in {
+      val (esTestKit, _, coordinatorProbe) = newTestKit()
       val order = ElevatorOrder("o-1", Floor(3))
 
       esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
@@ -56,6 +60,8 @@ final class ControllerRecoveryTests
 
       val reached = ElevatorState(Direction.Up, Motion.Stopped, Floor(3))
       esTestKit.runCommand(Controller.PublishState(reached))
+
+      coordinatorProbe.expectMessage(Coordinator.MarkOrderDone("o-1"))
 
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached
@@ -66,7 +72,7 @@ final class ControllerRecoveryTests
     }
 
     "keep an outstanding (unserved) request after a crash" in {
-      val (esTestKit, _) = newTestKit()
+      val (esTestKit, _, coordinatorProbe) = newTestKit()
       val order = ElevatorOrder("o-2", Floor(7))
 
       esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
@@ -74,6 +80,7 @@ final class ControllerRecoveryTests
       val midway = ElevatorState(Direction.Up, Motion.Moving, Floor(4))
       esTestKit.runCommand(Controller.PublishState(midway))
 
+      coordinatorProbe.expectNoMessage()
       esTestKit.getState().orders should contain(order)
 
       esTestKit.restart()
@@ -82,7 +89,7 @@ final class ControllerRecoveryTests
     }
 
     "redeliver the in-flight move after a crash that happened while waiting for the Operator" in {
-      val (esTestKit, operatorProbe) = newTestKit()
+      val (esTestKit, operatorProbe, _) = newTestKit()
       val order = ElevatorOrder("o-3", Floor(9))
 
       esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
