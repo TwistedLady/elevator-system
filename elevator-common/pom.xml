@@ -19,6 +19,7 @@
         <module>elevator-common-protocol</module>
         <module>elevator-common-dto</module>
         <module>elevator-common-events</module>
+        <module>elevator-common-serializable</module>
     </modules>
 
     <dependencies>
