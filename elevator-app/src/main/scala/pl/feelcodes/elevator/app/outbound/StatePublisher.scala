@@ -1,9 +1,10 @@
-package pl.feelcodes.elevator.app.kafka
+package pl.feelcodes.elevator.app.outbound
 
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 import org.apache.kafka.common.serialization.StringSerializer
 import org.apache.pekko.actor.typed.ActorSystem
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
+import pl.feelcodes.elevator.common.serializable.Json
 
 import java.util.Properties
 
