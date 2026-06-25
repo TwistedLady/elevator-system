@@ -1,9 +1,10 @@
-package pl.feelcodes.elevator.common.strategy
+package pl.feelcodes.elevator.common.logic
 
 import pl.feelcodes.elevator.common.core.*
 import pl.feelcodes.elevator.common.events.ControllerEvents.*
+import pl.feelcodes.elevator.common.strategy.NextFloorStrategy
 
-object ControllerStrategy:
+object ControllerLogic:
 
   final case class State(waiting: Boolean,
                          elevatorName: ElevatorName,
@@ -31,7 +32,7 @@ object ControllerStrategy:
 
   def nextCommand(state: State, orders: Set[ElevatorOrder]): Option[Command] =
     if orders.nonEmpty then
-      Some(NextFloorStrategy.chooseNextAndBuildCommand(
+      Some(NextFloorStrategy.default.next(
         state.elevatorState.floor, state.elevatorState.direction, orders.map(_.floor)))
     else if state.elevatorState.motion == Motion.Moving then Some(Command.Stop())
     else None

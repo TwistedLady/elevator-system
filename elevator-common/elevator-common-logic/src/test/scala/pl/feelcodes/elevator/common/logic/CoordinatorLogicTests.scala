@@ -1,10 +1,10 @@
-package pl.feelcodes.elevator.common.strategy
+package pl.feelcodes.elevator.common.logic
 
 import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
 
-final class CoordinatorStrategyTests extends AnyFunSuite:
-  import CoordinatorStrategy.*
+final class CoordinatorLogicTests extends AnyFunSuite:
+  import CoordinatorLogic.*
 
   test("mergeByFloor | collapses orders sharing a floor into one"):
     val merged = mergeByFloor(List(

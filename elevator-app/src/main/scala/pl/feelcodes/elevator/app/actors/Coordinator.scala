@@ -8,12 +8,12 @@ import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
 import pl.feelcodes.elevator.common.events.CoordinatorEvents.{OrderAccepted, OrderDone}
-import pl.feelcodes.elevator.common.strategy.CoordinatorStrategy
+import pl.feelcodes.elevator.common.logic.CoordinatorLogic
 
 object Coordinator:
   export CoordinatorProtocol.*
 
-  type State = CoordinatorStrategy.State
+  type State = CoordinatorLogic.State
 
   val TypeKey: EntityTypeKey[Command] = EntityTypeKey[Command]("Coordinator")
 
@@ -21,11 +21,11 @@ object Coordinator:
             controllerProvider: String => EntityRef[Controller.Command]): Behavior[Command] =
     EventSourcedBehavior[Command, CoordinatorEvents.Event, State](
       persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
-      emptyState = CoordinatorStrategy.State.empty,
+      emptyState = CoordinatorLogic.State.empty,
       commandHandler = (_, msg) =>
         msg match
           case AddOriginalStream(orders) =>
-            val merged = CoordinatorStrategy.mergeByFloor(orders.map(o => ElevatorOrder(o.tag, Floor(o.floor))))
+            val merged = CoordinatorLogic.mergeByFloor(orders.map(o => ElevatorOrder(o.tag, Floor(o.floor))))
             Effect.persist(orders.map(o => OrderAccepted(o.tag, o.elevatorName, o.floor)))
               .thenRun(_ => controllerProvider(elevatorName) ! Controller.AddUniqueOrderSet(merged))
 

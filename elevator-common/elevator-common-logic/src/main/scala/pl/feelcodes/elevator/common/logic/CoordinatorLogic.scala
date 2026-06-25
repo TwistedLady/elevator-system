@@ -1,8 +1,8 @@
-package pl.feelcodes.elevator.common.strategy
+package pl.feelcodes.elevator.common.logic
 
 import pl.feelcodes.elevator.common.core.ElevatorOrder
 
-object CoordinatorStrategy:
+object CoordinatorLogic:
   final case class State()
   object State:
     val empty: State = State()
