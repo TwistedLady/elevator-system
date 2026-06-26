@@ -13,21 +13,32 @@ use serde_json::Value;
 use super::app::{ElevatorState, HealthComp, HealthSnapshot, LogSource, MAX_LOG_LINES};
 use crate::BoxErr;
 
-pub fn spawn_consumer(brokers: String, topic: String, tx: Sender<ElevatorState>) {
+// `offset_reset` is "latest" or "earliest". The live monitor passes "latest": its trend stamps
+// each state with console ARRIVAL time, so replaying the whole topic from "earliest" (which a
+// fresh, non-committing group does on every (re)subscribe — e.g. after the state topic is
+// recreated by a ConfigMap-switch test) dumps thousands of old states at ~the same x and
+// collapses each elevator's line into a vertical streak. "earliest" stays for selftest/watch,
+// which want the full backlog.
+pub fn spawn_consumer(brokers: String, topic: String, offset_reset: String, tx: Sender<ElevatorState>) {
     std::thread::spawn(move || loop {
-        match consume_into(&brokers, &topic, &tx) {
+        match consume_into(&brokers, &topic, &offset_reset, &tx) {
             Ok(()) => break,
             Err(_) => std::thread::sleep(Duration::from_secs(2)),
         }
     });
 }
 
-fn consume_into(brokers: &str, topic: &str, tx: &Sender<ElevatorState>) -> Result<(), BoxErr> {
+fn consume_into(
+    brokers: &str,
+    topic: &str,
+    offset_reset: &str,
+    tx: &Sender<ElevatorState>,
+) -> Result<(), BoxErr> {
     let group = format!("elevator-console-{}", std::process::id());
     let consumer: BaseConsumer = ClientConfig::new()
         .set("bootstrap.servers", brokers)
         .set("group.id", &group)
-        .set("auto.offset.reset", "earliest")
+        .set("auto.offset.reset", offset_reset)
         .set("enable.auto.commit", "false")
         .create()?;
     consumer.subscribe(&[topic])?;

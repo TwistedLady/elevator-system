@@ -29,22 +29,27 @@ ensure_forward() {  # <svc> <local:remote>
 
 # Stream a deployment's pod logs into logs/<name>.log so the monitor's Logs view (which
 # tails files) shows live k8s logs. Idempotent: skip if already streaming.
-stream_logs() {  # <deployment> <logfile>
-  local dep="$1" out="$2"
-  if ps -C kubectl -o args= 2>/dev/null | grep -q "logs -f deployment/$dep"; then
-    echo "==> logs deployment/$dep already streaming"
-  else
-    echo "==> stream deployment/$dep -> ${out#$ROOT/}"
-    nohup kubectl logs -f --tail=200 "deployment/$dep" >"$out" 2>&1 &
-    disown
+stream_logs() {  # <label-selector> <logfile>
+  local sel="$1" out="$2"
+  if pgrep -f "logs -f .* -l ${sel}" >/dev/null 2>&1; then
+    echo "==> logs -l ${sel} already streaming"
+    return
   fi
+  echo "==> stream pods -l ${sel} -> ${out#$ROOT/}  (re-attaches across rollouts)"
+  # `kubectl logs -f` attaches only to the pods that exist when it starts and EXITS when they go
+  # away — e.g. a rolling restart after a ConfigMap switch. Without re-attaching, the file froze
+  # on the departing pod's last line ("Remoting shut down") and the console showed stale logs as
+  # if the app had disconnected. The loop re-runs it against whatever pods exist now (both
+  # replicas, and the new ones once a roll completes).
+  nohup bash -c "while true; do kubectl logs -f --tail=50 --max-log-requests=20 -l '${sel}' >>'${out}' 2>/dev/null; sleep 1; done" >/dev/null 2>&1 &
+  disown
 }
 
 mkdir -p "$ROOT/logs"
 ensure_forward kafka        9094:9094
 ensure_forward elevator-api 8080:8080
-stream_logs elevator-app "$ROOT/logs/app.log"
-stream_logs elevator-api "$ROOT/logs/api.log"
+stream_logs app=elevator-app "$ROOT/logs/app.log"
+stream_logs app=elevator-api "$ROOT/logs/api.log"
 
 # Wait for both host ports to accept connections before launching the TUI.
 for hp in 9094 8080; do

@@ -13,7 +13,7 @@ pub fn run_watch(
     duration_secs: Option<u64>,
 ) -> Result<(), BoxErr> {
     let (tx, rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), tx);
+    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), "earliest".to_string(), tx);
 
     println!("watching '{state_topic}' on {brokers} (Ctrl-C to stop)…");
     let start = Instant::now();

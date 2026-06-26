@@ -38,7 +38,7 @@ pub fn run(
     let mut app = App::new(brokers, command_topic, api_base);
 
     let (state_tx, state_rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), state_tx);
+    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), "latest".to_string(), state_tx);
 
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(health_url.to_string(), Arc::clone(&health));
