@@ -38,6 +38,9 @@ flowchart LR
 Both the Spring API and the Rust console are independent clients of the same two Kafka
 topics — the console talks straight to Kafka, the API adds HTTP on top.
 
+> Full protocol — exact messages/events, plus use-case, sequence and flow diagrams:
+> **[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
+
 ### The actors — who does what
 
 One order flows through three actors, each with a single responsibility. There is one
@@ -144,8 +147,9 @@ docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
   "SELECT * FROM elevator_state_view;"
 ```
 
-See **[demo.md](demo.md)** for the scripted demo and endpoints, and
-**[elevator-console/README.md](elevator-console/README.md)** for the console.
+See **[docs/PROTOCOL.md](docs/PROTOCOL.md)** for the full protocol (messages, events,
+use-case / sequence / flow diagrams), **[demo.md](demo.md)** for the scripted demo and
+endpoints, and **[elevator-console/README.md](elevator-console/README.md)** for the console.
 
 ## Build
 
