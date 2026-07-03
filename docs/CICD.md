@@ -108,10 +108,13 @@ Already set up:
   --flatten`) stored in that environment. The deploy job decodes it to a
   job-local temp file (`$RUNNER_TEMP/kubeconfig`) — it never touches the runner's
   own `~/.kube/config`.
-- ✅ **Self-hosted runner** `kind-host` registered and running from
-  `../.actions-runner` (one level **above** the repo, in the elevator project
-  dir — so it stays out of git and the Docker build context). All its state
-  (`_work`, `_diag`, `_temp`) lives under that dir.
+- ✅ **Self-hosted runner** `kind-host` at `../.actions-runner` (one level
+  **above** the repo, in the elevator project dir — so it stays out of git and
+  the Docker build context; all its `_work`/`_diag`/`_temp` live there), managed
+  by a **no-sudo user systemd service** `~/.config/systemd/user/actions-runner.service`
+  (`active` + `enabled`, `Restart=always`). Manage with
+  `systemctl --user status|restart|stop actions-runner` and
+  `journalctl --user -u actions-runner -f`.
 
 To recreate the runner (e.g. on a fresh machine), needs `kubectl` + `docker` on
 its PATH:
@@ -127,9 +130,26 @@ curl -sL -o runner.tar.gz "https://github.com/actions/runner/releases/download/v
 tar xzf runner.tar.gz
 ./config.sh --url https://github.com/TwistedLady/elevator-system --token "$TOKEN" --name kind-host --labels self-hosted --unattended --replace
 
-# 3) run it (foreground) or install as a service
-./run.sh
-# or: sudo ./svc.sh install && sudo ./svc.sh start
+# 3) run as a no-sudo user service (what this repo uses)
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/actions-runner.service <<'UNIT'
+[Unit]
+Description=GitHub Actions self-hosted runner (kind-host)
+After=network-online.target
+Wants=network-online.target
+[Service]
+WorkingDirectory=/home/twist/repo/elevator/.actions-runner
+ExecStart=/home/twist/repo/elevator/.actions-runner/run.sh
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=default.target
+UNIT
+systemctl --user daemon-reload
+systemctl --user enable --now actions-runner
+
+# alternatives: ./run.sh (foreground), or a system service via
+# sudo ./svc.sh install <user> && sudo ./svc.sh start
 ```
 
 Notes:
@@ -141,6 +161,10 @@ Notes:
   (Settings → Environments → dev) so each deploy waits for a click.
 - Until a runner is online, `publish` still updates GHCR and the `deploy` job
   simply **queues** (it does not fail) waiting for a self-hosted runner.
+- The user service starts with your login session. To keep it running across a
+  **reboot without logging in**, enable lingering once (the only sudo needed):
+  `sudo loginctl enable-linger twist`. Not enabled yet — without it the runner
+  comes up when you next log in.
 
 ### Private images (optional)
 
