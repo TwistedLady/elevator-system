@@ -57,8 +57,15 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
         "slow" => ("SLOW", Color::Magenta),
         _ => ("MODE ?", Color::DarkGray),
     };
+    let git = app.git.label();
     let header = retro_block(" ▌ ELEVATOR CONTROL ▐ ").title_top(
         Line::from(vec![
+            Span::from(if git.is_empty() {
+                String::new()
+            } else {
+                format!(" {git} ")
+            })
+            .dark_gray(),
             Span::from(format!(" {mode_txt} "))
                 .fg(Color::Black)
                 .bg(mode_color)

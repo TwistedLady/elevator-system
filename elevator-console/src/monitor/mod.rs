@@ -1,4 +1,5 @@
 mod app;
+mod git;
 mod k8s;
 mod selftest;
 mod sources;
@@ -15,18 +16,12 @@ use std::time::Duration;
 
 use ratatui::crossterm::event::{self, Event};
 
+use crate::api;
 use crate::BoxErr;
 use app::{App, ElevatorState, HealthSnapshot, LogSource};
 use k8s::K8sSnapshot;
 
-pub fn run(
-    brokers: &str,
-    state_topic: &str,
-    command_topic: &str,
-    health_url: &str,
-    app_log: &str,
-    api_log: &str,
-) -> Result<(), BoxErr> {
+pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
     if !std::io::stdout().is_terminal() {
         return Err(
             "`monitor` needs a real terminal (TTY); it can't run in a captured shell \
@@ -36,21 +31,13 @@ pub fn run(
         );
     }
 
-    let api_base = health_url
-        .strip_suffix("/actuator/health")
-        .unwrap_or(health_url);
-    let mut app = App::new(brokers, command_topic, api_base);
+    let mut app = App::new(api_base);
 
     let (state_tx, state_rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(
-        brokers.to_string(),
-        state_topic.to_string(),
-        "latest".to_string(),
-        state_tx,
-    );
+    sources::spawn_state_source(api_base.to_string(), state_tx);
 
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
-    sources::spawn_health_poll(health_url.to_string(), Arc::clone(&health));
+    sources::spawn_health_poll(api::health_url(api_base), Arc::clone(&health));
 
     let (log_tx, log_rx) = mpsc::channel::<(LogSource, String)>();
     sources::spawn_log_tail(LogSource::App, app_log.to_string(), log_tx.clone());

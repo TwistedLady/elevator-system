@@ -3,74 +3,87 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{BaseConsumer, Consumer};
-use rdkafka::Message;
 use serde_json::Value;
 
 use super::app::{ElevatorState, HealthComp, HealthSnapshot, LogSource, MAX_LOG_LINES};
-use crate::BoxErr;
 
-// `offset_reset` is "latest" or "earliest". The live monitor passes "latest": its trend stamps
-// each state with console ARRIVAL time, so replaying the whole topic from "earliest" (which a
-// fresh, non-committing group does on every (re)subscribe — e.g. after the state topic is
-// recreated by a ConfigMap-switch test) dumps thousands of old states at ~the same x and
-// collapses each elevator's line into a vertical streak. "earliest" stays for selftest/watch,
-// which want the full backlog.
-pub fn spawn_consumer(
-    brokers: String,
-    topic: String,
-    offset_reset: String,
-    tx: Sender<ElevatorState>,
-) {
+#[derive(PartialEq)]
+enum Loop {
+    Stop,     // the receiver is gone — shut the source down
+    Continue, // this source ended/unavailable — try the other one
+}
+
+/// Live elevator state, entirely over HTTP (no Kafka). Prefers the API's SSE stream
+/// (`GET /api/elevator/stream`, low latency); if that endpoint is absent or drops, falls back to
+/// polling `GET /api/elevator` every 500ms. Either way it feeds `ElevatorState`s into `tx`, exactly
+/// like the old Kafka consumer did, so the Chart/Trend views are unchanged.
+pub fn spawn_state_source(api_base: String, tx: Sender<ElevatorState>) {
     std::thread::spawn(move || loop {
-        match consume_into(&brokers, &topic, &offset_reset, &tx) {
-            Ok(()) => break,
-            Err(_) => std::thread::sleep(Duration::from_secs(2)),
+        if stream_states(&api_base, &tx) == Loop::Stop {
+            return;
+        }
+        if poll_states(&api_base, &tx, Duration::from_secs(10)) == Loop::Stop {
+            return;
         }
     });
 }
 
-fn consume_into(
-    brokers: &str,
-    topic: &str,
-    offset_reset: &str,
-    tx: &Sender<ElevatorState>,
-) -> Result<(), BoxErr> {
-    let group = format!("elevator-console-{}", std::process::id());
-    let consumer: BaseConsumer = ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .set("group.id", &group)
-        .set("auto.offset.reset", offset_reset)
-        .set("enable.auto.commit", "false")
-        .create()?;
-    consumer.subscribe(&[topic])?;
-
-    loop {
-        match consumer.poll(Duration::from_millis(500)) {
-            None => {}
-            Some(Ok(msg)) => {
-                if let Some(payload) = msg.payload() {
-                    if let Ok(state) = serde_json::from_slice::<ElevatorState>(payload) {
-                        if tx.send(state).is_err() {
-                            return Ok(());
+fn poll_states(api_base: &str, tx: &Sender<ElevatorState>, window: Duration) -> Loop {
+    let agent = crate::api::agent();
+    let url = format!("{api_base}/api/elevator");
+    let deadline = Instant::now() + window;
+    while Instant::now() < deadline {
+        if let Ok(resp) = agent.get(&url).call() {
+            if let Ok(body) = resp.into_string() {
+                if let Ok(states) = serde_json::from_str::<Vec<ElevatorState>>(&body) {
+                    for s in states {
+                        if tx.send(s).is_err() {
+                            return Loop::Stop;
                         }
                     }
                 }
             }
-            Some(Err(_)) => {}
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Loop::Continue
+}
+
+fn stream_states(api_base: &str, tx: &Sender<ElevatorState>) -> Loop {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(2))
+        .timeout_read(Duration::from_secs(30))
+        .build();
+    let url = format!("{api_base}/api/elevator/stream");
+    let resp = match agent.get(&url).set("Accept", "text/event-stream").call() {
+        Ok(r) => r,
+        Err(_) => return Loop::Continue, // endpoint absent / unreachable → fall back to polling
+    };
+    let reader = BufReader::new(resp.into_reader());
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            return Loop::Continue;
+        };
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim();
+            if data.is_empty() {
+                continue;
+            }
+            if let Ok(state) = serde_json::from_str::<ElevatorState>(data) {
+                if tx.send(state).is_err() {
+                    return Loop::Stop;
+                }
+            }
         }
     }
+    Loop::Continue
 }
 
 pub fn spawn_health_poll(health_url: String, shared: Arc<Mutex<HealthSnapshot>>) {
     std::thread::spawn(move || {
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(2))
-            .timeout_read(Duration::from_secs(2))
-            .build();
+        let agent = crate::api::agent();
         loop {
             let snapshot = match agent.get(&health_url).call() {
                 Ok(resp) => parse_health(&resp.into_string().unwrap_or_default()),

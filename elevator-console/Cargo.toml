@@ -2,21 +2,19 @@
 name = "elevator-console"
 version = "0.1.0"
 edition = "2021"
-description = "Terminal app for the elevator system: monitors elevator state (and, later, sends orders)"
+description = "Terminal app for the elevator system: monitors elevator state and sends orders via the HTTP API"
 
 [[bin]]
 name = "elevator-console"
 path = "src/main.rs"
 
 [dependencies]
-# Kafka client. Uses the system librdkafka by default (Ubuntu: `apt install librdkafka-dev`).
-# No system lib? Build it from source instead: features = ["cmake-build"] (needs cmake + a C compiler).
-rdkafka = "0.36"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive", "env"] }
 rand = "0.8"
-# Tiny blocking HTTP client (no TLS/async) to poll the api's actuator health.
+# Tiny blocking HTTP client (no TLS/async). The console's ONLY channel to the system: orders,
+# state (poll + SSE), order status, and actuator health all go through the elevator-api over this.
 ureq = { version = "2", default-features = false }
 # Retro multi-view TUI (tabs, boxes, charts). Brings crossterm in via ratatui::crossterm.
 ratatui = "0.29"

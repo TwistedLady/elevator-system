@@ -6,21 +6,11 @@ use super::app::ElevatorState;
 use super::sources;
 use crate::BoxErr;
 
-pub fn run_watch(
-    brokers: &str,
-    state_topic: &str,
-    refresh_ms: u64,
-    duration_secs: Option<u64>,
-) -> Result<(), BoxErr> {
+pub fn run_watch(api_base: &str, refresh_ms: u64, duration_secs: Option<u64>) -> Result<(), BoxErr> {
     let (tx, rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(
-        brokers.to_string(),
-        state_topic.to_string(),
-        "earliest".to_string(),
-        tx,
-    );
+    sources::spawn_state_source(api_base.to_string(), tx);
 
-    println!("watching '{state_topic}' on {brokers} (Ctrl-C to stop)…");
+    println!("watching elevator state via {api_base} (Ctrl-C to stop)…");
     let start = Instant::now();
     let mut latest: BTreeMap<(String, u64), ElevatorState> = BTreeMap::new();
     loop {

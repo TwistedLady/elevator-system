@@ -16,9 +16,7 @@ const MAX_FLOOR: i32 = 15;
 const THREADS: u64 = 4;
 
 pub fn run_itest(
-    brokers: &str,
-    command_topic: &str,
-    health_url: &str,
+    api_base: &str,
     count: u64,
     timeout_secs: u64,
     out_path: &str,
@@ -28,12 +26,10 @@ pub fn run_itest(
         .timeout_connect(Duration::from_secs(2))
         .timeout_read(Duration::from_secs(3))
         .build();
-    let api_base = health_url
-        .strip_suffix("/actuator/health")
-        .unwrap_or(health_url);
+    let health_url = crate::api::health_url(api_base);
 
     let health_ok = matches!(
-        agent.get(health_url).call().map(|r| r.into_string().unwrap_or_default()),
+        agent.get(&health_url).call().map(|r| r.into_string().unwrap_or_default()),
         Ok(body) if body.contains("\"status\":\"UP\"")
     );
     if !quiet {
@@ -49,8 +45,7 @@ pub fn run_itest(
     let sent_ms = now_ms();
     let send_start = Instant::now();
     run_simulation(
-        brokers,
-        command_topic,
+        api_base,
         count,
         THREADS,
         &fleet,
