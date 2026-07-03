@@ -58,9 +58,14 @@ or your own with a public API endpoint) and:
    ```bash
    cat ~/.kube/config | base64 -w0
    ```
-3. **Make the GHCR images pullable by the cluster.** Either mark the two GHCR
-   packages **public** (repo → Packages → package → visibility), or create an
-   `imagePullSecret` in the cluster and reference it from the deployments.
+3. **Make the GHCR images pullable by the cluster.** They are **already public**
+   (repository-scoped packages inherit the public repo's visibility), so no pull
+   secret is required. If you later make them **private**, add a `GHCR_PULL_TOKEN`
+   environment secret — a classic PAT with `read:packages` (not the short-lived
+   `GITHUB_TOKEN`, which expires when the run ends). CD then creates a
+   `ghcr-pull` docker-registry secret, which both deployments already reference
+   via `imagePullSecrets`. When `GHCR_PULL_TOKEN` is unset that step is skipped,
+   and the missing secret is harmless for public images.
 
 Until step 2 exists the deploy job fails at "Configure kubectl" — the
 image-build/push half still runs and publishes to GHCR.

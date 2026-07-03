@@ -91,6 +91,19 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
           kubectl config current-context
 
+      # Create the GHCR pull secret referenced by the deployments. Only needed if
+      # the packages are private; skipped when GHCR_PULL_TOKEN is not set (public
+      # images pull fine without it). Use a PAT with read:packages, not the
+      # short-lived GITHUB_TOKEN, so pulls keep working after the run ends.
+      - name: Create GHCR pull secret
+        if: ${{ secrets.GHCR_PULL_TOKEN != '' }}
+        run: |
+          kubectl create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username='${{ github.repository_owner }}' \
+            --docker-password='${{ secrets.GHCR_PULL_TOKEN }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply manifests & roll out pinned images
         env:
           OWNER: ${{ needs.images.outputs.owner }}

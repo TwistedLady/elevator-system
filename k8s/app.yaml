@@ -29,6 +29,11 @@ spec:
       serviceAccountName: elevator-app
       # Allow graceful drain: stop the Kafka consumer + hand off shards before the pod dies.
       terminationGracePeriodSeconds: 60
+      # Only used when pulling from a *private* GHCR; harmless while the packages are
+      # public or on the kind demo (:local images). CD creates this secret when
+      # GHCR_PULL_TOKEN is set (see docs/CICD.md); a missing secret is tolerated.
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: elevator-app
           image: elevator-app:local
