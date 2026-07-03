@@ -1,0 +1,103 @@
+name: CD
+
+# Runs only after CI succeeds on main (so we never publish/deploy a red build),
+# or manually via the Actions tab.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    name: Build & push images (GHCR)
+    # Skip unless the triggering CI run passed (workflow_dispatch has no run to check).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      owner: ${{ steps.meta.outputs.owner }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        name: Compute image coordinates
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${sha:0:12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push elevator-app
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: elevator-app/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-app:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push elevator-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: elevator-api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-api:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to cluster
+    needs: images
+    runs-on: ubuntu-latest
+    # The `production` environment gates this step: add required reviewers for a
+    # manual approval, and store KUBECONFIG here as an environment secret.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # KUBECONFIG secret = your kubeconfig, base64-encoded:
+      #   cat ~/.kube/config | base64 -w0
+      - name: Configure kubectl
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+          kubectl config current-context
+
+      - name: Apply manifests & roll out pinned images
+        env:
+          OWNER: ${{ needs.images.outputs.owner }}
+          TAG: ${{ needs.images.outputs.tag }}
+        run: |
+          kubectl apply -f k8s/
+          kubectl set image deployment/elevator-app elevator-app="ghcr.io/${OWNER}/elevator-app:${TAG}"
+          kubectl set image deployment/elevator-api elevator-api="ghcr.io/${OWNER}/elevator-api:${TAG}"
+          kubectl rollout status deployment/elevator-app --timeout=5m
+          kubectl rollout status deployment/elevator-api --timeout=5m

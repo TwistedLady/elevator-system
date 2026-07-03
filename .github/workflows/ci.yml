@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jvm:
+    name: JVM build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # `verify` runs surefire (unit) and failsafe (the testcontainers *IT).
+      # ubuntu-latest ships a Docker daemon, so testcontainers works out of the box.
+      - name: Build & test (unit + integration)
+        run: ./mvnw -B -ntp verify
+
+  rust:
+    name: Rust console checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elevator-console
+    steps:
+      - uses: actions/checkout@v4
+
+      # rdkafka links the system librdkafka by default.
+      - name: Install librdkafka
+        run: sudo apt-get update && sudo apt-get install -y librdkafka-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: elevator-console
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
