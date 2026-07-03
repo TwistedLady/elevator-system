@@ -96,22 +96,46 @@ this commit and waits for the rollout:
    `maxUnavailable: 0` and the app's startup probe tolerates cluster-formation +
    journal-recovery time.
 
-### What you must provide to enable the deploy
+### Deploy target: local kind via a self-hosted runner
 
-The deploy job runs in GitHub's cloud and **cannot reach a kind cluster on your
-laptop.** To go live you need a reachable cluster (managed k8s, or your own with
-a public API endpoint) and:
+The cluster is a local **kind** (`https://127.0.0.1:<port>`), which GitHub's
+cloud runners cannot reach. So the `deploy` job runs `runs-on: self-hosted` — an
+Actions runner **on the kind host** — while `publish` stays on cloud runners.
 
-1. **Create a `production` environment** — Settings → Environments → New
-   environment → `production`. Optionally add a **required reviewer** so each
-   deploy waits for a one-click approval.
-2. **Add the `KUBECONFIG` secret** to that environment, base64-encoded:
-   ```bash
-   cat ~/.kube/config | base64 -w0
-   ```
+Already set up:
+- ✅ **`dev` environment** created.
+- ✅ **`KUBECONFIG` secret** (base64 of `kubectl config view --raw --minify
+  --flatten`) stored in that environment. The deploy job decodes it to a
+  job-local temp file (`$RUNNER_TEMP/kubeconfig`) — it never touches the runner's
+  own `~/.kube/config`.
 
-Until the secret exists, `publish` still runs and updates GHCR; only the `deploy`
-job fails (at "Configure kubectl" — `current-context is not set`).
+Remaining one-time step — **register the self-hosted runner** on the kind host
+(needs `kubectl` + `docker` on its PATH, which this machine has):
+
+```bash
+# 1) get a registration token
+TOKEN=$(gh api -X POST repos/TwistedLady/elevator-system/actions/runners/registration-token -q .token)
+
+# 2) download + configure (see Settings → Actions → Runners for the current version)
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -sL -o runner.tar.gz https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
+tar xzf runner.tar.gz
+./config.sh --url https://github.com/TwistedLady/elevator-system --token "$TOKEN" --labels self-hosted
+
+# 3) run it (foreground) or install as a service
+./run.sh
+# or: sudo ./svc.sh install && sudo ./svc.sh start
+```
+
+Notes:
+- The `KUBECONFIG` secret points at `127.0.0.1:<port>`; it only resolves from the
+  same host, which is exactly where the self-hosted runner lives. If you delete
+  and recreate the kind cluster, the port changes — refresh the secret with
+  `kubectl config view --raw --minify --flatten | base64 -w0 | gh secret set KUBECONFIG --env dev`.
+- Optionally add a **required reviewer** to the `dev` environment
+  (Settings → Environments → dev) so each deploy waits for a click.
+- Until a runner is online, `publish` still updates GHCR and the `deploy` job
+  simply **queues** (it does not fail) waiting for a self-hosted runner.
 
 ### Private images (optional)
 

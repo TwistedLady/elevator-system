@@ -76,10 +76,13 @@ jobs:
   deploy:
     name: Deploy → Kubernetes (Pekko cluster)
     needs: publish
-    runs-on: ubuntu-latest
-    # The `production` environment gates this: add required reviewers for a manual
+    # Self-hosted: the only cluster is a local kind (127.0.0.1), which GitHub's
+    # cloud runners cannot reach. Register a runner on the kind host (see
+    # docs/CICD.md). The publish job above stays on cloud runners.
+    runs-on: self-hosted
+    # The `dev` environment gates this: add required reviewers for a manual
     # approval, and store KUBECONFIG (+ optional GHCR_PULL_TOKEN) as env secrets.
-    environment: production
+    environment: dev
     env:
       OWNER: ${{ needs.publish.outputs.owner }}
       TAG: ${{ needs.publish.outputs.tag }}
@@ -89,12 +92,14 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # KUBECONFIG secret = your kubeconfig, base64-encoded:
-      #   cat ~/.kube/config | base64 -w0
+      #   kubectl config view --raw --minify --flatten | base64 -w0
+      # Written to a job-local temp file (never $HOME/.kube/config) so it does not
+      # clobber the self-hosted runner's own kubeconfig.
       - name: Configure kubectl
         run: |
-          mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
-          kubectl config current-context
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+          kubectl --kubeconfig "$RUNNER_TEMP/kubeconfig" config current-context
 
       # Only needed if the GHCR packages are private; skipped otherwise. Use a PAT
       # with read:packages (not the short-lived GITHUB_TOKEN). Referenced by both
