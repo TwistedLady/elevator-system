@@ -36,3 +36,6 @@ docker-compose*.yml
 docs/
 **/*.md
 **/demo-snapshots/
+
+# Self-hosted Actions runner (in-tree; huge, never part of an image build)
+actions-runner/
