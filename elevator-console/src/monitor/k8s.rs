@@ -106,6 +106,11 @@ pub fn spawn_k8s_poll(shared: Arc<Mutex<K8sSnapshot>>) {
     });
 }
 
+pub fn restart() -> Result<String, String> {
+    kubectl(&["rollout", "restart", &format!("deployment/{DEPLOY}")])?;
+    Ok("rolling restart of elevator-app…".into())
+}
+
 pub fn set_mode(mode: &str) -> Result<String, String> {
     let cm = match mode {
         "fast" => CM_FAST,

@@ -385,6 +385,18 @@ impl App {
     }
 
     fn on_key_k8s(&mut self, key: KeyEvent) {
+        if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
+            self.message = "restarting elevator-app…".to_string();
+            let slot = Arc::clone(&self.k8s_action);
+            std::thread::spawn(move || {
+                let result =
+                    super::k8s::restart().unwrap_or_else(|e| format!("restart failed: {e}"));
+                if let Ok(mut g) = slot.lock() {
+                    *g = Some(result);
+                }
+            });
+            return;
+        }
         let target = match key.code {
             KeyCode::Char('f') | KeyCode::Char('F') => "fast",
             KeyCode::Char('s') | KeyCode::Char('S') => "slow",

@@ -624,8 +624,10 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
                 Span::from("f").fg(Color::Black).bg(Color::Cyan).bold(),
                 Span::from(": fast  ").dark_gray(),
                 Span::from("s").fg(Color::Black).bg(Color::Magenta).bold(),
-                Span::from(": slow").dark_gray(),
-                Span::from("   (swaps the app configmap + rolls the pod)").dark_gray(),
+                Span::from(": slow   ").dark_gray(),
+                Span::from("r").fg(Color::Black).bg(Color::Yellow).bold(),
+                Span::from(": restart").dark_gray(),
+                Span::from("   (configmap swap / rollout — via kubectl)").dark_gray(),
             ];
             if !app.message.is_empty() {
                 spans.push(Span::from(format!("   {}", app.message)).cyan());
