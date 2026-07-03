@@ -108,19 +108,24 @@ Already set up:
   --flatten`) stored in that environment. The deploy job decodes it to a
   job-local temp file (`$RUNNER_TEMP/kubeconfig`) — it never touches the runner's
   own `~/.kube/config`.
+- ✅ **Self-hosted runner** `kind-host` registered and running from
+  `../.actions-runner` (one level **above** the repo, in the elevator project
+  dir — so it stays out of git and the Docker build context). All its state
+  (`_work`, `_diag`, `_temp`) lives under that dir.
 
-Remaining one-time step — **register the self-hosted runner** on the kind host
-(needs `kubectl` + `docker` on its PATH, which this machine has):
+To recreate the runner (e.g. on a fresh machine), needs `kubectl` + `docker` on
+its PATH:
 
 ```bash
-# 1) get a registration token
+# 1) registration token
 TOKEN=$(gh api -X POST repos/TwistedLady/elevator-system/actions/runners/registration-token -q .token)
 
-# 2) download + configure (see Settings → Actions → Runners for the current version)
-mkdir -p ~/actions-runner && cd ~/actions-runner
-curl -sL -o runner.tar.gz https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
+# 2) download + configure (pin the current version from Settings → Actions → Runners)
+VER=$(gh api repos/actions/runner/releases/latest -q .tag_name | sed 's/^v//')
+mkdir -p ../.actions-runner && cd ../.actions-runner
+curl -sL -o runner.tar.gz "https://github.com/actions/runner/releases/download/v${VER}/actions-runner-linux-x64-${VER}.tar.gz"
 tar xzf runner.tar.gz
-./config.sh --url https://github.com/TwistedLady/elevator-system --token "$TOKEN" --labels self-hosted
+./config.sh --url https://github.com/TwistedLady/elevator-system --token "$TOKEN" --name kind-host --labels self-hosted --unattended --replace
 
 # 3) run it (foreground) or install as a service
 ./run.sh

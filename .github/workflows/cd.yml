@@ -86,6 +86,8 @@ jobs:
     env:
       OWNER: ${{ needs.publish.outputs.owner }}
       TAG: ${{ needs.publish.outputs.tag }}
+      # `secrets` cannot be referenced in an `if:` — map it to env and test that.
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,7 +107,7 @@ jobs:
       # with read:packages (not the short-lived GITHUB_TOKEN). Referenced by both
       # deployments via imagePullSecrets: ghcr-pull.
       - name: Create GHCR pull secret
-        if: ${{ secrets.GHCR_PULL_TOKEN != '' }}
+        if: ${{ env.GHCR_PULL_TOKEN != '' }}
         run: |
           kubectl create secret docker-registry ghcr-pull \
             --docker-server=ghcr.io \
