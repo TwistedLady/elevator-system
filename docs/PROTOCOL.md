@@ -143,7 +143,7 @@ sequenceDiagram
         OC-->>KC: skip + commit (drop)
     else new
         OC->>Co: AddOriginalStream([order])
-        Note over Co: persist OrderAccepted (idempotent)
+        Note over Co: persist OrderAccepted
         Co->>Ct: AddUniqueOrderSet(mergeByFloor)
         Co-->>P: → order_status = PROGRESS
         OC->>DB: claim tag (after forward, before commit)
@@ -254,7 +254,13 @@ flowchart TD
   Claiming first would lose orders: a crash between claim and offset-commit leaves
   the message to be redelivered, and the already-claimed tag would be dropped —
   accepted by nobody. Claiming last means a crash there simply reprocesses the
-  order; the Coordinator's idempotent accept covers the redelivery.
+  order — and the redelivery is harmless: the up-front `processed_orders` check
+  normally drops it before it is ever re-forwarded, and even if one slips through,
+  the exactly-once `OrderStatusProjection` UPSERTs by `tag`
+  (`ON CONFLICT (tag) DO UPDATE`), so `order_status` is unchanged. (Note: the
+  Coordinator itself is *not* idempotent — it persists one `OrderAccepted` per
+  order every time; the dedup lives at ingress and in the read-side UPSERT, not in
+  the accept.)
 
 ---
 
