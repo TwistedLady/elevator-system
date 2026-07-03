@@ -24,7 +24,12 @@ pub struct K8sSnapshot {
 
 impl Default for K8sSnapshot {
     fn default() -> Self {
-        Self { reachable: false, mode: "?".into(), pods: Vec::new(), note: "querying kubectl…".into() }
+        Self {
+            reachable: false,
+            mode: "?".into(),
+            pods: Vec::new(),
+            note: "querying kubectl…".into(),
+        }
     }
 }
 
@@ -81,12 +86,18 @@ fn read_pods() -> Result<Vec<PodLine>, String> {
 pub fn spawn_k8s_poll(shared: Arc<Mutex<K8sSnapshot>>) {
     std::thread::spawn(move || loop {
         let snap = match (read_mode(), read_pods()) {
-            (Ok(mode), Ok(pods)) => {
-                K8sSnapshot { reachable: true, mode, pods, note: String::new() }
-            }
-            (Err(e), _) | (_, Err(e)) => {
-                K8sSnapshot { reachable: false, mode: "?".into(), pods: Vec::new(), note: e }
-            }
+            (Ok(mode), Ok(pods)) => K8sSnapshot {
+                reachable: true,
+                mode,
+                pods,
+                note: String::new(),
+            },
+            (Err(e), _) | (_, Err(e)) => K8sSnapshot {
+                reachable: false,
+                mode: "?".into(),
+                pods: Vec::new(),
+                note: e,
+            },
         };
         if let Ok(mut s) = shared.lock() {
             *s = snap;

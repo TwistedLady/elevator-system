@@ -18,7 +18,9 @@ struct ElevatorOrder<'a> {
 }
 
 fn make_producer(brokers: &str) -> Result<BaseProducer, KafkaError> {
-    ClientConfig::new().set("bootstrap.servers", brokers).create()
+    ClientConfig::new()
+        .set("bootstrap.servers", brokers)
+        .create()
 }
 
 fn send_order(
@@ -98,9 +100,11 @@ pub fn run_simulation(
         let mut handles = Vec::new();
         for t in 0..threads {
             let n = per + if t < rem { 1 } else { 0 };
-            handles.push(
-                s.spawn(move || worker(brokers, topic, t, n, elevators, max_floor, sent, pace, run_id)),
-            );
+            handles.push(s.spawn(move || {
+                worker(
+                    brokers, topic, t, n, elevators, max_floor, sent, pace, run_id,
+                )
+            }));
         }
         for h in handles {
             h.join().expect("worker thread panicked")?;
@@ -126,7 +130,9 @@ pub fn simulate(
     let start = Instant::now();
 
     let run_id = std::process::id() as u64;
-    run_simulation(brokers, topic, count, threads, elevators, max_floor, &sent, None, run_id)?;
+    run_simulation(
+        brokers, topic, count, threads, elevators, max_floor, &sent, None, run_id,
+    )?;
 
     let secs = start.elapsed().as_secs_f64();
     let total = sent.load(Ordering::Relaxed);

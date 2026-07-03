@@ -1,0 +1,38 @@
+# Both Dockerfiles `COPY . .` from the repo root, then run maven inside.
+# Keep every module's pom.xml + src (the reactor needs them); drop the rest.
+
+# VCS & CI
+.git
+.gitignore
+.github/
+
+# Build output
+**/target/
+.angular/
+dist/
+node_modules/
+
+# Runtime / logs
+logs/
+**/*.log
+.run/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Deploy / infra manifests — not needed to build the jars
+k8s/
+terraform/
+.terraform/
+*.tfstate
+*.tfstate.*
+db/
+scripts/
+docker-compose*.yml
+
+# Docs & demo assets
+docs/
+**/*.md
+**/demo-snapshots/

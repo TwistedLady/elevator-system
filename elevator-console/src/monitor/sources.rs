@@ -19,7 +19,12 @@ use crate::BoxErr;
 // recreated by a ConfigMap-switch test) dumps thousands of old states at ~the same x and
 // collapses each elevator's line into a vertical streak. "earliest" stays for selftest/watch,
 // which want the full backlog.
-pub fn spawn_consumer(brokers: String, topic: String, offset_reset: String, tx: Sender<ElevatorState>) {
+pub fn spawn_consumer(
+    brokers: String,
+    topic: String,
+    offset_reset: String,
+    tx: Sender<ElevatorState>,
+) {
     std::thread::spawn(move || loop {
         match consume_into(&brokers, &topic, &offset_reset, &tx) {
             Ok(()) => break,
@@ -99,7 +104,11 @@ fn parse_health(body: &str) -> HealthSnapshot {
             });
         }
     }
-    HealthSnapshot { reachable: true, overall, components }
+    HealthSnapshot {
+        reachable: true,
+        overall,
+        components,
+    }
 }
 
 fn summarize(details: &Value) -> String {

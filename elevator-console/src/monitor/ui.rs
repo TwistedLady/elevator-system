@@ -59,7 +59,10 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     };
     let header = retro_block(" ▌ ELEVATOR CONTROL ▐ ").title_top(
         Line::from(vec![
-            Span::from(format!(" {mode_txt} ")).fg(Color::Black).bg(mode_color).bold(),
+            Span::from(format!(" {mode_txt} "))
+                .fg(Color::Black)
+                .bg(mode_color)
+                .bold(),
             Span::from(format!(" ⏱ {} ", app.now_clock())).cyan().bold(),
         ])
         .right_aligned(),
@@ -91,7 +94,9 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
         return;
     }
-    cars.sort_by(|a, b| crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name)));
+    cars.sort_by(|a, b| {
+        crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name))
+    });
     let top = cars.iter().map(|c| c.floor).max().unwrap_or(0).max(0);
     let bottom = cars.iter().map(|c| c.floor).min().unwrap_or(0).min(0);
 
@@ -195,7 +200,10 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
                 .title("floor")
                 .style(Style::new().dark_gray())
                 .bounds([y_lo, y_hi])
-                .labels([Span::from(format!("{y_lo:.0}")), Span::from(format!("{y_hi:.0}"))]),
+                .labels([
+                    Span::from(format!("{y_lo:.0}")),
+                    Span::from(format!("{y_hi:.0}")),
+                ]),
         );
 
     frame.render_widget(chart, area);
@@ -227,7 +235,12 @@ fn draw_order(frame: &mut Frame, app: &App, area: Rect) {
         Span::from(format!("0..{}", app.seen_floor_max)).green(),
     ]));
 
-    frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
@@ -274,7 +287,11 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
             frame.render_widget(info, rows[0]);
 
             let sent_pct = (sim.ratio() * 100.0).round() as u16;
-            let sent_fill = if sim.finished() { Color::Green } else { Color::Cyan };
+            let sent_fill = if sim.finished() {
+                Color::Green
+            } else {
+                Color::Cyan
+            };
             frame.render_widget(
                 Gauge::default()
                     .gauge_style(Style::new().fg(sent_fill).bg(Color::Black).bold())
@@ -317,7 +334,9 @@ fn draw_health(frame: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
 
     if !app.health.reachable {
-        lines.push(Line::from("api unreachable — is elevator-api running on :8080?".red()));
+        lines.push(Line::from(
+            "api unreachable — is elevator-api running on :8080?".red(),
+        ));
     }
 
     let ostyle = status_style(&app.health.overall);
@@ -389,18 +408,32 @@ fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
     };
     lines.push(Line::from(vec![
         Span::from("mode  ").white(),
-        Span::styled(format!(" {mode_txt} "), Style::new().fg(Color::Black).bg(mode_color).bold()),
+        Span::styled(
+            format!(" {mode_txt} "),
+            Style::new().fg(Color::Black).bg(mode_color).bold(),
+        ),
     ]));
     lines.push(Line::from(""));
 
     if !app.k8s.reachable {
-        lines.push(Line::from(format!("kubectl unavailable — {}", app.k8s.note).red()));
-        frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+        lines.push(Line::from(
+            format!("kubectl unavailable — {}", app.k8s.note).red(),
+        ));
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
         return;
     }
 
     lines.push(Line::from(
-        format!("  {:<34}{:<10}{:<8}{}", "POD", "STATUS", "READY", "RESTARTS").dark_gray(),
+        format!(
+            "  {:<34}{:<10}{:<8}{}",
+            "POD", "STATUS", "READY", "RESTARTS"
+        )
+        .dark_gray(),
     ));
     for p in &app.k8s.pods {
         let st = match p.status.as_str() {
@@ -408,7 +441,11 @@ fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
             "Pending" | "ContainerCreating" => Style::new().fg(Color::Yellow),
             _ => Style::new().fg(Color::Red),
         };
-        let ready_color = if p.ready == "true" { Color::Green } else { Color::Yellow };
+        let ready_color = if p.ready == "true" {
+            Color::Green
+        } else {
+            Color::Yellow
+        };
         lines.push(Line::from(vec![
             Span::from(format!("  {:<34}", p.name)).white(),
             Span::styled(format!("{:<10}", p.status), st),
@@ -446,14 +483,21 @@ fn draw_test(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::from("verdict   ").white(),
                 Span::styled(format!(" {verdict} "), vstyle),
-                Span::from(format!("   run {}  ·  mode {}", r["run_id"], r["mode"].as_str().unwrap_or("?")))
-                    .dark_gray(),
+                Span::from(format!(
+                    "   run {}  ·  mode {}",
+                    r["run_id"],
+                    r["mode"].as_str().unwrap_or("?")
+                ))
+                .dark_gray(),
             ]));
             lines.push(Line::from(""));
 
             let lm = &r["latency_ms"];
             let kv = |k: &str, v: String| {
-                Line::from(vec![Span::from(format!("{k:<22}")).dark_gray(), Span::from(v).green()])
+                Line::from(vec![
+                    Span::from(format!("{k:<22}")).dark_gray(),
+                    Span::from(v).green(),
+                ])
             };
             lines.push(kv("requests", format!("{}", r["requests"])));
             lines.push(kv("done", format!("{}", r["done"])));
@@ -461,23 +505,43 @@ fn draw_test(frame: &mut Frame, app: &App, area: Rect) {
                 Span::from(format!("{:<22}", "lost")).dark_gray(),
                 Span::styled(
                     format!("{}", r["lost"]),
-                    if r["lost"].as_u64() == Some(0) { Style::new().fg(Color::Green) } else { Style::new().fg(Color::Red).bold() },
+                    if r["lost"].as_u64() == Some(0) {
+                        Style::new().fg(Color::Green)
+                    } else {
+                        Style::new().fg(Color::Red).bold()
+                    },
                 ),
             ]));
-            lines.push(kv("latency p50/p95/max", format!("{} / {} / {} ms", lm["p50"], lm["p95"], lm["max"])));
+            lines.push(kv(
+                "latency p50/p95/max",
+                format!("{} / {} / {} ms", lm["p50"], lm["p95"], lm["max"]),
+            ));
             lines.push(kv(
                 "throughput",
-                format!("{:.2}/s", r["throughput_done_per_s"].as_f64().unwrap_or(0.0)),
+                format!(
+                    "{:.2}/s",
+                    r["throughput_done_per_s"].as_f64().unwrap_or(0.0)
+                ),
             ));
-            lines.push(kv("api confirmed DONE", format!("{}", r["api_confirmed_done"])));
-            lines.push(kv("app moves observed", format!("{}", r["app_moves_observed"])));
+            lines.push(kv(
+                "api confirmed DONE",
+                format!("{}", r["api_confirmed_done"]),
+            ));
+            lines.push(kv(
+                "app moves observed",
+                format!("{}", r["app_moves_observed"]),
+            ));
             lines.push(Line::from(""));
 
             lines.push(Line::from("checks".dark_gray()));
             if let Some(checks) = r["checks"].as_array() {
                 for c in checks {
                     let ok = c["ok"].as_bool().unwrap_or(false);
-                    let st = if ok { Style::new().fg(Color::Green) } else { Style::new().fg(Color::Red) };
+                    let st = if ok {
+                        Style::new().fg(Color::Green)
+                    } else {
+                        Style::new().fg(Color::Red)
+                    };
                     lines.push(Line::from(vec![
                         Span::styled(format!(" {} ", if ok { "PASS" } else { "FAIL" }), st.bold()),
                         Span::from(format!("  {}", c["check"].as_str().unwrap_or(""))).white(),
@@ -487,7 +551,12 @@ fn draw_test(frame: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
@@ -541,9 +610,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::from("   Enter: clear · ←/→: source · Esc: quit").dark_gray());
             Line::from(spans)
         }
-        View::Health => Line::from(
-            "Tab/Shift-Tab: switch view   ·   Esc: quit".dim(),
-        ),
+        View::Health => Line::from("Tab/Shift-Tab: switch view   ·   Esc: quit".dim()),
         View::K8s => {
             let mut spans = vec![
                 Span::from("change configmap ▸ ").green().bold(),
@@ -571,7 +638,12 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(spans)
         }
     };
-    frame.render_widget(Paragraph::new(content).block(block).wrap(Wrap { trim: false }), area);
+    frame.render_widget(
+        Paragraph::new(content)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn waiting_line(app: &App) -> Line<'static> {

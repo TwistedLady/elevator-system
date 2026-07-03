@@ -13,7 +13,12 @@ pub fn run_watch(
     duration_secs: Option<u64>,
 ) -> Result<(), BoxErr> {
     let (tx, rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), "earliest".to_string(), tx);
+    sources::spawn_consumer(
+        brokers.to_string(),
+        state_topic.to_string(),
+        "earliest".to_string(),
+        tx,
+    );
 
     println!("watching '{state_topic}' on {brokers} (Ctrl-C to stop)…");
     let start = Instant::now();
@@ -25,7 +30,10 @@ pub fn run_watch(
         let secs = start.elapsed().as_secs();
         println!("── t+{secs}s  ({} elevators) ──────────────", latest.len());
         for s in latest.values() {
-            println!("  {:<8} floor {:>3}  {:<5} {}", s.elevator_name, s.floor, s.direction, s.motion);
+            println!(
+                "  {:<8} floor {:>3}  {:<5} {}",
+                s.elevator_name, s.floor, s.direction, s.motion
+            );
         }
         std::thread::sleep(Duration::from_millis(refresh_ms));
         if let Some(d) = duration_secs {
