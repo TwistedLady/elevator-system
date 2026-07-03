@@ -28,17 +28,26 @@ pub fn run(
     api_log: &str,
 ) -> Result<(), BoxErr> {
     if !std::io::stdout().is_terminal() {
-        return Err("`monitor` needs a real terminal (TTY); it can't run in a captured shell \
+        return Err(
+            "`monitor` needs a real terminal (TTY); it can't run in a captured shell \
                     like the in-session `!` bash. Run it in your own terminal window, or use \
                     `watch` (headless live view) or `selftest` here."
-            .into());
+                .into(),
+        );
     }
 
-    let api_base = health_url.strip_suffix("/actuator/health").unwrap_or(health_url);
+    let api_base = health_url
+        .strip_suffix("/actuator/health")
+        .unwrap_or(health_url);
     let mut app = App::new(brokers, command_topic, api_base);
 
     let (state_tx, state_rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), "latest".to_string(), state_tx);
+    sources::spawn_consumer(
+        brokers.to_string(),
+        state_topic.to_string(),
+        "latest".to_string(),
+        state_tx,
+    );
 
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(health_url.to_string(), Arc::clone(&health));
@@ -51,7 +60,14 @@ pub fn run(
     k8s::spawn_k8s_poll(Arc::clone(&k8s_state));
 
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut app, &state_rx, &log_rx, &health, &k8s_state);
+    let result = event_loop(
+        &mut terminal,
+        &mut app,
+        &state_rx,
+        &log_rx,
+        &health,
+        &k8s_state,
+    );
     ratatui::restore();
     result
 }

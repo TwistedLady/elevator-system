@@ -26,7 +26,12 @@ pub fn run_selftest(
     sources::spawn_health_poll(health_url.to_string(), Arc::clone(&health));
 
     let (tx, rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(brokers.to_string(), state_topic.to_string(), "earliest".to_string(), tx);
+    sources::spawn_consumer(
+        brokers.to_string(),
+        state_topic.to_string(),
+        "earliest".to_string(),
+        tx,
+    );
 
     let deadline = Instant::now() + Duration::from_secs(duration_secs);
     let mut count = 0u64;
@@ -48,9 +53,15 @@ pub fn run_selftest(
         .map(|c| format!("{}={}", c.name, c.status))
         .collect::<Vec<_>>()
         .join(",");
-    log.line(&format!("health: reachable={} overall={} [{}]", h.reachable, h.overall, comps));
+    log.line(&format!(
+        "health: reachable={} overall={} [{}]",
+        h.reachable, h.overall, comps
+    ));
     for c in h.components.iter().filter(|c| c.status != "UP") {
-        log.line(&format!("  DOWN: {} -> {} ({})", c.name, c.status, c.detail));
+        log.line(&format!(
+            "  DOWN: {} -> {} ({})",
+            c.name, c.status, c.detail
+        ));
     }
 
     let names: Vec<String> = elevators.iter().cloned().collect();

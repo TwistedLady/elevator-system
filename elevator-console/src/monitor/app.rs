@@ -38,7 +38,11 @@ pub struct HealthSnapshot {
 
 impl Default for HealthSnapshot {
     fn default() -> Self {
-        Self { reachable: false, overall: "?".to_string(), components: Vec::new() }
+        Self {
+            reachable: false,
+            overall: "?".to_string(),
+            components: Vec::new(),
+        }
     }
 }
 
@@ -76,7 +80,8 @@ impl SimRun {
     }
 
     pub fn pending(&self) -> u64 {
-        self.checked.saturating_sub(self.done() + self.in_progress())
+        self.checked
+            .saturating_sub(self.done() + self.in_progress())
     }
 
     pub fn finished(&self) -> bool {
@@ -84,7 +89,9 @@ impl SimRun {
     }
 
     pub fn secs(&self) -> f64 {
-        self.elapsed.unwrap_or_else(|| self.start.elapsed()).as_secs_f64()
+        self.elapsed
+            .unwrap_or_else(|| self.start.elapsed())
+            .as_secs_f64()
     }
 }
 
@@ -117,8 +124,14 @@ pub enum View {
 
 impl View {
     pub const ALL: [View; 8] = [
-        View::Chart, View::Trend, View::Order, View::Sim,
-        View::Health, View::Logs, View::K8s, View::Test,
+        View::Chart,
+        View::Trend,
+        View::Order,
+        View::Sim,
+        View::Health,
+        View::Logs,
+        View::K8s,
+        View::Test,
     ];
 
     pub fn index(self) -> usize {
@@ -371,7 +384,13 @@ impl App {
         let health_url = format!("{}/actuator/health", self.api_base);
         std::thread::spawn(move || {
             let _ = crate::itest::run_itest(
-                &brokers, &topic, &health_url, 12, 75, App::TEST_REPORT_PATH, true,
+                &brokers,
+                &topic,
+                &health_url,
+                12,
+                75,
+                App::TEST_REPORT_PATH,
+                true,
             );
             running.store(false, Ordering::Relaxed);
         });
@@ -390,7 +409,8 @@ impl App {
         self.message = format!("switching to {target}…");
         let slot = Arc::clone(&self.k8s_action);
         std::thread::spawn(move || {
-            let result = super::k8s::set_mode(target).unwrap_or_else(|e| format!("switch failed: {e}"));
+            let result =
+                super::k8s::set_mode(target).unwrap_or_else(|e| format!("switch failed: {e}"));
             if let Ok(mut g) = slot.lock() {
                 *g = Some(result);
             }
@@ -440,7 +460,15 @@ impl App {
         let pace = Some(Duration::from_millis(2500));
         std::thread::spawn(move || {
             let _ = crate::sender::run_simulation(
-                &brokers, &topic, count, threads, &pool, SIM_MAX_FLOOR, &sent_t, pace, run_id,
+                &brokers,
+                &topic,
+                count,
+                threads,
+                &pool,
+                SIM_MAX_FLOOR,
+                &sent_t,
+                pace,
+                run_id,
             );
             done_t.store(true, Ordering::Relaxed);
         });
@@ -449,8 +477,11 @@ impl App {
         let checked = tags.len() as u64;
         let status_done = Arc::new(AtomicU64::new(0));
         let status_progress = Arc::new(AtomicU64::new(0));
-        let (done_t2, prog_t2, api_base) =
-            (Arc::clone(&status_done), Arc::clone(&status_progress), self.api_base.clone());
+        let (done_t2, prog_t2, api_base) = (
+            Arc::clone(&status_done),
+            Arc::clone(&status_progress),
+            self.api_base.clone(),
+        );
         std::thread::spawn(move || poll_statuses(&api_base, tags, &done_t2, &prog_t2));
 
         self.sim = Some(SimRun {
@@ -489,7 +520,10 @@ impl App {
             self.elevator_re = None;
             self.elevator_re_err = false;
         } else {
-            match RegexBuilder::new(&self.elevator_filter).case_insensitive(true).build() {
+            match RegexBuilder::new(&self.elevator_filter)
+                .case_insensitive(true)
+                .build()
+            {
                 Ok(re) => {
                     self.elevator_re = Some(re);
                     self.elevator_re_err = false;
@@ -534,7 +568,10 @@ impl App {
             self.log_re = None;
             self.log_re_err = false;
         } else {
-            match RegexBuilder::new(&self.log_filter).case_insensitive(true).build() {
+            match RegexBuilder::new(&self.log_filter)
+                .case_insensitive(true)
+                .build()
+            {
                 Ok(re) => {
                     self.log_re = Some(re);
                     self.log_re_err = false;
@@ -553,7 +590,11 @@ impl App {
             return String::new();
         }
         let lower = line.to_ascii_lowercase();
-        let rest = if lower.starts_with("sim") { line[3..].trim() } else { line };
+        let rest = if lower.starts_with("sim") {
+            line[3..].trim()
+        } else {
+            line
+        };
         match rest.parse::<u64>() {
             Ok(count) if count > 0 => {
                 self.start_sim(count);
@@ -570,8 +611,11 @@ impl App {
             [] => String::new(),
             [elevator, floor] => match floor.parse::<i32>() {
                 Ok(f) => {
-                    let (brokers, topic, name) =
-                        (self.brokers.clone(), self.command_topic.clone(), elevator.to_string());
+                    let (brokers, topic, name) = (
+                        self.brokers.clone(),
+                        self.command_topic.clone(),
+                        elevator.to_string(),
+                    );
                     std::thread::spawn(move || {
                         let _ = crate::sender::send_one(&brokers, &topic, &name, f);
                     });

@@ -28,14 +28,19 @@ pub fn run_itest(
         .timeout_connect(Duration::from_secs(2))
         .timeout_read(Duration::from_secs(3))
         .build();
-    let api_base = health_url.strip_suffix("/actuator/health").unwrap_or(health_url);
+    let api_base = health_url
+        .strip_suffix("/actuator/health")
+        .unwrap_or(health_url);
 
     let health_ok = matches!(
         agent.get(health_url).call().map(|r| r.into_string().unwrap_or_default()),
         Ok(body) if body.contains("\"status\":\"UP\"")
     );
     if !quiet {
-        eprintln!("[itest] health {} ({health_url})", if health_ok { "UP" } else { "DOWN" });
+        eprintln!(
+            "[itest] health {} ({health_url})",
+            if health_ok { "UP" } else { "DOWN" }
+        );
     }
 
     let run_id = now_ms();
@@ -43,27 +48,51 @@ pub fn run_itest(
     let sent = AtomicU64::new(0);
     let sent_ms = now_ms();
     let send_start = Instant::now();
-    run_simulation(brokers, command_topic, count, THREADS, &fleet, MAX_FLOOR, &sent, None, run_id)?;
+    run_simulation(
+        brokers,
+        command_topic,
+        count,
+        THREADS,
+        &fleet,
+        MAX_FLOOR,
+        &sent,
+        None,
+        run_id,
+    )?;
     let send_secs = send_start.elapsed().as_secs_f64();
     if !quiet {
         eprintln!("[itest] sent {count} orders in {send_secs:.2}s (run {run_id})");
     }
 
-    let mut pending: BTreeSet<String> =
-        sim_tags(run_id, count, THREADS, count as usize).into_iter().collect();
+    let mut pending: BTreeSet<String> = sim_tags(run_id, count, THREADS, count as usize)
+        .into_iter()
+        .collect();
     let mut latencies: Vec<u64> = Vec::new();
-    let done = poll_done(&agent, api_base, &mut pending, &mut latencies, sent_ms, timeout_secs);
+    let done = poll_done(
+        &agent,
+        api_base,
+        &mut pending,
+        &mut latencies,
+        sent_ms,
+        timeout_secs,
+    );
     let lost = pending.len() as u64;
     latencies.sort_unstable();
     let stats = LatencyStats::from(&latencies);
     let total_secs = (now_ms() - sent_ms) as f64 / 1000.0;
-    let throughput = if total_secs > 0.0 { done as f64 / total_secs } else { 0.0 };
+    let throughput = if total_secs > 0.0 {
+        done as f64 / total_secs
+    } else {
+        0.0
+    };
 
     let api_log = kubectl_logs("elevator-api");
     let app_log = kubectl_logs("elevator-app");
     let done_re = Regex::new(&format!(r"\[order status\] (sim-{run_id}-\S+) -> DONE")).unwrap();
-    let api_done: BTreeSet<&str> =
-        done_re.captures_iter(&api_log).map(|c| c.get(1).unwrap().as_str()).collect();
+    let api_done: BTreeSet<&str> = done_re
+        .captures_iter(&api_log)
+        .map(|c| c.get(1).unwrap().as_str())
+        .collect();
     let api_errors = api_log.matches("ERROR").count();
     let app_moves = app_log.matches(">>>").count();
     let stream_failed = app_log.contains("Kafka stream failed");
@@ -72,7 +101,10 @@ pub fn run_itest(
     let checks: Vec<(String, bool)> = vec![
         ("console: lost == 0".into(), lost == 0),
         ("console: health UP".into(), health_ok),
-        (format!("api log: >= {count} tags confirmed DONE"), api_done.len() as u64 >= count),
+        (
+            format!("api log: >= {count} tags confirmed DONE"),
+            api_done.len() as u64 >= count,
+        ),
         ("app log: elevators moved".into(), app_moves > 0),
         ("app log: no 'Kafka stream failed'".into(), !stream_failed),
     ];
@@ -107,8 +139,11 @@ pub fn run_itest(
     }
 
     if !passed {
-        let failed: Vec<&str> =
-            checks.iter().filter(|(_, ok)| !ok).map(|(n, _)| n.as_str()).collect();
+        let failed: Vec<&str> = checks
+            .iter()
+            .filter(|(_, ok)| !ok)
+            .map(|(n, _)| n.as_str())
+            .collect();
         return Err(format!("integration test FAILED: {}", failed.join("; ")).into());
     }
     Ok(())
@@ -129,7 +164,11 @@ fn poll_done(
         for tag in pending.iter() {
             let url = format!("{api_base}/api/order/{tag}");
             if let Ok(resp) = agent.get(&url).call() {
-                if resp.into_string().unwrap_or_default().contains("\"status\":\"DONE\"") {
+                if resp
+                    .into_string()
+                    .unwrap_or_default()
+                    .contains("\"status\":\"DONE\"")
+                {
                     latencies.push(now_ms().saturating_sub(sent_ms));
                     finished.push(tag.clone());
                 }
@@ -158,7 +197,10 @@ fn kubectl_logs(dep: &str) -> String {
 }
 
 fn strip_ansi(s: &str) -> String {
-    Regex::new(r"\x1b\[[0-9;]*m").unwrap().replace_all(s, "").into_owned()
+    Regex::new(r"\x1b\[[0-9;]*m")
+        .unwrap()
+        .replace_all(s, "")
+        .into_owned()
 }
 
 fn current_mode() -> String {
@@ -175,7 +217,11 @@ fn current_mode() -> String {
         Ok(o) => {
             let s = String::from_utf8_lossy(&o.stdout);
             let m = s.trim().replace("elevator-app-config-", "");
-            if m.is_empty() { "?".into() } else { m }
+            if m.is_empty() {
+                "?".into()
+            } else {
+                m
+            }
         }
         Err(_) => "?".into(),
     }
@@ -190,13 +236,17 @@ fn print_summary(report: &serde_json::Value, checks: &[(String, bool)]) {
     );
     println!(
         " latency(ms): p50={}  p95={}  max={}  throughput={:.2}/s",
-        lm["p50"], lm["p95"], lm["max"],
+        lm["p50"],
+        lm["p95"],
+        lm["max"],
         report["throughput_done_per_s"].as_f64().unwrap_or(0.0)
     );
     println!(
         " api confirmed DONE: {}   api errors: {}   app moves: {}   stream-failed: {}",
-        report["api_confirmed_done"], report["api_errors"],
-        report["app_moves_observed"], report["app_stream_failed"]
+        report["api_confirmed_done"],
+        report["api_errors"],
+        report["app_moves_observed"],
+        report["app_stream_failed"]
     );
     for (name, ok) in checks {
         println!("   [{}] {name}", if *ok { "PASS" } else { "FAIL" });
@@ -216,7 +266,13 @@ struct LatencyStats {
 impl LatencyStats {
     fn from(sorted: &[u64]) -> Self {
         if sorted.is_empty() {
-            return Self { min: 0, p50: 0, p95: 0, max: 0, avg: 0 };
+            return Self {
+                min: 0,
+                p50: 0,
+                p95: 0,
+                max: 0,
+                avg: 0,
+            };
         }
         let pct = |p: f64| sorted[((sorted.len() as f64 * p) as usize).min(sorted.len() - 1)];
         let sum: u64 = sorted.iter().sum();
@@ -231,20 +287,31 @@ impl LatencyStats {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn write_report(path: &str, report: &serde_json::Value) -> Result<(), BoxErr> {
     if let Some(parent) = Path::new(path).parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    let mut f = OpenOptions::new().create(true).write(true).truncate(true).open(path)?;
+    let mut f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)?;
     writeln!(f, "{}", serde_json::to_string_pretty(report)?)?;
     Ok(())
 }
 
 fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, bool)]) {
-    let md_path = json_path.strip_suffix(".json").unwrap_or(json_path).to_string() + ".md";
+    let md_path = json_path
+        .strip_suffix(".json")
+        .unwrap_or(json_path)
+        .to_string()
+        + ".md";
     let lm = &r["latency_ms"];
     let rows: String = checks
         .iter()
@@ -261,12 +328,19 @@ fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, boo
          | app moves observed | {moves} |\n| app stream-failed | {sf} |\n\n\
          ## Checks\n| check | result |\n|---|---|\n{rows}",
         verdict = r["verdict"].as_str().unwrap_or("?"),
-        run = r["run_id"], mode = r["mode"].as_str().unwrap_or("?"),
-        req = r["requests"], done = r["done"], lost = r["lost"],
-        p50 = lm["p50"], p95 = lm["p95"], max = lm["max"],
+        run = r["run_id"],
+        mode = r["mode"].as_str().unwrap_or("?"),
+        req = r["requests"],
+        done = r["done"],
+        lost = r["lost"],
+        p50 = lm["p50"],
+        p95 = lm["p95"],
+        max = lm["max"],
         tput = r["throughput_done_per_s"].as_f64().unwrap_or(0.0),
-        apidone = r["api_confirmed_done"], apierr = r["api_errors"],
-        moves = r["app_moves_observed"], sf = r["app_stream_failed"],
+        apidone = r["api_confirmed_done"],
+        apierr = r["api_errors"],
+        moves = r["app_moves_observed"],
+        sf = r["app_stream_failed"],
     );
     let _ = std::fs::write(md_path, md);
 }
