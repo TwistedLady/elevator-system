@@ -1,4 +1,11 @@
-name: CI
+name: Build & Test
+
+# Validates every change to the polyglot reactor:
+#   - elevator-common-* (Scala 3 domain/logic)   - unit tested
+#   - elevator-app       (Pekko cluster)          - unit tested (actor recovery)
+#   - elevator-api       (Spring)                 - unit + Testcontainers IT
+#   - elevator-console   (Rust/Cargo)             - fmt + clippy + test
+# On PRs it also proves both Docker images still build.
 
 on:
   push:
@@ -7,30 +14,52 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   jvm:
-    name: JVM build & test
+    name: Scala/Java · Maven (unit + Testcontainers IT)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      # `verify` runs surefire (unit) and failsafe (the testcontainers *IT).
-      # ubuntu-latest ships a Docker daemon, so testcontainers works out of the box.
-      - name: Build & test (unit + integration)
-        run: ./mvnw -B -ntp verify
+      # Enforcer requireUpperBoundDeps + POM sanity across the 12-module reactor.
+      - name: Validate reactor & dependency convergence
+        run: ./mvnw -B -ntp -DskipTests validate
+
+      # Compiles Scala 3 (elevator-common-*) + elevator-app/elevator-api, runs the
+      # surefire unit tests (logic, strategy, event evolution, actor recovery,
+      # serialization) and installs artifacts. IT skipped here for a clean signal.
+      - name: Build & unit tests
+        run: ./mvnw -B -ntp install -DskipITs
+
+      # Runs only the failsafe *IT (ElevatorStateFlowIT): boots Spring and spins up
+      # Postgres + Kafka via Testcontainers (ubuntu-latest ships a Docker daemon).
+      - name: Integration tests (Testcontainers)
+        run: ./mvnw -B -ntp verify -Dsurefire.skip=true
+
+      - name: Publish test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-test-reports
+          path: "**/target/*-reports/*.xml"
+          if-no-files-found: ignore
+          retention-days: 7
 
   rust:
-    name: Rust console checks
+    name: Rust console · Cargo (fmt, clippy, test)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,11 +79,36 @@ jobs:
         with:
           workspaces: elevator-console
 
-      - name: Format check
+      - name: Format (rustfmt)
         run: cargo fmt --all --check
 
-      - name: Clippy
+      - name: Lint (clippy)
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Test
         run: cargo test
+
+      # The demo and the pre-commit itest run the release binary; make sure it builds.
+      - name: Release build
+        run: cargo build --release
+
+  images:
+    name: Docker images build (no push)
+    # PR-only smoke: prove the Dockerfiles build. On main, Release & Deploy pushes them.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [elevator-app, elevator-api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.module }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.module }}/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

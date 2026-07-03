@@ -2,7 +2,8 @@ FROM maven:3.9.9-eclipse-temurin-21-jammy AS build
 WORKDIR /home/build
 
 COPY . .
-RUN mvn clean package -pl elevator-app -am
+# Tests are gated by the Build & Test workflow on the same commit; skip them here.
+RUN mvn -B -ntp clean package -pl elevator-app -am -DskipTests
 
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /srv/elevator-app

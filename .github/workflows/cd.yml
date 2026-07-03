@@ -1,16 +1,18 @@
-name: CD
+name: Release & Deploy
 
-# Runs only after CI succeeds on main (so we never publish/deploy a red build),
-# or manually via the Actions tab.
+# Runs only after "Build & Test" succeeds on main (never ships a red build), or
+# manually. Publishes both images to GHCR, then rolls them onto the cluster in the
+# order the Pekko-cluster app actually needs: RBAC + config, then the stateful
+# backends (Postgres journal / Kafka), then the app + API pinned to this commit.
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Build & Test"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: cd-main
+  group: release-main
   cancel-in-progress: false
 
 permissions:
@@ -18,9 +20,9 @@ permissions:
   packages: write
 
 jobs:
-  images:
-    name: Build & push images (GHCR)
-    # Skip unless the triggering CI run passed (workflow_dispatch has no run to check).
+  publish:
+    name: Publish images → GHCR
+    # Skip unless the triggering build passed (workflow_dispatch has no run to check).
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
@@ -72,12 +74,15 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Deploy to cluster
-    needs: images
+    name: Deploy → Kubernetes (Pekko cluster)
+    needs: publish
     runs-on: ubuntu-latest
-    # The `production` environment gates this step: add required reviewers for a
-    # manual approval, and store KUBECONFIG here as an environment secret.
+    # The `production` environment gates this: add required reviewers for a manual
+    # approval, and store KUBECONFIG (+ optional GHCR_PULL_TOKEN) as env secrets.
     environment: production
+    env:
+      OWNER: ${{ needs.publish.outputs.owner }}
+      TAG: ${{ needs.publish.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,10 +96,9 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
           kubectl config current-context
 
-      # Create the GHCR pull secret referenced by the deployments. Only needed if
-      # the packages are private; skipped when GHCR_PULL_TOKEN is not set (public
-      # images pull fine without it). Use a PAT with read:packages, not the
-      # short-lived GITHUB_TOKEN, so pulls keep working after the run ends.
+      # Only needed if the GHCR packages are private; skipped otherwise. Use a PAT
+      # with read:packages (not the short-lived GITHUB_TOKEN). Referenced by both
+      # deployments via imagePullSecrets: ghcr-pull.
       - name: Create GHCR pull secret
         if: ${{ secrets.GHCR_PULL_TOKEN != '' }}
         run: |
@@ -104,13 +108,33 @@ jobs:
             --docker-password='${{ secrets.GHCR_PULL_TOKEN }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Apply manifests & roll out pinned images
-        env:
-          OWNER: ${{ needs.images.outputs.owner }}
-          TAG: ${{ needs.images.outputs.tag }}
+      # 1) Cluster discovery RBAC (Pekko bootstrap lists sibling pods), app/api
+      #    ConfigMaps (fast/slow mode + Kafka wiring), and the Postgres DDL ConfigMap.
+      - name: Apply RBAC, config & DB schema
+        run: kubectl apply -f k8s/rbac.yaml -f k8s/configmap.yaml -f k8s/postgres-init.yaml
+
+      # 2) Stateful backends first — the event journal and Kafka must be reachable
+      #    before the app cluster forms and starts consuming.
+      - name: Apply stateful backends (Postgres, Kafka)
         run: |
-          kubectl apply -f k8s/
+          kubectl apply -f k8s/postgres.yaml -f k8s/kafka.yaml
+          kubectl rollout status statefulset/postgres --timeout=5m
+          kubectl rollout status deployment/kafka --timeout=5m
+
+      # 3) App + API, pinned to the image built from this exact commit.
+      - name: Deploy app & API (pin image to commit)
+        run: |
+          kubectl apply -f k8s/app.yaml -f k8s/api.yaml
           kubectl set image deployment/elevator-app elevator-app="ghcr.io/${OWNER}/elevator-app:${TAG}"
           kubectl set image deployment/elevator-api elevator-api="ghcr.io/${OWNER}/elevator-api:${TAG}"
-          kubectl rollout status deployment/elevator-app --timeout=5m
+
+      # Rolling update is maxUnavailable:0; the app's startup probe tolerates the
+      # cluster-form + journal-recovery time, so give it a generous window.
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/elevator-app --timeout=8m
           kubectl rollout status deployment/elevator-api --timeout=5m
+
+      - name: Deployment summary
+        if: ${{ !cancelled() }}
+        run: kubectl get pods -o wide
