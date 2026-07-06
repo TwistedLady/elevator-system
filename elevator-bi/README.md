@@ -75,7 +75,7 @@ helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false   # 
 
 ## Logs
 
-Stored three ways (see `conf/log4j2.properties` + `k8s/bi/mileage-driver.yaml`):
+Stored three ways (see `conf/log4j2.properties` + `charts/elevator/templates/bi-jobs.yaml`):
 1. **stdout** — `kubectl logs` / the driver Deployment.
 2. **durable rolling files** — one per pod on the persistent `/opt/elevator-bi/logs` hostPath volume.
 3. **Spark event logs** — `file:///checkpoint/spark-events` (job/stage history, History-Server-readable).

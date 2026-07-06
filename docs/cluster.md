@@ -53,6 +53,7 @@ cd terraform && terraform destroy      # deletes the whole kind cluster (and eve
   trims to `api:1`, BI off. Use `-p full` only on a bigger node.
 - The one non-declarative step left is a single `openssl` call in `terraform/tls.tf` — no provider
   emits a PKCS12 keystore, so Terraform builds it there and loads it into the secret.
-- **Still on scripts:** the local host-JVM demo (`scripts/demo-up.sh`, compose + JVMs — [run.md](run.md))
-  and the CD deploy (`.github/workflows/cd.yml`, still `kubectl apply -f k8s/`). Both can move to this
-  chart next.
+- **CD** (`.github/workflows/cd.yml`) deploys this same chart with `helm upgrade` (images pinned to
+  the commit). The old `k8s/*.yaml` is gone — the chart is the single source.
+- **Still on scripts:** the local host-JVM demo (`scripts/demo-up.sh`, compose + JVMs — [run.md](run.md)).
+  A different environment (not kind); it can move to `docker compose` next.

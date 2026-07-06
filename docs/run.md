@@ -68,7 +68,8 @@ unreachable, or with `SKIP_ITEST=1 git commit …`.
 
 ## Config
 
-All app params live in **one** ConfigMap, `k8s/configmap.yaml` (`elevator-config`), mounted by both
+All app params live in **one** ConfigMap, `elevator-config` (rendered from `charts/elevator` —
+values `config.*`), mounted by both
 the app and the api as env vars *and* as files under `/etc/elevator-config`. Editing the ConfigMap
 hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5s in-app poll).
 
