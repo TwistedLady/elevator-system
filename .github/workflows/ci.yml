@@ -4,8 +4,8 @@ name: Build & Test
 #   - elevator-common-* (Scala 3 domain/logic)   - unit tested
 #   - elevator-app       (Pekko cluster)          - unit tested (actor recovery)
 #   - elevator-api       (Spring)                 - unit + Testcontainers IT
-#   - cli-console   (Rust/Cargo)             - fmt + clippy + test
-#   - elevator-web-console (Angular)              - image build proven on PRs
+#   - elevator-console-cli   (Rust/Cargo)             - fmt + clippy + test
+#   - elevator-console-web (Angular)              - image build proven on PRs
 # On PRs it also proves all three Docker images still build.
 
 on:
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: cli-console
+        working-directory: elevator-console-cli
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +76,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: cli-console
+          workspaces: elevator-console-cli
 
       - name: Format (rustfmt)
         run: cargo fmt --all --check
@@ -98,13 +98,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # elevator-web-console builds from its own dir (self-contained npm project);
+      # elevator-console-web builds from its own dir (self-contained npm project);
       # the JVM images build from the repo root. Carry context + file per entry.
       matrix:
         include:
           - { name: elevator-app,         context: .,                    file: elevator-app/Dockerfile }
           - { name: elevator-api,         context: .,                    file: elevator-api/Dockerfile }
-          - { name: elevator-web-console, context: elevator-web-console, file: elevator-web-console/Dockerfile }
+          - { name: elevator-console-web, context: elevator-console-web, file: elevator-console-web/Dockerfile }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

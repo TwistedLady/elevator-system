@@ -17,7 +17,7 @@ Rust (ratatui) terminal console.
 | `elevator-common` | Scala | Shared library, split into small submodules (below) |
 | `elevator-app` | Scala / Pekko | The brain: sharded, event-sourced actors + Postgres projections |
 | `elevator-api` | Java / WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, health |
-| `cli-console` | Rust / ratatui | Terminal dashboard + order sender |
+| `elevator-console-cli` | Rust / ratatui | Terminal dashboard + order sender |
 
 `elevator-common` submodules keep a clean layering:
 `core` (pure domain) → `events` → `logic` (decide/evolve, Pekko-free) → `protocol` (message ADTs, Pekko-free)
@@ -90,7 +90,7 @@ Real hazards to be aware of (fix deliberately, on their own branch):
   reseed via `demo-up.sh`).
 - **`DefaultScalaModule` is registered in the pure-Java api** and a custom `ObjectMapper` bean
   overrides Boot's auto-config. Leftover — safe to remove.
-- **Rust console has unit tests now** (`cargo test` in `cli-console`, run by CI). Keep it that
+- **Rust console has unit tests now** (`cargo test` in `elevator-console-cli`, run by CI). Keep it that
   way: when adding pure Rust functions, add a test alongside them.
 - **Docs drift.** Re-verify docs/comments after a refactor — code is the source of truth. Full
   docs are in [`docs/`](docs/README.md) (one topic per file, indexed).

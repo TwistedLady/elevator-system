@@ -1,6 +1,6 @@
-# elevator-web-console (Angular)
+# elevator-console-web (Angular)
 
-A **read-only** browser monitor for the elevator system, mirroring the Rust `cli-console`'s
+A **read-only** browser monitor for the elevator system, mirroring the Rust `elevator-console-cli`'s
 two view tabs — **Chart** and **Trend**. It talks to the system **only through the `elevator-api`
 HTTP edge** and never touches Kafka directly.
 
@@ -39,7 +39,7 @@ npm start          # ng serve on http://localhost:4200
 (the api already allows all origins on `/api/**`), the proxy just keeps everything same-origin.
 
 ```bash
-npm run build      # production bundle → dist/elevator-web-console
+npm run build      # production bundle → dist/elevator-console-web
 ```
 
 ## Build with Maven
@@ -49,7 +49,7 @@ The Angular build is part of a normal `mvn` build — no profile, no global Node
 `npm ci` + `npm run build`:
 
 ```bash
-mvn package                 # builds backend + this frontend (dist/elevator-web-console)
+mvn package                 # builds backend + this frontend (dist/elevator-console-web)
 mvn -Dnpm.skip=true package # quick backend-only build, skip the frontend
 ```
 

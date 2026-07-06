@@ -14,7 +14,7 @@
     <!-- Not a Java module: it drives the Angular npm build from Maven. frontend-maven-plugin
          downloads a project-local Node/npm into target/, so `mvn` builds the frontend even
          where Node isn't on PATH (CI/IDE). Part of a normal build; skip with -Dnpm.skip=true. -->
-    <artifactId>elevator-web-console</artifactId>
+    <artifactId>elevator-console-web</artifactId>
     <packaging>pom</packaging>
 
     <build>
@@ -51,7 +51,7 @@
                             <arguments>ci</arguments>
                         </configuration>
                     </execution>
-                    <!-- Production bundle → dist/elevator-web-console. -->
+                    <!-- Production bundle → dist/elevator-console-web. -->
                     <execution>
                         <id>ng-build</id>
                         <phase>prepare-package</phase>

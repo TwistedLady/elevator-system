@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "elevator-web-console": {
+    "elevator-console-web": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -59,10 +59,10 @@
           },
           "configurations": {
             "production": {
-              "buildTarget": "elevator-web-console:build:production"
+              "buildTarget": "elevator-console-web:build:production"
             },
             "development": {
-              "buildTarget": "elevator-web-console:build:development"
+              "buildTarget": "elevator-console-web:build:development"
             }
           },
           "defaultConfiguration": "development"

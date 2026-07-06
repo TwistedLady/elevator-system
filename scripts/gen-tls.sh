@@ -27,8 +27,8 @@ openssl pkcs12 -export -in "$DIR/server.crt" -inkey "$DIR/server.key" -certfile 
   -out "$DIR/keystore.p12" -name elevator-api -passout "pass:$PASS"
 
 # 5) console trusts the CA
-cp "$DIR/ca.crt" "$ROOT/cli-console/certs/elevator-ca.crt"
+cp "$DIR/ca.crt" "$ROOT/elevator-console-cli/certs/elevator-ca.crt"
 kubectl create secret generic elevator-api-tls \
   --from-file=keystore.p12="$DIR/keystore.p12" --from-literal=password="$PASS" \
   --dry-run=client -o yaml | kubectl apply -f -
-echo "==> elevator-api-tls secret applied; console CA at cli-console/certs/elevator-ca.crt"
+echo "==> elevator-api-tls secret applied; console CA at elevator-console-cli/certs/elevator-ca.crt"

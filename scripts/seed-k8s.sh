@@ -8,9 +8,9 @@ cd "$ROOT"
 COUNT="${1:-300}"
 API="${ELEVATOR_API:-https://localhost:8080}"
 
-CONSOLE="$ROOT/cli-console/target/release/cli-console"
-[ -x "$CONSOLE" ] || CONSOLE="$ROOT/cli-console/target/debug/cli-console"
-[ -x "$CONSOLE" ] || { echo "build the console first: (cd cli-console && cargo build --release)"; exit 1; }
+CONSOLE="$ROOT/elevator-console-cli/target/release/elevator-console-cli"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console-cli/target/debug/elevator-console-cli"
+[ -x "$CONSOLE" ] || { echo "build the console first: (cd elevator-console-cli && cargo build --release)"; exit 1; }
 
 mkdir -p "$ROOT/logs"
 if ! ps -C kubectl -o args= 2>/dev/null | grep -q "port-forward svc/elevator-api 8080:8080"; then

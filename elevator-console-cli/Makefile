@@ -1,9 +1,9 @@
-# cli-console — build, test, package, install.
+# elevator-console-cli — build, test, package, install.
 # `make help` lists targets. Everything here is a thin wrapper over cargo.
 
-BIN     := cli-console
+BIN     := elevator-console-cli
 PREFIX  ?= $(HOME)/.local
-IMAGE   ?= cli-console:local
+IMAGE   ?= elevator-console-cli:local
 
 .DEFAULT_GOAL := help
 

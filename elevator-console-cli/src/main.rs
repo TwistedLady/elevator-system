@@ -10,7 +10,7 @@ pub type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Parser)]
 #[command(
-    name = "cli-console",
+    name = "elevator-console-cli",
     about = "Monitor elevators and send orders — entirely through the elevator HTTP API (never Kafka)"
 )]
 struct Cli {

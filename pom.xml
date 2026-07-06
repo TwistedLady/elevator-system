@@ -62,17 +62,17 @@
         <exec.maven.plugin.version>3.6.3</exec.maven.plugin.version>
         <maven.enforcer.plugin.version>3.5.0</maven.enforcer.plugin.version>
         <!-- Builds the Angular web console as part of `mvn`. Downloads a project-local
-             Node/npm into elevator-web-console/target, so the frontend builds even where
+             Node/npm into elevator-console-web/target, so the frontend builds even where
              Node isn't on PATH (CI/IDE). -->
         <frontend.maven.plugin.version>1.15.1</frontend.maven.plugin.version>
         <node.version>v22.22.0</node.version>
 
-        <!-- The cli-console module is always in the reactor, but its cargo build is
+        <!-- The elevator-console-cli module is always in the reactor, but its cargo build is
              SKIPPED by default so a plain `mvn` (incl. IDE/CI without cargo on PATH) never
              fails on it. Opt in with the `console` profile or -Dcargo.skip=false. -->
         <cargo.skip>true</cargo.skip>
 
-        <!-- elevator-web-console (Angular) builds as part of `mvn` (frontend-maven-plugin
+        <!-- elevator-console-web (Angular) builds as part of `mvn` (frontend-maven-plugin
              fetches its own Node/npm, so no global install is needed). Skip it for a quick
              backend-only build with -Dnpm.skip=true. -->
         <npm.skip>false</npm.skip>
@@ -82,8 +82,8 @@
         <module>elevator-common</module>
         <module>elevator-app</module>
         <module>elevator-api</module>
-        <module>cli-console</module>
-        <module>elevator-web-console</module>
+        <module>elevator-console-cli</module>
+        <module>elevator-console-web</module>
     </modules>
 
     <dependencyManagement>
@@ -181,7 +181,7 @@
                     <artifactId>exec-maven-plugin</artifactId>
                     <version>${exec.maven.plugin.version}</version>
                 </plugin>
-                <!-- Drives the Angular npm build from Maven; used by elevator-web-console. -->
+                <!-- Drives the Angular npm build from Maven; used by elevator-console-web. -->
                 <plugin>
                     <groupId>com.github.eirslett</groupId>
                     <artifactId>frontend-maven-plugin</artifactId>
