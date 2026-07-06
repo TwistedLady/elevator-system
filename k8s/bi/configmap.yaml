@@ -16,3 +16,7 @@ data:
   ELEVATOR_PG_USER: "elevator"
   ELEVATOR_PG_PASSWORD: "elevator"
   ELEVATOR_BI_TABLE: "elevator_mileage"
+  # orders-served job
+  ELEVATOR_BI_ORDER_STATUS_TABLE: "order_status"
+  ELEVATOR_BI_SERVED_TABLE: "elevator_orders_served"
+  ELEVATOR_BI_SERVED_INTERVAL: "30"

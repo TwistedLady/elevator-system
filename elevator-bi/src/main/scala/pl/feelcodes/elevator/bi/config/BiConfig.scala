@@ -12,7 +12,10 @@ final case class BiConfig(
     jdbcUrl: String,
     jdbcUser: String,
     jdbcPassword: String,
-    mileageTable: String
+    mileageTable: String,
+    orderStatusTable: String,
+    servedTable: String,
+    servedIntervalSeconds: Int
 )
 
 object BiConfig {
@@ -27,6 +30,9 @@ object BiConfig {
     jdbcUrl            = env("ELEVATOR_BI_JDBC_URL", "jdbc:postgresql://postgres:5432/elevator"),
     jdbcUser           = env("ELEVATOR_PG_USER", "elevator"),
     jdbcPassword       = env("ELEVATOR_PG_PASSWORD", "elevator"),
-    mileageTable       = env("ELEVATOR_BI_TABLE", "elevator_mileage")
+    mileageTable       = env("ELEVATOR_BI_TABLE", "elevator_mileage"),
+    orderStatusTable   = env("ELEVATOR_BI_ORDER_STATUS_TABLE", "order_status"),
+    servedTable        = env("ELEVATOR_BI_SERVED_TABLE", "elevator_orders_served"),
+    servedIntervalSeconds = env("ELEVATOR_BI_SERVED_INTERVAL", "30").toInt
   )
 }

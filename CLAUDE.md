@@ -19,7 +19,7 @@ Rust (ratatui) terminal console.
 | `elevator-api` | Java / WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, health |
 | `elevator-console-cli` | Rust / ratatui | Terminal dashboard + order sender |
 | `elevator-console-web` | Angular | Read-only browser monitor (Chart + Trend tabs), talks to the api only |
-| `elevator-bi` | Scala 2.12 / Spark | **Standalone** (not in the reactor): Structured Streaming mileage BI from `elevator-state` → Postgres. Build: `mvn -f elevator-bi/pom.xml package` |
+| `elevator-bi` | Scala 2.12 / Spark | **Standalone** (not in the reactor): Spark BI jobs → Postgres — streaming **mileage** from `elevator-state`, batch **orders-served** (DONE counts) from `order_status`. Build: `mvn -f elevator-bi/pom.xml package` |
 
 `elevator-common` submodules keep a clean layering:
 `core` (pure domain) → `events` → `logic` (decide/evolve, Pekko-free) → `protocol` (message ADTs, Pekko-free)
