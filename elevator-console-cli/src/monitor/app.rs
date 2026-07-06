@@ -10,7 +10,6 @@ use serde::Deserialize;
 use super::k8s::K8sSnapshot;
 
 pub const MAX_LOG_LINES: usize = 1000;
-pub const SIM_MAX_FLOOR: i32 = 15;
 pub const TREND_WINDOW_SECS: f64 = 60.0;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -198,6 +197,7 @@ pub struct App {
     pub message: String,
     pub should_quit: bool,
     api_base: String,
+    pub config: crate::api::ElevatorConfig,
     pub git: super::git::GitInfo,
 }
 
@@ -235,6 +235,7 @@ impl App {
             message: String::new(),
             should_quit: false,
             api_base: api_base.to_string(),
+            config: crate::api::ElevatorConfig::default(),
             git: super::git::GitInfo::snapshot(),
         };
         app.reload_test_report();
@@ -318,10 +319,10 @@ impl App {
     }
 
     fn elevator_pool(&self) -> Vec<String> {
-        if self.seen_elevators.is_empty() {
-            (1..=10).map(|i| format!("e{i}")).collect()
-        } else {
+        if !self.seen_elevators.is_empty() {
             self.seen_elevators.iter().cloned().collect()
+        } else {
+            self.config.elevators.clone()
         }
     }
 
@@ -448,6 +449,7 @@ impl App {
     fn start_sim(&mut self, count: u64) {
         let pool = self.elevator_pool();
         let elevators = pool.len();
+        let max_floor = self.config.max_floor;
         let api_sim = self.api_base.clone();
         let sent = Arc::new(AtomicU64::new(0));
         let done = Arc::new(AtomicBool::new(false));
@@ -464,7 +466,7 @@ impl App {
                 count,
                 threads,
                 &pool,
-                SIM_MAX_FLOOR,
+                max_floor,
                 &sent_t,
                 pace,
                 run_id,
@@ -587,6 +589,9 @@ impl App {
         match parse_sim_count(line) {
             Ok(None) => String::new(),
             Ok(Some(count)) => {
+                if !self.config.is_known() {
+                    return "waiting for /api/config… (limits not loaded yet)".to_string();
+                }
                 self.start_sim(count);
                 format!("running {count} orders")
             }
@@ -598,6 +603,9 @@ impl App {
         match parse_order(line) {
             Ok(None) => String::new(),
             Ok(Some((elevator, floor))) => {
+                if let Err(msg) = self.config.validate_order(&elevator, floor) {
+                    return msg;
+                }
                 let (api_base, name) = (self.api_base.clone(), elevator.clone());
                 std::thread::spawn(move || {
                     let _ = crate::sender::send_one(&api_base, &name, floor);

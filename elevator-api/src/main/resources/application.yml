@@ -24,9 +24,11 @@ spring:
 elevator:
   command-topic: elevator-commands
   state-topic: elevator-state
-  # Order-validation params (overridable via env ELEVATOR_MAXFLOOR / ELEVATOR_ELEVATORS).
-  max-floor: 15
-  elevators: e1,e2,e3,e4,e5,e6,e7,e8,e9,e10
+  # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
+  # hot-reloaded by ElevatorLimits. No defaults here — a missing ConfigMap fails the pod fast.
+  # Test values live in application-test.yml.
+  # Per-replica id for the state consumer group (Downward API metadata.name); empty -> random uuid.
+  pod-name: ${ELEVATOR_POD_NAME:}
 management:
   endpoints:
     web:

@@ -17,6 +17,11 @@ export class ElevatorService {
   private readonly hist = signal<Map<string, number[]>>(new Map());
   private source?: EventSource;
 
+  /** Live max floor from the api (GET /api/config); 0 until the first fetch. Never hardcoded. */
+  private readonly maxFloorSig = signal<number>(0);
+  readonly maxFloor = this.maxFloorSig.asReadonly();
+  private configTimer?: ReturnType<typeof setInterval>;
+
   /** Live elevator snapshots, sorted by name (e1, e2, … natural order). */
   readonly elevators = computed(() =>
     [...this.byName().values()].sort((a, b) =>
@@ -62,6 +67,26 @@ export class ElevatorService {
     this.source?.close();
     this.source = undefined;
     this.connected.set(false);
+    if (this.configTimer) {
+      clearInterval(this.configTimer);
+      this.configTimer = undefined;
+    }
+  }
+
+  /** Fetch the live limits from the api and keep them fresh, so ConfigMap hot-reloads show up here. */
+  loadConfig(): void {
+    void this.fetchConfig();
+    this.configTimer ??= setInterval(() => void this.fetchConfig(), 10_000);
+  }
+
+  private async fetchConfig(): Promise<void> {
+    try {
+      const cfg = await firstValueFrom(
+        this.http.get<{ maxFloor: number; elevators: string[] }>('/api/config'));
+      this.maxFloorSig.set(cfg.maxFloor);
+    } catch {
+      // keep last known limits
+    }
   }
 
   health(): Promise<{ status: string }> {

@@ -29,6 +29,7 @@ public class ElevatorStateConsumer {
     private final ObjectMapper objectMapper;
     private final String bootstrapServers;
     private final String stateTopic;
+    private final String podName;
 
     private volatile boolean running = true;
     private volatile KafkaConsumer<String, String> consumer;
@@ -37,11 +38,13 @@ public class ElevatorStateConsumer {
     public ElevatorStateConsumer(ElevatorStateStore store,
                                  ObjectMapper objectMapper,
                                  @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
-                                 @Value("${elevator.state-topic}") String stateTopic) {
+                                 @Value("${elevator.state-topic}") String stateTopic,
+                                 @Value("${elevator.pod-name:}") String podName) {
         this.store = store;
         this.objectMapper = objectMapper;
         this.bootstrapServers = bootstrapServers;
         this.stateTopic = stateTopic;
+        this.podName = podName;
     }
 
     @PostConstruct
@@ -52,9 +55,12 @@ public class ElevatorStateConsumer {
     }
 
     private void run() {
+        String suffix = (podName == null || podName.isBlank()) ? UUID.randomUUID().toString() : podName;
+
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, "elevator-api-monitor-" + UUID.randomUUID());
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "elevator-api-monitor-" + suffix);
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());

@@ -17,7 +17,7 @@ const PADX = 8;
 export class Trend {
   readonly state = input.required<ElevatorState>();
   readonly history = input<number[]>([]);
-  readonly maxFloor = input<number>(15);
+  readonly maxFloor = input.required<number>();
 
   protected readonly w = W;
   protected readonly plotH = PLOT_H;

@@ -46,6 +46,9 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
     let k8s_state = Arc::new(Mutex::new(K8sSnapshot::default()));
     k8s::spawn_k8s_poll(Arc::clone(&k8s_state));
 
+    let config = Arc::new(Mutex::new(crate::api::ElevatorConfig::default()));
+    sources::spawn_config_poll(api_base.to_string(), Arc::clone(&config));
+
     let mut terminal = ratatui::init();
     let result = event_loop(
         &mut terminal,
@@ -54,6 +57,7 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
         &log_rx,
         &health,
         &k8s_state,
+        &config,
     );
     ratatui::restore();
     result
@@ -66,6 +70,7 @@ fn event_loop(
     log_rx: &mpsc::Receiver<(LogSource, String)>,
     health: &Arc<Mutex<HealthSnapshot>>,
     k8s_state: &Arc<Mutex<K8sSnapshot>>,
+    config: &Arc<Mutex<crate::api::ElevatorConfig>>,
 ) -> Result<(), BoxErr> {
     loop {
         while let Ok(state) = state_rx.try_recv() {
@@ -79,6 +84,9 @@ fn event_loop(
         }
         if let Ok(k) = k8s_state.lock() {
             app.k8s = k.clone();
+        }
+        if let Ok(c) = config.lock() {
+            app.config = c.clone();
         }
         app.refresh_sim();
 

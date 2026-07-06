@@ -1,47 +1,32 @@
-# Config lives here, not in the image. Pods read these as environment variables.
-# Change a value -> restart the pod -> new config. The image never changes.
-#
-# The elevator-app has TWO full configmaps, -fast and -slow, identical except for
-# ELEVATOR_OPERATOR_CLASS. app.yaml's single envFrom points at one of them; switching modes
-# = repoint envFrom at the other + rollout restart (the console's K8s tab does this).
+# The ONE place app params live. Both elevator-app and elevator-api mount this ConfigMap:
+#   - as env vars (envFrom) for startup/infra wiring, and
+#   - as files under /etc/elevator-config for LIVE, restart-free reconfiguration.
+# The kubelet syncs a ConfigMap edit into the mounted files (~tens of seconds); each service polls
+# the file it cares about and swaps the value in memory — no rollout, no restart. Do NOT use subPath
+# on the mounts, or the live update stops working.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: elevator-app-config-fast
-  labels: { app: elevator-app, mode: fast }
+  name: elevator-config
 data:
-  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  ELEVATOR_KAFKA_GROUP_ID: "elevator-app"
-  ELEVATOR_KAFKA_COMMAND_TOPIC: "elevator-commands"
-  ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
+  # ---- managed app params ----
+  # api: order-validation limits (floor range 0..MAXFLOOR, fleet whitelist). Hot-reloaded.
+  ELEVATOR_MAXFLOOR: "15"
+  ELEVATOR_ELEVATORS: "e1,e2,e3,e4,e5,e6,e7,e8,e9,e10"
+  # app: elevator engine. Hot-swapped per move (no restart). Switch = comment this, uncomment slow.
+  ELEVATOR_ENGINE: "fast"
+  # ELEVATOR_ENGINE: "slow"
+
+  # ---- infra wiring (needs a restart to change; not hot-reloaded) ----
   ELEVATOR_PG_HOST: "postgres"
-  ELEVATOR_OPERATOR_CLASS: "FastOperator"   # cheap engine: ~instant moves
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: elevator-app-config-slow
-  labels: { app: elevator-app, mode: slow }
-data:
-  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  ELEVATOR_KAFKA_GROUP_ID: "elevator-app"
-  ELEVATOR_KAFKA_COMMAND_TOPIC: "elevator-commands"
-  ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
-  ELEVATOR_PG_HOST: "postgres"
-  ELEVATOR_OPERATOR_CLASS: "SlowOperator"   # heavy SlowEngine: CPU-burning moves
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: elevator-api-config
-data:
+  SPRING_PROFILES_ACTIVE: "prod"     # api: cluster runs prod (no baked test limits -> fail-fast)
   SERVER_PORT: "8080"
+  # Kafka — app-side env names
+  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  ELEVATOR_KAFKA_GROUP_ID: "elevator-app"
+  ELEVATOR_KAFKA_COMMAND_TOPIC: "elevator-commands"
+  ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
+  # Kafka — api-side env names (same values, different keys)
   SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
   ELEVATOR_COMMAND_TOPIC: "elevator-commands"
   ELEVATOR_STATE_TOPIC: "elevator-state"
-  # Read-only R2DBC access to the order_status read-model (Service "postgres").
-  ELEVATOR_PG_HOST: "postgres"
-  # Order-validation params (Spring relaxed binding -> elevator.max-floor / elevator.elevators).
-  # The api rejects orders with floor outside 0..MAXFLOOR or an elevator not in the fleet.
-  ELEVATOR_MAXFLOOR: "15"
-  ELEVATOR_ELEVATORS: "e1,e2,e3,e4,e5,e6,e7,e8,e9,e10"

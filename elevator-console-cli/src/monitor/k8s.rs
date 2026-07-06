@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const DEPLOY: &str = "elevator-app";
-const CM_FAST: &str = "elevator-app-config-fast";
-const CM_SLOW: &str = "elevator-app-config-slow";
+const CONFIGMAP: &str = "elevator-config";
+const ENGINE_KEY: &str = "ELEVATOR_ENGINE";
 
 #[derive(Clone)]
 pub struct PodLine {
@@ -46,18 +46,19 @@ fn kubectl(args: &[&str]) -> Result<String, String> {
 }
 
 fn read_mode() -> Result<String, String> {
-    let cm = kubectl(&[
+    let value = kubectl(&[
         "get",
-        "deployment",
-        DEPLOY,
+        "configmap",
+        CONFIGMAP,
         "-o",
-        "jsonpath={.spec.template.spec.containers[0].envFrom[0].configMapRef.name}",
+        &format!("jsonpath={{.data.{ENGINE_KEY}}}"),
     ])?;
-    Ok(match cm.trim() {
-        CM_FAST => "fast".into(),
-        CM_SLOW => "slow".into(),
-        other => format!("?({other})"),
-    })
+    let mode = value.trim();
+    if mode.is_empty() {
+        Ok("?".into())
+    } else {
+        Ok(mode.to_string())
+    }
 }
 
 fn read_pods() -> Result<Vec<PodLine>, String> {
@@ -112,15 +113,10 @@ pub fn restart() -> Result<String, String> {
 }
 
 pub fn set_mode(mode: &str) -> Result<String, String> {
-    let cm = match mode {
-        "fast" => CM_FAST,
-        "slow" => CM_SLOW,
-        _ => return Err("unknown mode".into()),
-    };
-    let patch = format!(
-        r#"[{{"op":"replace","path":"/spec/template/spec/containers/0/envFrom/0/configMapRef/name","value":"{cm}"}}]"#
-    );
-    kubectl(&["patch", "deployment", DEPLOY, "--type=json", "-p", &patch])?;
-    kubectl(&["rollout", "restart", &format!("deployment/{DEPLOY}")])?;
-    Ok(format!("switched to {mode} — rolling the app…"))
+    if mode != "fast" && mode != "slow" {
+        return Err("unknown mode".into());
+    }
+    let patch = format!(r#"{{"data":{{"{ENGINE_KEY}":"{mode}"}}}}"#);
+    kubectl(&["patch", "configmap", CONFIGMAP, "--type=merge", "-p", &patch])?;
+    Ok(format!("engine set to {mode} — app hot-reloads in a few seconds (no restart)"))
 }

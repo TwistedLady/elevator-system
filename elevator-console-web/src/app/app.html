@@ -27,7 +27,9 @@
   </div>
 
   <section class="panel">
-    @if (noData()) {
+    @if (maxFloor() === 0) {
+      <p class="muted">Loading configuration…</p>
+    } @else if (noData()) {
       <p class="muted">Waiting for elevator state…</p>
     } @else if (filtered().length === 0) {
       <p class="muted">No elevator matches “{{ filter() }}”.</p>
@@ -43,13 +45,13 @@
         @if (tab() === 'chart') {
           <div class="rail">
             @for (r of filtered(); track r.state.elevatorName) {
-              <app-shaft [state]="r.state" [maxFloor]="maxFloor" />
+              <app-shaft [state]="r.state" [maxFloor]="maxFloor()" />
             }
           </div>
         } @else {
           <div class="rail">
             @for (r of filtered(); track r.state.elevatorName) {
-              <app-trend [state]="r.state" [history]="r.history" [maxFloor]="maxFloor" />
+              <app-trend [state]="r.state" [history]="r.history" [maxFloor]="maxFloor()" />
             }
           </div>
         }

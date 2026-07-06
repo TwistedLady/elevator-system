@@ -68,12 +68,18 @@ unreachable, or with `SKIP_ITEST=1 git commit …`.
 
 ## Config
 
-- **Order validation** — `POST /api/order` is validated against `elevator.max-floor` (15) and
-  `elevator.elevators` (e1..e10); a bad floor/unknown elevator returns **400**. Env override:
-  `ELEVATOR_MAXFLOOR` / `ELEVATOR_ELEVATORS`.
-- **Fast / slow mode (k8s)** — the app runs `FastOperator` or `SlowOperator`, chosen by which
-  ConfigMap `envFrom` points at (`…-config-fast` / `…-config-slow`). Flip from the console's
-  **K8s tab** (`f` / `s`) — it swaps the ConfigMap and rolls the pod via `kubectl`.
+All app params live in **one** ConfigMap, `k8s/configmap.yaml` (`elevator-config`), mounted by both
+the app and the api as env vars *and* as files under `/etc/elevator-config`. Editing the ConfigMap
+hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5s in-app poll).
+
+- **Order validation** — `POST /api/order` is validated against `ELEVATOR_MAXFLOOR` (15) and
+  `ELEVATOR_ELEVATORS` (e1..e10); a bad floor/unknown elevator returns **400**. The api owns these
+  limits; the app never validates. `GET /api/config` exposes them, and both consoles fetch it
+  (no hardcoded floors/fleet). Edit the ConfigMap and validation updates live. A missing ConfigMap
+  makes the api **fail to start** (no baked-in default).
+- **Engine — fast / slow** — the app reads `ELEVATOR_ENGINE` (`fast` / `slow`). Flip it from the
+  console's **K8s tab** (`f` / `s`) or `kubectl edit configmap elevator-config`. The app hot-swaps
+  the engine on the next move — **no rollout, no restart**.
 
 ## Design note
 

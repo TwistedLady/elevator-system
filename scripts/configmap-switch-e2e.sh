@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Real kind/k8s end-to-end test for a ConfigMap mode switch under load.
 #
-# It switches the elevator-app ConfigMap (FastOperator <-> SlowOperator) via a rolling restart
-# WHILE a sim is firing orders, and proves the two properties you asked for:
+# It switches the elevator engine (fast <-> slow) in the single elevator-config ConfigMap WHILE a
+# sim is firing orders. The app hot-reloads the value from the mounted file — NO pod restart — and
+# proves the two properties you asked for:
 #
-#   FULL AVAILABILITY  - at least one elevator-app pod stays Ready for the whole rollout
-#                        (maxUnavailable=0 + maxSurge=1 + cluster shard handoff).
+#   FULL AVAILABILITY  - every elevator-app pod stays Ready throughout (the switch never restarts a
+#                        pod; the engine is swapped in-process on the next move).
 #   ZERO REQUEST LOSS  - every order sent is ingested: processed_orders count == orders sent.
 #                        (processed_orders is the durable dedup claim, written at ingestion
 #                        regardless of how slow the elevator physically moves.)
@@ -34,13 +35,11 @@ say(){ printf '\n=== %s ===\n' "$*"; }
 psql(){ kubectl exec -i postgres-0 -- psql -U elevator -d elevator -tAc "$1"; }
 kafka(){ kubectl exec -i deploy/kafka -- /opt/kafka/bin/"$@"; }
 
-current_mode(){
-  kubectl get deploy "$DEP" -o jsonpath='{.spec.template.spec.containers[0].envFrom[0].configMapRef.name}' \
-    | sed 's/.*-config-//'
+current_mode(){  # read the engine from the single ConfigMap
+  kubectl get configmap elevator-config -o jsonpath='{.data.ELEVATOR_ENGINE}'
 }
-set_mode(){  # repoint the envFrom configMapRef at elevator-app-config-<fast|slow>
-  kubectl patch deploy "$DEP" --type=json \
-    -p="[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/envFrom/0/configMapRef/name\",\"value\":\"elevator-app-config-$1\"}]"
+set_mode(){  # set the engine in the ConfigMap; the app hot-reloads it in-process (no rollout)
+  kubectl patch configmap elevator-config --type=merge -p "{\"data\":{\"ELEVATOR_ENGINE\":\"$1\"}}"
 }
 ready_count(){  # how many app pods are Ready right now
   kubectl get pods -l "$SEL" \
@@ -91,11 +90,16 @@ for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/9094) 2>/dev/null && break; 
 env KAFKA_BOOTSTRAP=localhost:9094 "$CONSOLE" simulate \
     --elevator-count 10 --max-floor 15 --count "$COUNT" --threads 4 & SIM=$!
 
-# ---- 6. mid-sim: switch mode (repoint envFrom) -> triggers the rolling restart
-say "switch mode $(current_mode) -> $TARGET while orders are flowing"
+# ---- 6. mid-sim: switch the engine in the ConfigMap -> the app hot-reloads it, NO rollout --------
+say "switch engine $(current_mode) -> $TARGET while orders flow (hot-reload, no pod restart)"
 sleep 3
 set_mode "$TARGET"
-kubectl rollout status deploy "$DEP" --timeout=300s
+# No rollout: the app polls the mounted ConfigMap file and swaps the engine in-process. Give the
+# kubelet + poller time to propagate, then confirm the app logged the change.
+for i in $(seq 1 40); do
+  kubectl logs -l "$SEL" --tail=200 2>/dev/null | grep -q "engine mode -> $TARGET" && break
+  sleep 3
+done
 
 wait "$SIM" || true   # let the simulator finish sending
 

@@ -84,9 +84,11 @@ Real hazards to be aware of (fix deliberately, on their own branch):
   move's travel time (`SlowEngine` 2s, `FastEngine` 100ms), modelling the physical action and pacing
   the Controller's self-driven loop. It blocks, so `Operator` entities run on the dedicated
   `elevator-blocking-dispatcher` (application.conf) — never the default one. Keep that isolation.
-- **API Kafka state consumer replays the whole topic on restart.** `ElevatorStateConsumer` uses a
-  random consumer group id + `auto.offset.reset=earliest`, so every restart full-replays
-  `elevator-state` and leaks consumer groups on the broker. Use a stable group id.
+- **API Kafka state consumer replays the whole topic on restart (by design).** `ElevatorStateConsumer`
+  uses `auto.offset.reset=earliest` with **no offset commit** (`enable.auto.commit=false`), so every
+  start rebuilds the full per-elevator view — needed because it's a fanout (each api replica must see
+  all elevators). The group id is per-pod (`elevator-api-monitor-<POD_NAME>`) so replicas don't split
+  partitions and, with no committed offsets, empty groups don't leak.
 - **Huge sims bloat the journal** → slow recovery → "Kafka stream failed", app stops consuming.
   Wipe + reseed to recover (Kafka has no volume, so a demo restart also empties the live chart —
   reseed via `demo-up.sh`).

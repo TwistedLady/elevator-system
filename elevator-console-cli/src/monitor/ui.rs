@@ -170,7 +170,11 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     }
     if !y_lo.is_finite() || !y_hi.is_finite() {
         y_lo = 0.0;
-        y_hi = 15.0;
+        y_hi = if app.config.max_floor > 0 {
+            app.config.max_floor as f64
+        } else {
+            10.0
+        };
     }
     if (y_hi - y_lo).abs() < 1.0 {
         y_lo -= 1.0;

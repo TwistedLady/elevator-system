@@ -4,9 +4,6 @@ import { ElevatorService } from './elevator.service';
 import { Shaft, PLOT_H, floorToY } from './shaft';
 import { Trend } from './trend';
 
-// Floor range mirrors elevator-api application.yml (max-floor 15).
-const MAX_FLOOR = 15;
-
 @Component({
   selector: 'app-root',
   imports: [FormsModule, Shaft, Trend],
@@ -17,7 +14,8 @@ export class App implements OnInit, OnDestroy {
   private readonly api = inject(ElevatorService);
 
   protected readonly connected = this.api.connected;
-  protected readonly maxFloor = MAX_FLOOR;
+  /** Live floor range from the api (GET /api/config), not a compile-time constant. */
+  protected readonly maxFloor = this.api.maxFloor;
   protected readonly plotH = PLOT_H;
   protected readonly health = signal<string>('unknown');
 
@@ -52,12 +50,18 @@ export class App implements OnInit, OnDestroy {
     return this.rows().filter((r) => test(r.state.elevatorName));
   });
 
-  /** Shared left floor axis, aligned to the shaft/trend scale. */
-  protected readonly axisTicks = computed(() =>
-    Array.from({ length: MAX_FLOOR + 1 }, (_, f) => ({ floor: f, y: floorToY(f, MAX_FLOOR) })));
+  /** Shared left floor axis, aligned to the shaft/trend scale. Empty until config loads (maxFloor > 0). */
+  protected readonly axisTicks = computed(() => {
+    const max = this.maxFloor();
+    if (max <= 0) {
+      return [];
+    }
+    return Array.from({ length: max + 1 }, (_, f) => ({ floor: f, y: floorToY(f, max) }));
+  });
 
   ngOnInit(): void {
     this.api.connect();
+    this.api.loadConfig();
     this.refreshHealth();
   }
 

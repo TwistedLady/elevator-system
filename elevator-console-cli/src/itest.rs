@@ -11,8 +11,6 @@ use regex::Regex;
 use crate::sender::{run_simulation, sim_tags};
 use crate::BoxErr;
 
-const FLEET: [&str; 10] = ["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10"];
-const MAX_FLOOR: i32 = 15;
 const THREADS: u64 = 4;
 
 pub fn run_itest(
@@ -39,13 +37,18 @@ pub fn run_itest(
         );
     }
 
+    let cfg = crate::api::get_config(&agent, api_base)
+        .map_err(|e| format!("cannot fetch /api/config: {e}"))?;
+    if cfg.elevators.is_empty() || cfg.max_floor <= 0 {
+        return Err("api /api/config returned empty limits".into());
+    }
     let run_id = now_ms();
-    let fleet: Vec<String> = FLEET.iter().map(|s| s.to_string()).collect();
+    let fleet: Vec<String> = cfg.elevators.clone();
     let sent = AtomicU64::new(0);
     let sent_ms = now_ms();
     let send_start = Instant::now();
     run_simulation(
-        api_base, count, THREADS, &fleet, MAX_FLOOR, &sent, None, run_id,
+        api_base, count, THREADS, &fleet, cfg.max_floor, &sent, None, run_id,
     )?;
     let send_secs = send_start.elapsed().as_secs_f64();
     if !quiet {
@@ -195,20 +198,20 @@ fn current_mode() -> String {
     let out = Command::new("kubectl")
         .args([
             "get",
-            "deploy",
-            "elevator-app",
+            "configmap",
+            "elevator-config",
             "-o",
-            "jsonpath={.spec.template.spec.containers[0].envFrom[0].configMapRef.name}",
+            "jsonpath={.data.ELEVATOR_ENGINE}",
         ])
         .output();
     match out {
         Ok(o) => {
             let s = String::from_utf8_lossy(&o.stdout);
-            let m = s.trim().replace("elevator-app-config-", "");
+            let m = s.trim();
             if m.is_empty() {
                 "?".into()
             } else {
-                m
+                m.to_string()
             }
         }
         Err(_) => "?".into(),

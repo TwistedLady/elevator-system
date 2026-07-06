@@ -22,7 +22,7 @@ export function floorToY(floor: number, maxFloor: number): number {
 })
 export class Shaft {
   readonly state = input.required<ElevatorState>();
-  readonly maxFloor = input<number>(15);
+  readonly maxFloor = input.required<number>();
 
   protected readonly w = W;
   protected readonly plotH = PLOT_H;
