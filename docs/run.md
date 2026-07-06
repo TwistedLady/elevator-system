@@ -81,8 +81,9 @@ hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5
   console's **K8s tab** (`f` / `s`) or `kubectl edit configmap elevator-config`. The app hot-swaps
   the engine on the next move — **no rollout, no restart**.
 - **BI on / off** — `ELEVATOR_BI_ENABLED` toggles the Spark analytics layer (read at api startup via
-  `@ConditionalOnProperty`). Use `scripts/bi.sh on|off`: it flips the flag, **rolls the api**, and
-  applies/deletes `postgres-stats` + the Spark drivers (a ConfigMap can't remove pods). When off,
+  `@ConditionalOnProperty`). On kind, toggle it with Helm — `skaffold run -p bi`, or
+  `helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false` ([cluster.md](cluster.md)):
+  Helm flips the flag and applies/deletes `postgres-stats` + the Spark drivers in one step. When off,
   `GET /api/mileage` & `/api/served` are **not created (404)**, `/actuator/health` shows the `bi`
   component **DISABLED** (overall stays **UP**), and both consoles hide the **Stats** tab.
 
