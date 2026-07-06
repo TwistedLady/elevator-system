@@ -7,7 +7,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::app::{ElevatorState, HealthComp, HealthSnapshot, LogSource, MAX_LOG_LINES};
+use super::app::{
+    merge_stats, ElevatorState, HealthComp, HealthSnapshot, LogSource, MileageRow, ServedRow,
+    StatsRow, MAX_LOG_LINES,
+};
 
 #[derive(PartialEq)]
 enum Loop {
@@ -158,6 +161,35 @@ fn compact(v: &Value) -> String {
         Value::String(s) => s.clone(),
         other => other.to_string(),
     }
+}
+
+/// Poll the Spark BI outcomes over HTTP every ~3s: `GET /api/mileage` (floors travelled) and
+/// `GET /api/served` (orders served), merge them per elevator, and publish into `shared` for the
+/// Stats view. Read-only — the console never writes here. Unreachable/absent endpoints leave the
+/// last good snapshot in place (empty until the first successful fetch), which the UI renders as a
+/// graceful "no stats yet" placeholder.
+pub fn spawn_stats_poll(api_base: String, shared: Arc<Mutex<Vec<StatsRow>>>) {
+    std::thread::spawn(move || {
+        let agent = crate::api::agent();
+        let mileage_url = format!("{api_base}/api/mileage");
+        let served_url = format!("{api_base}/api/served");
+        loop {
+            let mileage = fetch_json::<MileageRow>(&agent, &mileage_url);
+            let served = fetch_json::<ServedRow>(&agent, &served_url);
+            if let (Some(mileage), Some(served)) = (mileage, served) {
+                let rows = merge_stats(mileage, served);
+                if let Ok(mut s) = shared.lock() {
+                    *s = rows;
+                }
+            }
+            std::thread::sleep(Duration::from_secs(3));
+        }
+    });
+}
+
+fn fetch_json<T: serde::de::DeserializeOwned>(agent: &ureq::Agent, url: &str) -> Option<Vec<T>> {
+    let body = agent.get(url).call().ok()?.into_string().ok()?;
+    serde_json::from_str::<Vec<T>>(&body).ok()
 }
 
 pub fn spawn_log_tail(source: LogSource, path: String, tx: Sender<(LogSource, String)>) {

@@ -109,3 +109,20 @@ spec:
         - ipBlock: { cidr: 172.20.0.0/16 }   # kind node/docker network — probe source
       ports:
         - { protocol: TCP, port: 80 }
+---
+# postgres-stats (analytics DB) : 5432 only from the api (reads) + the Spark BI jobs (writes).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-stats-internal
+  labels: { part-of: elevator }
+spec:
+  podSelector:
+    matchLabels: { app: postgres-stats }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: elevator-api } }
+        - podSelector: { matchLabels: { app: elevator-bi } }
+      ports:
+        - { protocol: TCP, port: 5432 }

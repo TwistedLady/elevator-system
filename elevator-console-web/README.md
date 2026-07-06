@@ -4,7 +4,9 @@ A **read-only** browser monitor for the elevator system, mirroring the Rust `ele
 two view tabs — **Chart** and **Trend**. It talks to the system **only through the `elevator-api`
 HTTP edge** and never touches Kafka directly.
 
-Angular 21 (standalone, zoneless, signals).
+Angular 21 (standalone, zoneless, signals). Charts are rendered with **Apache ECharts**
+(themed to a Material palette, light/dark aware); the option builders (`chart-options.ts`)
+are pure functions and unit-tested.
 
 ## What it does
 
@@ -15,11 +17,13 @@ Angular 21 (standalone, zoneless, signals).
 
 Two tabs, sharing one **regex name filter** (like the console):
 
-- **Chart** — live floor-by-floor grid: one small-multiple shaft per elevator with a cab that
-  animates to its floor on each SSE tick. Colour carries state only (accent = moving, muted =
-  idle); a chevron shows direction.
-- **Trend** — floor-over-time: a small-multiple line chart per elevator (last 48 samples),
-  sharing the Chart's floor axis, with a dot marking the current floor.
+- **Chart** — live floor view: each elevator is a cab (rounded rect) parked at its floor on a
+  shared floor axis; the cab **glides** to its new floor on each SSE tick. Colour carries state
+  (accent = moving, muted = idle); a chevron shows direction, and hover gives a per-cab tooltip.
+- **Trend** — floor-over-time: one smooth line per elevator (last 48 samples) on a shared floor
+  axis, with an end-label per line and a shared-axis tooltip.
+
+Tests run on **vitest** (`npm test`): the filter, the SSE ingestion, and the chart options.
 
 Fed by SSE; the browser's `EventSource` auto-reconnects across backend restarts. Header badges
 show the SSE connection and api health. The floor range mirrors `elevator-api` `application.yml`

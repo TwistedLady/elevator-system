@@ -18,7 +18,7 @@ use ratatui::crossterm::event::{self, Event};
 
 use crate::api;
 use crate::BoxErr;
-use app::{App, ElevatorState, HealthSnapshot, LogSource};
+use app::{App, ElevatorState, HealthSnapshot, LogSource, StatsRow};
 use k8s::K8sSnapshot;
 
 pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
@@ -39,6 +39,9 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(api::health_url(api_base), Arc::clone(&health));
 
+    let stats = Arc::new(Mutex::new(Vec::<StatsRow>::new()));
+    sources::spawn_stats_poll(api_base.to_string(), Arc::clone(&stats));
+
     let (log_tx, log_rx) = mpsc::channel::<(LogSource, String)>();
     sources::spawn_log_tail(LogSource::App, app_log.to_string(), log_tx.clone());
     sources::spawn_log_tail(LogSource::Api, api_log.to_string(), log_tx);
@@ -58,6 +61,7 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
         &health,
         &k8s_state,
         &config,
+        &stats,
     );
     ratatui::restore();
     result
@@ -71,6 +75,7 @@ fn event_loop(
     health: &Arc<Mutex<HealthSnapshot>>,
     k8s_state: &Arc<Mutex<K8sSnapshot>>,
     config: &Arc<Mutex<crate::api::ElevatorConfig>>,
+    stats: &Arc<Mutex<Vec<StatsRow>>>,
 ) -> Result<(), BoxErr> {
     loop {
         while let Ok(state) = state_rx.try_recv() {
@@ -87,6 +92,9 @@ fn event_loop(
         }
         if let Ok(c) = config.lock() {
             app.config = c.clone();
+        }
+        if let Ok(s) = stats.lock() {
+            app.stats = s.clone();
         }
         app.refresh_sim();
 

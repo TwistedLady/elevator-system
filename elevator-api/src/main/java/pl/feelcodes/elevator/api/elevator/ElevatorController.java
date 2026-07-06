@@ -35,12 +35,15 @@ class ElevatorController {
     }
 
     /**
-     * Live state as Server-Sent Events: the latest snapshot of every elevator, pushed every 500ms.
-     * Lets the console (and any client) follow movement without polling. One SSE event per elevator.
+     * Live state as Server-Sent Events. Each move is pushed the moment it arrives (engine-paced),
+     * not on a fixed timer, so the client follows movement with no added lag. A slow snapshot tick
+     * (immediately, then every 10s) seeds a new subscriber with current positions and keeps idle
+     * connections warm. One SSE event per elevator.
      */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ElevatorStateDto> stream() {
-        return Flux.interval(Duration.ofMillis(500))
+        Flux<ElevatorStateDto> snapshots = Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
                 .flatMapIterable(tick -> store.all());
+        return Flux.merge(store.changes(), snapshots);
     }
 }

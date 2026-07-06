@@ -21,6 +21,64 @@ pub struct ElevatorState {
     pub floor: i32,
 }
 
+/// One row of `GET /api/mileage` (Spark streaming BI): floors travelled per elevator.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MileageRow {
+    #[serde(rename = "elevatorName")]
+    pub elevator_name: String,
+    #[serde(rename = "floorsTravelled")]
+    pub floors_travelled: i64,
+}
+
+/// One row of `GET /api/served` (Spark batch BI): how many ordered floors the elevator reached.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServedRow {
+    #[serde(rename = "elevatorName")]
+    pub elevator_name: String,
+    #[serde(rename = "ordersServed")]
+    pub orders_served: i64,
+}
+
+/// A merged BI row for one elevator: mileage (floors travelled) + orders served.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatsRow {
+    pub name: String,
+    pub mileage: i64,
+    pub served: i64,
+}
+
+/// Merge the mileage and served lists into one per-elevator row set, keyed by elevator name
+/// (an elevator present in either list appears once), sorted by mileage descending then by
+/// natural name order. Pure: no I/O, easy to unit-test.
+pub fn merge_stats(mileage: Vec<MileageRow>, served: Vec<ServedRow>) -> Vec<StatsRow> {
+    let mut map: BTreeMap<String, StatsRow> = BTreeMap::new();
+    for m in mileage {
+        map.entry(m.elevator_name.clone())
+            .or_insert(StatsRow {
+                name: m.elevator_name,
+                mileage: 0,
+                served: 0,
+            })
+            .mileage = m.floors_travelled;
+    }
+    for s in served {
+        map.entry(s.elevator_name.clone())
+            .or_insert(StatsRow {
+                name: s.elevator_name,
+                mileage: 0,
+                served: 0,
+            })
+            .served = s.orders_served;
+    }
+    let mut rows: Vec<StatsRow> = map.into_values().collect();
+    rows.sort_by(|a, b| {
+        b.mileage
+            .cmp(&a.mileage)
+            .then_with(|| crate::natural_key(&a.name).cmp(&crate::natural_key(&b.name)))
+    });
+    rows
+}
+
 #[derive(Clone)]
 pub struct HealthComp {
     pub name: String,
@@ -119,10 +177,11 @@ pub enum View {
     Logs,
     K8s,
     Test,
+    Stats,
 }
 
 impl View {
-    pub const ALL: [View; 8] = [
+    pub const ALL: [View; 9] = [
         View::Chart,
         View::Trend,
         View::Order,
@@ -131,6 +190,7 @@ impl View {
         View::Logs,
         View::K8s,
         View::Test,
+        View::Stats,
     ];
 
     pub fn index(self) -> usize {
@@ -143,6 +203,7 @@ impl View {
             View::Logs => 5,
             View::K8s => 6,
             View::Test => 7,
+            View::Stats => 8,
         }
     }
 
@@ -156,6 +217,7 @@ impl View {
             View::Logs => "⑥ LOGS",
             View::K8s => "⑦ K8S",
             View::Test => "⑧ TEST",
+            View::Stats => "⑨ STATS",
         }
     }
 
@@ -194,6 +256,7 @@ pub struct App {
     pub sim_input: String,
     pub order_input: String,
     pub sim: Option<SimRun>,
+    pub stats: Vec<StatsRow>,
     pub message: String,
     pub should_quit: bool,
     api_base: String,
@@ -232,6 +295,7 @@ impl App {
             sim_input: String::new(),
             order_input: String::new(),
             sim: None,
+            stats: Vec::new(),
             message: String::new(),
             should_quit: false,
             api_base: api_base.to_string(),
@@ -356,7 +420,7 @@ impl App {
             _ => {}
         }
         match self.view {
-            View::Chart | View::Trend => self.on_key_elevator_filter(key),
+            View::Chart | View::Trend | View::Stats => self.on_key_elevator_filter(key),
             View::Order => self.on_key_order(key),
             View::Sim => self.on_key_sim(key),
             View::Logs => self.on_key_logs(key),
@@ -728,12 +792,54 @@ mod tests {
 
     #[test]
     fn view_navigation_wraps_both_ways() {
-        assert_eq!(View::Chart.prev(), View::Test);
-        assert_eq!(View::Test.next(), View::Chart);
+        assert_eq!(View::Chart.prev(), View::Stats);
+        assert_eq!(View::Stats.next(), View::Chart);
+        assert_eq!(View::Test.next(), View::Stats);
         for v in View::ALL {
             assert_eq!(v.next().prev(), v);
             assert_eq!(View::ALL[v.index()], v);
         }
+    }
+
+    fn mileage(name: &str, floors: i64) -> MileageRow {
+        MileageRow {
+            elevator_name: name.to_string(),
+            floors_travelled: floors,
+        }
+    }
+
+    fn served(name: &str, n: i64) -> ServedRow {
+        ServedRow {
+            elevator_name: name.to_string(),
+            orders_served: n,
+        }
+    }
+
+    #[test]
+    fn merge_stats_joins_by_name_and_sorts_by_mileage_desc() {
+        let rows = merge_stats(
+            vec![mileage("e2", 30), mileage("e10", 5), mileage("e1", 30)],
+            vec![served("e2", 7), served("e10", 2), served("e1", 9)],
+        );
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        // e1 and e2 tie at 30 → natural name order (e1 before e2); e10 last.
+        assert_eq!(names, vec!["e1", "e2", "e10"]);
+        assert_eq!(rows[0].mileage, 30);
+        assert_eq!(rows[0].served, 9);
+    }
+
+    #[test]
+    fn merge_stats_keeps_elevators_present_in_only_one_list() {
+        let rows = merge_stats(vec![mileage("e1", 12)], vec![served("e2", 4)]);
+        let e1 = rows.iter().find(|r| r.name == "e1").unwrap();
+        let e2 = rows.iter().find(|r| r.name == "e2").unwrap();
+        assert_eq!((e1.mileage, e1.served), (12, 0));
+        assert_eq!((e2.mileage, e2.served), (0, 4));
+    }
+
+    #[test]
+    fn merge_stats_empty_inputs_give_empty_rows() {
+        assert!(merge_stats(Vec::new(), Vec::new()).is_empty());
     }
 
     #[test]

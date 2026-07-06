@@ -3,6 +3,7 @@ mod itest;
 mod monitor;
 mod rng;
 mod sender;
+mod version;
 
 use clap::{Parser, Subcommand};
 
@@ -11,6 +12,7 @@ pub type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Parser)]
 #[command(
     name = "elevator-console-cli",
+    version = version::CONSOLE_VERSION,
     about = "Monitor elevators and send orders — entirely through the elevator HTTP API (never Kafka)"
 )]
 struct Cli {
@@ -83,6 +85,8 @@ enum Command {
         #[arg(long)]
         duration: Option<u64>,
     },
+    /// Show the console version and check it matches the backend API version.
+    Version,
 }
 
 fn main() {
@@ -116,6 +120,7 @@ fn main() {
             timeout,
             out,
         } => itest::run_itest(&cli.api, count, timeout, &out, false),
+        Command::Version => version::run(&cli.api),
     };
     if let Err(e) = result {
         eprintln!("error: {e}");
