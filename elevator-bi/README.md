@@ -70,6 +70,21 @@ Stored three ways (see `conf/log4j2.properties` + `k8s/bi/mileage-driver.yaml`):
 
 `scripts/bi-logs.sh` pulls all three into `logs/bi/`.
 
+## Query via the API
+
+The elevator-api exposes the `elevator_mileage` read-model (Java/WebFlux, R2DBC — same pattern as
+`order_status`):
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/mileage` | every elevator's mileage, sorted by floors travelled (desc) |
+| `GET /api/mileage/{name}` | one elevator's mileage (404 if unknown) |
+
+```json
+GET /api/mileage
+[ { "elevatorName": "e4", "floorsTravelled": 65, "updatedAt": "2026-07-06T11:18:02.206Z" }, ... ]
+```
+
 ## Config (env)
 
 | Var | Default | Meaning |
