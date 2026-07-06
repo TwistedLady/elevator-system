@@ -1,7 +1,7 @@
-# Multi-stage build for the elevator-console.
+# Multi-stage build for the cli-console.
 #
 # Build context is this module directory:
-#   docker build -t elevator-console:local elevator-console/
+#   docker build -t cli-console:local cli-console/
 #
 # The image is meant for the headless subcommands (watch / selftest / order / simulate / itest),
 # which talk to the elevator-api over HTTP with the CA bundled into the binary. The interactive
@@ -23,8 +23,8 @@ COPY . .
 RUN touch src/main.rs && cargo build --release
 
 FROM debian:stable-slim AS runtime
-LABEL org.opencontainers.image.title="elevator-console" \
+LABEL org.opencontainers.image.title="cli-console" \
       org.opencontainers.image.description="Terminal dashboard and order sender for the elevator system"
-COPY --from=build /app/target/release/elevator-console /usr/local/bin/elevator-console
-ENTRYPOINT ["elevator-console"]
+COPY --from=build /app/target/release/cli-console /usr/local/bin/cli-console
+ENTRYPOINT ["cli-console"]
 CMD ["--help"]

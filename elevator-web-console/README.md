@@ -1,6 +1,6 @@
 # elevator-web-console (Angular)
 
-A **read-only** browser monitor for the elevator system, mirroring the Rust `elevator-console`'s
+A **read-only** browser monitor for the elevator system, mirroring the Rust `cli-console`'s
 two view tabs — **Chart** and **Trend**. It talks to the system **only through the `elevator-api`
 HTTP edge** and never touches Kafka directly.
 

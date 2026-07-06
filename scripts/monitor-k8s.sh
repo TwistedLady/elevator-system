@@ -12,9 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"   # so the console's relative log defaults (logs/app.log, logs/api.log) resolve
 
-CONSOLE="$ROOT/elevator-console/target/release/elevator-console"
-[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console/target/debug/elevator-console"
-[ -x "$CONSOLE" ] || { echo "build the console first: (cd elevator-console && cargo build)"; exit 1; }
+CONSOLE="$ROOT/cli-console/target/release/cli-console"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/cli-console/target/debug/cli-console"
+[ -x "$CONSOLE" ] || { echo "build the console first: (cd cli-console && cargo build)"; exit 1; }
 
 ensure_forward() {  # <svc> <local:remote>
   local svc="$1" map="$2"

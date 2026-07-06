@@ -1,5 +1,5 @@
 [package]
-name = "elevator-console"
+name = "cli-console"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.74"
@@ -11,7 +11,7 @@ categories = ["command-line-utilities"]
 keywords = ["tui", "ratatui", "elevator", "dashboard"]
 
 [[bin]]
-name = "elevator-console"
+name = "cli-console"
 path = "src/main.rs"
 
 [dependencies]
@@ -60,6 +60,6 @@ extended-description = "A retro terminal dashboard for the elevator system. Moni
 section = "utils"
 priority = "optional"
 assets = [
-    ["target/release/elevator-console", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/elevator-console/README.md", "644"],
+    ["target/release/cli-console", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/cli-console/README.md", "644"],
 ]

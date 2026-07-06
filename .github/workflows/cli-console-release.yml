@@ -6,12 +6,12 @@ name: Console Release
 #   git tag console-v0.1.0 && git push origin console-v0.1.0
 #
 # Produces, and attaches to a GitHub Release:
-#   - elevator-console-<tag>-x86_64-linux.tar.gz  (stripped release binary + its sha256)
-#   - elevator-console_<ver>-1_amd64.deb          (Debian package)
+#   - cli-console-<tag>-x86_64-linux.tar.gz  (stripped release binary + its sha256)
+#   - cli-console_<ver>-1_amd64.deb          (Debian package)
 
 on:
   push:
-    tags: ["console-v*"]
+    tags: ["cli-console-v*"]
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: elevator-console
+        working-directory: cli-console
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +31,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: elevator-console
+          workspaces: cli-console
 
       # Fast fail before packaging: the release must be green.
       - name: Test
@@ -43,9 +43,9 @@ jobs:
       - name: Package tarball + checksum
         run: |
           ver="${GITHUB_REF_NAME:-console-vdev}"
-          dir="elevator-console-${ver}-x86_64-linux"
+          dir="cli-console-${ver}-x86_64-linux"
           mkdir -p "dist/${dir}"
-          cp target/release/elevator-console README.md LICENSE "dist/${dir}/"
+          cp target/release/cli-console README.md LICENSE "dist/${dir}/"
           tar -C dist -czf "dist/${dir}.tar.gz" "${dir}"
           cd dist && sha256sum "${dir}.tar.gz" > "${dir}.tar.gz.sha256"
 
@@ -59,7 +59,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            elevator-console/dist/*.tar.gz
-            elevator-console/dist/*.sha256
-            elevator-console/dist/*.deb
+            cli-console/dist/*.tar.gz
+            cli-console/dist/*.sha256
+            cli-console/dist/*.deb
           generate_release_notes: true

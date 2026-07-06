@@ -105,6 +105,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "cli-console"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "libc",
+ "ratatui",
+ "regex",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -193,21 +208,6 @@ name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
-
-[[package]]
-name = "elevator-console"
-version = "0.1.0"
-dependencies = [
- "clap",
- "libc",
- "ratatui",
- "regex",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "ureq",
-]
 
 [[package]]
 name = "equivalent"

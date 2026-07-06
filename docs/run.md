@@ -33,7 +33,7 @@ logs · k8s. It talks to the system **only over HTTP** (orders `POST /api/order`
 SSE `GET /api/elevator/stream`).
 
 ```bash
-cd elevator-console && cargo run -- monitor      # or: elevator-console watch  (stream to stdout)
+cd cli-console && cargo run -- monitor      # or: cli-console watch  (stream to stdout)
 ```
 
 Bash fallback chart: `scripts/monitor.sh` (auto-discovers elevators; `MAX_FLOOR`, `INTERVAL`,
@@ -57,8 +57,8 @@ mvn test          # unit: logic, strategy, event evolution, actor recovery, seri
 mvn verify        # + Testcontainers IT (ElevatorStateFlowIT: Spring + Kafka + Postgres)
 
 # the console is the end-to-end harness (HTTP + kubectl log cross-check, no Kafka):
-elevator-console selftest              # api health UP + state flowing → PASS/FAIL + exit code
-elevator-console itest --count 20 --timeout 90   # send N orders, poll each to DONE, cross-check pod logs
+cli-console selftest              # api health UP + state flowing → PASS/FAIL + exit code
+cli-console itest --count 20 --timeout 90   # send N orders, poll each to DONE, cross-check pod logs
 #   → logs/itest-report.{json,md}; exit 0 only if 0 lost + every tag DONE + car moved
 ```
 

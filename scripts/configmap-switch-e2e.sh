@@ -26,9 +26,9 @@ COUNT="${1:-2000}"
 DEP=elevator-app
 SEL="app=elevator-app"
 
-CONSOLE="$ROOT/elevator-console/target/release/elevator-console"
-[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console/target/debug/elevator-console"
-[ -x "$CONSOLE" ] || { echo "build the console first: (cd elevator-console && cargo build)"; exit 1; }
+CONSOLE="$ROOT/cli-console/target/release/cli-console"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/cli-console/target/debug/cli-console"
+[ -x "$CONSOLE" ] || { echo "build the console first: (cd cli-console && cargo build)"; exit 1; }
 
 say(){ printf '\n=== %s ===\n' "$*"; }
 psql(){ kubectl exec -i postgres-0 -- psql -U elevator -d elevator -tAc "$1"; }

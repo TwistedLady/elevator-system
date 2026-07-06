@@ -4,7 +4,7 @@ name: Build & Test
 #   - elevator-common-* (Scala 3 domain/logic)   - unit tested
 #   - elevator-app       (Pekko cluster)          - unit tested (actor recovery)
 #   - elevator-api       (Spring)                 - unit + Testcontainers IT
-#   - elevator-console   (Rust/Cargo)             - fmt + clippy + test
+#   - cli-console   (Rust/Cargo)             - fmt + clippy + test
 #   - elevator-web-console (Angular)              - image build proven on PRs
 # On PRs it also proves all three Docker images still build.
 
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: elevator-console
+        working-directory: cli-console
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +76,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: elevator-console
+          workspaces: cli-console
 
       - name: Format (rustfmt)
         run: cargo fmt --all --check

@@ -67,7 +67,7 @@
         <frontend.maven.plugin.version>1.15.1</frontend.maven.plugin.version>
         <node.version>v22.22.0</node.version>
 
-        <!-- The elevator-console module is always in the reactor, but its cargo build is
+        <!-- The cli-console module is always in the reactor, but its cargo build is
              SKIPPED by default so a plain `mvn` (incl. IDE/CI without cargo on PATH) never
              fails on it. Opt in with the `console` profile or -Dcargo.skip=false. -->
         <cargo.skip>true</cargo.skip>
@@ -82,7 +82,7 @@
         <module>elevator-common</module>
         <module>elevator-app</module>
         <module>elevator-api</module>
-        <module>elevator-console</module>
+        <module>cli-console</module>
         <module>elevator-web-console</module>
     </modules>
 
