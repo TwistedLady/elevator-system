@@ -44,7 +44,7 @@ object ElevatorApp extends App {
         val engineMode = new EngineMode(ctx.system.settings.config.getString("elevator.engine"))
         val enginePath = Path.of(ctx.system.settings.config.getString("elevator.engine-file"))
         ctx.system.scheduler.scheduleWithFixedDelay(0.seconds, 5.seconds) { () =>
-          engineMode.refreshFrom(enginePath).foreach(v => ctx.log.info("engine mode -> {}", v))
+          val _ = engineMode.refreshFrom(enginePath)
         }(ctx.executionContext)
 
         val buildElevator: Operator.BuildElevator = (name, state) =>

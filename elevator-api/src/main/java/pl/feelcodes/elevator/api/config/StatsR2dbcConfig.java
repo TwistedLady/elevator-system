@@ -3,6 +3,7 @@ package pl.feelcodes.elevator.api.config;
 import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.r2dbc.ConnectionFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +17,7 @@ import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
  * datasource ({@link MainR2dbcConfig}).
  */
 @Configuration
+@ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableR2dbcRepositories(
         basePackages = "pl.feelcodes.elevator.api.stats",
         entityOperationsRef = "statsR2dbcEntityOperations")

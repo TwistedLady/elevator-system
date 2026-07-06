@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Turn the BI (Spark analytics) layer on or off.
 #
-# ELEVATOR_BI_ENABLED in the elevator-config ConfigMap is the single source of truth; the api
-# hot-reloads it (no restart): when off, GET /api/mileage & /api/served return 503, /actuator/health
-# shows the `bi` component DISABLED (overall stays UP), and both consoles hide the Stats tab.
+# ELEVATOR_BI_ENABLED in the elevator-config ConfigMap is the single source of truth. The api reads
+# it at startup via @ConditionalOnProperty, so this script rolls the api to apply the change: when
+# off, GET /api/mileage & /api/served are NOT created (404), /actuator/health shows the `bi`
+# component DISABLED (overall stays UP), and both consoles hide the Stats tab.
 #
 # A ConfigMap flag can't create or delete pods, so this script also reconciles the cluster:
-#   on  -> set the flag true,  apply  postgres-stats + the Spark BI drivers
-#   off -> set the flag false, delete postgres-stats + the Spark BI drivers (kills the pods)
+#   on  -> set the flag true,  roll the api, apply  postgres-stats + the Spark BI drivers
+#   off -> set the flag false, roll the api, delete postgres-stats + the Spark BI drivers (kills pods)
 #
 #   Usage: scripts/bi.sh on|off
 set -euo pipefail
@@ -26,14 +27,16 @@ case "${1:-}" in
     kubectl patch configmap elevator-config --type=merge -p '{"data":{"ELEVATOR_BI_ENABLED":"true"}}'
     kubectl apply $(f_args "${STATS_MANIFESTS[@]}")
     kubectl apply $(f_args "${BI_MANIFESTS[@]}")
-    echo "BI on: flag=true, postgres-stats + Spark drivers applied. Stats tab returns within ~5s."
+    kubectl rollout restart deployment/elevator-api   # re-read the flag (@ConditionalOnProperty)
+    echo "BI on: flag=true, postgres-stats + Spark drivers applied, api rolling to recreate BI endpoints."
     ;;
   off)
     kubectl patch configmap elevator-config --type=merge -p '{"data":{"ELEVATOR_BI_ENABLED":"false"}}'
+    kubectl rollout restart deployment/elevator-api   # drop the BI endpoints (@ConditionalOnProperty)
     kubectl delete --ignore-not-found $(f_args "${BI_MANIFESTS[@]}")
     kubectl delete --ignore-not-found $(f_args "${STATS_MANIFESTS[@]}")
-    echo "BI off: flag=false, Spark drivers + postgres-stats deleted (pods gone)."
-    echo "        api hot-reloads: mileage/served -> 503, health bi=DISABLED, consoles hide Stats."
+    echo "BI off: flag=false, api rolling (mileage/served -> 404, health bi=DISABLED), Spark + stats deleted."
+    echo "        consoles hide the Stats tab once the api is back."
     ;;
   *)
     echo "usage: scripts/bi.sh on|off"

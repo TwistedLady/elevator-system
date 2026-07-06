@@ -16,9 +16,10 @@ data:
   # app: elevator engine. Hot-swapped per move (no restart). Switch = comment this, uncomment slow.
   ELEVATOR_ENGINE: "fast"
   # ELEVATOR_ENGINE: "slow"
-  # api: BI (Spark analytics) on/off. Hot-reloaded: false -> /api/mileage & /api/served return 503,
-  # health shows bi DISABLED, consoles hide the Stats tab. Use scripts/bi.sh on|off to also
-  # apply/delete the postgres-stats + Spark driver pods (config alone can't remove pods).
+  # api: BI (Spark analytics) on/off. Read at api startup (@ConditionalOnProperty). Use
+  # scripts/bi.sh on|off — it flips the flag, ROLLS the api (false -> /api/mileage & /api/served
+  # become 404, health shows bi DISABLED, consoles hide the Stats tab), and applies/deletes the
+  # postgres-stats + Spark driver pods (config alone can't remove pods).
   ELEVATOR_BI_ENABLED: "true"
 
   # ---- infra wiring (needs a restart to change; not hot-reloaded) ----
