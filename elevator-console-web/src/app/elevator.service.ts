@@ -1,7 +1,7 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { ElevatorState } from './models';
+import { firstValueFrom, Observable } from 'rxjs';
+import { ElevatorState, MileageStat, OrdersServedStat } from './models';
 import { log } from './logger';
 
 // All calls are relative so the same build works behind the dev proxy (proxy.conf.json → :8080)
@@ -87,5 +87,19 @@ export class ElevatorService {
 
   async health(): Promise<{ status: string }> {
     return firstValueFrom(this.http.get<{ status: string }>('/actuator/health'));
+  }
+
+  /** Spark BI mileage per elevator (floors travelled). Polled by the Stats tab. */
+  mileage(): Observable<MileageStat[]> {
+    return this.http.get<MileageStat[]>('/api/mileage');
+  }
+
+  /** Spark BI orders-served per elevator (reached ordered floors). Polled by the Stats tab. */
+  served(): Observable<OrdersServedStat[]> {
+    return this.http.get<OrdersServedStat[]>('/api/served');
+  }
+
+  version(): Promise<{ version: string }> {
+    return firstValueFrom(this.http.get<{ version: string }>('/api/version'));
   }
 }

@@ -47,7 +47,7 @@ object OrdersServedJob {
   private def readOrderStatus(spark: SparkSession, cfg: BiConfig): DataFrame =
     spark.read
       .format("jdbc")
-      .option("url", cfg.jdbcUrl)
+      .option("url", cfg.sourceJdbcUrl)
       .option("dbtable", cfg.orderStatusTable)
       .option("user", cfg.jdbcUser)
       .option("password", cfg.jdbcPassword)

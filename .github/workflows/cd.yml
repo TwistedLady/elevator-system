@@ -73,11 +73,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Self-contained npm project → its own build context (not the repo root).
+      # Repo-root context (like api/app) so the shared VERSION file reaches gen-version.mjs.
       - name: Build & push elevator-console-web
         uses: docker/build-push-action@v6
         with:
-          context: elevator-console-web
+          context: .
           file: elevator-console-web/Dockerfile
           push: true
           tags: |

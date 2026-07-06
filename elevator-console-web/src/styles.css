@@ -13,6 +13,9 @@
   --accent: #1976d2;
   --ok: #2e7d32;
   --bad: #c62828;
+  --up: #2e7d32;
+  --down: #e64a19;
+  --grid: #eceff1;
 
   --cab-active-fill: #1976d2;
   --cab-idle-fill: #90a4ae;
@@ -31,6 +34,9 @@
     --accent: #64b5f6;
     --ok: #81c784;
     --bad: #ef5350;
+    --up: #66bb6a;
+    --down: #ff8a65;
+    --grid: #2b3a41;
 
     --cab-active-fill: #64b5f6;
     --cab-idle-fill: #78909c;
@@ -52,6 +58,9 @@
   --accent: #64b5f6;
   --ok: #81c784;
   --bad: #ef5350;
+  --up: #66bb6a;
+  --down: #ff8a65;
+  --grid: #2b3a41;
   --cab-active-fill: #64b5f6;
   --cab-idle-fill: #78909c;
   color-scheme: dark;

@@ -12,7 +12,9 @@ data:
   ELEVATOR_BI_STARTING_OFFSETS: "earliest"
   ELEVATOR_BI_CHECKPOINT: "file:///checkpoint"
   ELEVATOR_BI_TRIGGER: "10 seconds"
-  ELEVATOR_BI_JDBC_URL: "jdbc:postgresql://postgres:5432/elevator"
+  # Analytics sink → the SEPARATE postgres-stats DB; source read (order_status) → the main elevator DB.
+  ELEVATOR_BI_STATS_JDBC_URL: "jdbc:postgresql://postgres-stats:5432/elevator_stats"
+  ELEVATOR_BI_SOURCE_JDBC_URL: "jdbc:postgresql://postgres:5432/elevator"
   ELEVATOR_PG_USER: "elevator"
   ELEVATOR_PG_PASSWORD: "elevator"
   ELEVATOR_BI_TABLE: "elevator_mileage"

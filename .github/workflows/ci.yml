@@ -137,7 +137,7 @@ jobs:
         include:
           - { name: elevator-app,         context: .,                    file: elevator-app/Dockerfile }
           - { name: elevator-api,         context: .,                    file: elevator-api/Dockerfile }
-          - { name: elevator-console-web, context: elevator-console-web, file: elevator-console-web/Dockerfile }
+          - { name: elevator-console-web, context: ., file: elevator-console-web/Dockerfile }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

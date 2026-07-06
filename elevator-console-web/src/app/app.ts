@@ -9,9 +9,11 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ElevatorService } from './elevator.service';
 import { Echart } from './echart';
+import { Stats } from './stats';
 import { Row } from './models';
 import { nameFilter } from './filter';
 import { positionOption, trendOption } from './chart-options';
+import { APP_VERSION } from './version';
 import { log } from './logger';
 
 // Floor range mirrors elevator-api application.yml (max-floor 15).
@@ -20,7 +22,7 @@ const HEALTH_POLL_MS = 15_000;
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, Echart],
+  imports: [FormsModule, Echart, Stats],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -36,8 +38,20 @@ export class App implements OnInit, OnDestroy {
   protected readonly health = signal<string>('unknown');
   protected readonly dark = signal(this.darkMedia.matches);
 
-  protected readonly tab = signal<'chart' | 'trend'>('chart');
-  /** Regex name filter, shared by both tabs (same behaviour as the console). */
+  /** This build's version (baked in from the repo-root VERSION file) vs the backend's. */
+  protected readonly webVersion = APP_VERSION;
+  protected readonly backendVersion = signal<string>('unknown');
+  /** True once we've read a backend version that matches this build. */
+  protected readonly versionMatch = computed(() => this.backendVersion() === this.webVersion);
+  /** Warn only once we've actually read a real backend version that differs from this build. */
+  protected readonly versionMismatch = computed(() => {
+    const backend = this.backendVersion();
+    return backend !== 'unknown' && backend !== 'unreachable' && backend !== this.webVersion;
+  });
+
+  /** Chart + Trend mirror the Rust console; Stats adds the Spark BI outcomes. */
+  protected readonly tab = signal<'chart' | 'trend' | 'stats'>('chart');
+  /** Regex name filter, shared by all tabs (same behaviour as the console). */
   protected readonly filter = signal('');
 
   protected readonly noData = computed(() => this.api.elevators().length === 0);
@@ -64,6 +78,7 @@ export class App implements OnInit, OnDestroy {
     this.refreshHealth();
     this.healthTimer = setInterval(() => this.refreshHealth(), HEALTH_POLL_MS);
     this.darkMedia.addEventListener('change', this.onThemeChange);
+    this.checkVersion();
   }
 
   ngOnDestroy(): void {
@@ -78,6 +93,14 @@ export class App implements OnInit, OnDestroy {
     } catch {
       log.warn('health check failed');
       this.health.set('DOWN');
+    }
+  }
+
+  async checkVersion(): Promise<void> {
+    try {
+      this.backendVersion.set((await this.api.version()).version);
+    } catch {
+      this.backendVersion.set('unreachable');
     }
   }
 }
