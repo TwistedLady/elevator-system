@@ -11,12 +11,13 @@ metadata:
   name: elevator-app
 spec:
   replicas: 2
-  # Keep at least one old pod serving until a new one is Ready: never drop below 2 ready pods.
+  # Roll in place (no surge pod) so a new revision schedules on a CPU-constrained single node:
+  # take one old pod down, bring its replacement up, repeat. Brief dip to 1/2 during a roll.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: elevator-app
