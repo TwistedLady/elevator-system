@@ -1,5 +1,5 @@
 // Mirrors the elevator-api elevator-state contract (elevator-common-dto/Dtos.scala,
-// GET /api/elevator/stream). The console is read-only: Chart + Trend tabs only.
+// GET /api/elevator/stream). The console is read-only: Chart, Trend, and Stats tabs.
 
 export interface ElevatorState {
   tag: string;
@@ -7,6 +7,12 @@ export interface ElevatorState {
   direction: string; // Up | Down   (core Direction enum)
   motion: string;    // Moving | Stopped   (core Motion enum)
   floor: number;
+}
+
+/** Live state paired with its recent floor history (oldest → newest), for the charts. */
+export interface Row {
+  state: ElevatorState;
+  history: number[];
 }
 
 // Spark BI outcomes surfaced by the api (elevator-bi → Postgres → GET /api/mileage, /api/served).

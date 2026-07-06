@@ -1,14 +1,16 @@
-import { Injectable, signal, computed, NgZone, inject } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, Observable } from 'rxjs';
 import { ElevatorState, MileageStat, OrdersServedStat } from './models';
+import { log } from './logger';
 
 // All calls are relative so the same build works behind the dev proxy (proxy.conf.json → :8080)
 // and when the compiled bundle is served from the same origin as the api.
+// App is zoneless (Angular 21 bootstrapApplication default), so signal writes from the SSE
+// callback drive change detection directly — no NgZone needed.
 @Injectable({ providedIn: 'root' })
 export class ElevatorService {
   private readonly http = inject(HttpClient);
-  private readonly zone = inject(NgZone);
 
   /** How many recent floor samples the Trend tab keeps per elevator. */
   static readonly HISTORY_LEN = 48;
@@ -32,39 +34,58 @@ export class ElevatorService {
     if (this.source) {
       return;
     }
+    log.info('connecting SSE → /api/elevator/stream');
     const es = new EventSource('/api/elevator/stream');
     this.source = es;
-    es.onopen = () => this.zone.run(() => this.connected.set(true));
-    es.onerror = () => this.zone.run(() => this.connected.set(false));
-    es.onmessage = (ev) => {
-      try {
-        const state = JSON.parse(ev.data) as ElevatorState;
-        this.zone.run(() => {
-          const next = new Map(this.byName());
-          next.set(state.elevatorName, state);
-          this.byName.set(next);
-
-          const hist = new Map(this.hist());
-          const series = [...(hist.get(state.elevatorName) ?? []), state.floor];
-          if (series.length > ElevatorService.HISTORY_LEN) {
-            series.splice(0, series.length - ElevatorService.HISTORY_LEN);
-          }
-          hist.set(state.elevatorName, series);
-          this.hist.set(hist);
-        });
-      } catch {
-        // ignore malformed frames
-      }
+    es.onopen = () => {
+      log.info('SSE open');
+      this.connected.set(true);
     };
+    es.onerror = () => {
+      // EventSource retries on its own; just reflect the drop in the badge.
+      if (this.connected()) {
+        log.warn('SSE error — connection dropped, awaiting auto-reconnect');
+      }
+      this.connected.set(false);
+    };
+    es.onmessage = (ev) => this.ingest(ev.data);
+  }
+
+  /** Fold one SSE frame into the live snapshot + rolling history. Malformed frames are dropped. */
+  private ingest(raw: string): void {
+    let state: ElevatorState;
+    try {
+      state = JSON.parse(raw) as ElevatorState;
+    } catch {
+      log.warn('dropped malformed SSE frame', raw);
+      return;
+    }
+    if (!state?.elevatorName) {
+      log.warn('dropped SSE frame without elevatorName', state);
+      return;
+    }
+
+    const next = new Map(this.byName());
+    next.set(state.elevatorName, state);
+    this.byName.set(next);
+
+    const hist = new Map(this.hist());
+    const series = [...(hist.get(state.elevatorName) ?? []), state.floor];
+    if (series.length > ElevatorService.HISTORY_LEN) {
+      series.splice(0, series.length - ElevatorService.HISTORY_LEN);
+    }
+    hist.set(state.elevatorName, series);
+    this.hist.set(hist);
   }
 
   disconnect(): void {
+    log.info('disconnecting SSE');
     this.source?.close();
     this.source = undefined;
     this.connected.set(false);
   }
 
-  health(): Promise<{ status: string }> {
+  async health(): Promise<{ status: string }> {
     return firstValueFrom(this.http.get<{ status: string }>('/actuator/health'));
   }
 
