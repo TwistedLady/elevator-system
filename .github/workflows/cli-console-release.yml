@@ -1,13 +1,16 @@
 name: Console Release
 
-# Publishes the Rust console as ready-to-install artifacts. Triggered by a console-scoped tag
-# (this is a polyglot monorepo, so the console has its own tag namespace):
+# Publishes the Rust console on a console-scoped tag (this is a polyglot monorepo, so the console
+# has its own tag namespace):
 #
-#   git tag console-v0.1.0 && git push origin console-v0.1.0
+#   git tag cli-console-v0.1.0 && git push origin cli-console-v0.1.0
 #
-# Produces, and attaches to a GitHub Release:
-#   - cli-console-<tag>-x86_64-linux.tar.gz  (stripped release binary + its sha256)
-#   - cli-console_<ver>-1_amd64.deb          (Debian package)
+# Produces:
+#   - a GitHub *Release* with:
+#       cli-console-<tag>-x86_64-linux.tar.gz  (stripped release binary + its sha256)
+#       cli-console_<ver>-1_amd64.deb          (Debian package)
+#   - a GitHub *Package* (container image) in GHCR:
+#       ghcr.io/<owner>/cli-console:<ver>  and  :latest
 
 on:
   push:
@@ -15,7 +18,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # create the Release
+  packages: write   # push the image to GHCR
 
 jobs:
   release:
@@ -40,10 +44,15 @@ jobs:
       - name: Build stripped release binary
         run: cargo build --release
 
+      - id: meta
+        name: Compute image coordinates
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "ver=${GITHUB_REF_NAME#cli-console-v}" >> "$GITHUB_OUTPUT"
+
       - name: Package tarball + checksum
         run: |
-          ver="${GITHUB_REF_NAME:-console-vdev}"
-          dir="cli-console-${ver}-x86_64-linux"
+          dir="${GITHUB_REF_NAME:-cli-console-vdev}-x86_64-linux"
           mkdir -p "dist/${dir}"
           cp target/release/cli-console README.md LICENSE "dist/${dir}/"
           tar -C dist -czf "dist/${dir}.tar.gz" "${dir}"
@@ -63,3 +72,26 @@ jobs:
             cli-console/dist/*.sha256
             cli-console/dist/*.deb
           generate_release_notes: true
+
+      # Container image → GHCR, so `cli-console` shows up in the repo's Packages tab
+      # alongside elevator-app / elevator-api (which cd.yml publishes the same way).
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: cli-console
+          file: cli-console/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/cli-console:${{ steps.meta.outputs.ver }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/cli-console:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
