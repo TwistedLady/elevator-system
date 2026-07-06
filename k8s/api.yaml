@@ -5,6 +5,13 @@ metadata:
   name: elevator-api
 spec:
   replicas: 1
+  # Roll in place (no surge pod) so it schedules on a CPU-constrained single node — see app.yaml.
+  # Single replica, so a roll is a brief restart of the edge.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app: elevator-api
