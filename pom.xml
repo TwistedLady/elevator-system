@@ -42,9 +42,15 @@
         <!-- Spring Boot -->
         <spring.boot.version>3.4.4</spring.boot.version>
 
+        <!-- springdoc-openapi: 2.8.x line targets Spring Boot 3.4 -->
+        <springdoc.version>2.8.6</springdoc.version>
+
         <!-- Jackson: pinned here and imported BEFORE spring-boot-dependencies so this
              single version wins across every module (including the Spring side). -->
         <jackson.version>2.21.0</jackson.version>
+        <!-- Converge snakeyaml: jackson-dataformat-yaml 2.21 and swagger-core pull 2.4,
+             above the 2.3 that spring-boot-dependencies pins (requireUpperBoundDeps). -->
+        <snakeyaml.version>2.4</snakeyaml.version>
 
         <!-- Other libraries -->
         <lombok.version>1.18.34</lombok.version>
@@ -108,6 +114,11 @@
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
                 <version>${lombok.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.yaml</groupId>
+                <artifactId>snakeyaml</artifactId>
+                <version>${snakeyaml.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

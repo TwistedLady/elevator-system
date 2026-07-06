@@ -48,7 +48,14 @@ pub fn run_itest(
     let sent_ms = now_ms();
     let send_start = Instant::now();
     run_simulation(
-        api_base, count, THREADS, &fleet, cfg.max_floor, &sent, None, run_id,
+        api_base,
+        count,
+        THREADS,
+        &fleet,
+        cfg.max_floor,
+        &sent,
+        None,
+        run_id,
     )?;
     let send_secs = send_start.elapsed().as_secs_f64();
     if !quiet {

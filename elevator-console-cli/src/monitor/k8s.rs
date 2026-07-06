@@ -117,6 +117,15 @@ pub fn set_mode(mode: &str) -> Result<String, String> {
         return Err("unknown mode".into());
     }
     let patch = format!(r#"{{"data":{{"{ENGINE_KEY}":"{mode}"}}}}"#);
-    kubectl(&["patch", "configmap", CONFIGMAP, "--type=merge", "-p", &patch])?;
-    Ok(format!("engine set to {mode} — app hot-reloads in a few seconds (no restart)"))
+    kubectl(&[
+        "patch",
+        "configmap",
+        CONFIGMAP,
+        "--type=merge",
+        "-p",
+        &patch,
+    ])?;
+    Ok(format!(
+        "engine set to {mode} — app hot-reloads in a few seconds (no restart)"
+    ))
 }
