@@ -1,0 +1,18 @@
+# BI job config (12-factor env). Matches in-cluster service names.
+# NOTE: the DB password is inlined for the demo, mirroring postgres.yaml — replace with a
+# valueFrom: secretKeyRef in a real cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elevator-bi-config
+  labels: { app: elevator-bi, part-of: elevator }
+data:
+  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  ELEVATOR_KAFKA_STATE_TOPIC: "elevator-state"
+  ELEVATOR_BI_STARTING_OFFSETS: "earliest"
+  ELEVATOR_BI_CHECKPOINT: "file:///checkpoint"
+  ELEVATOR_BI_TRIGGER: "10 seconds"
+  ELEVATOR_BI_JDBC_URL: "jdbc:postgresql://postgres:5432/elevator"
+  ELEVATOR_PG_USER: "elevator"
+  ELEVATOR_PG_PASSWORD: "elevator"
+  ELEVATOR_BI_TABLE: "elevator_mileage"

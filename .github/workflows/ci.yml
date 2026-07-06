@@ -6,7 +6,8 @@ name: Build & Test
 #   - elevator-api       (Spring)                 - unit + Testcontainers IT
 #   - elevator-console-cli   (Rust/Cargo)             - fmt + clippy + test
 #   - elevator-console-web (Angular)              - image build proven on PRs
-# On PRs it also proves all three Docker images still build.
+#   - elevator-bi        (Spark, Scala 2.12, standalone) - uber jar + ScalaTest + image
+# On PRs it also proves all three JVM/web Docker images still build.
 
 on:
   push:
@@ -90,6 +91,34 @@ jobs:
       # The demo and the pre-commit itest run the release binary; make sure it builds.
       - name: Release build
         run: cargo build --release
+
+  bi:
+    name: Spark BI · Maven (Scala 2.12, standalone)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # elevator-bi is a STANDALONE module (Scala 2.12 / Spark), deliberately not in the
+      # Scala 3 reactor. Build it on its own pom. It targets Java 17.
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build uber jar + ScalaTest
+        run: ./mvnw -B -ntp -f elevator-bi/pom.xml package
+
+      # Prove the image builds (the Dockerfile packages the uber jar just built).
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: elevator-bi
+          file: elevator-bi/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   images:
     name: Docker images build (no push)

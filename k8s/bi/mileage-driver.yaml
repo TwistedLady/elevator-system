@@ -1,0 +1,138 @@
+# The Spark mileage job, deployed as full Spark-on-Kubernetes.
+#
+# This Deployment pod IS the Spark DRIVER (client mode). On start it spark-submits against the
+# in-cluster API server (--master k8s://...), which spawns 2 EXECUTOR pods (labelled app=elevator-bi).
+# Running the driver as a Deployment gives a streaming job the lifecycle it needs: if the driver dies,
+# the Deployment restarts it, and the executor pods (owned by the driver pod) are GC'd and recreated.
+#
+# Checkpoint: Structured Streaming's stateful store must live on a filesystem SHARED by the driver and
+# every executor. kind is a SINGLE node, so a hostPath on that node is shared by all pods. An
+# initContainer makes it world-writable so the non-root (uid 185) spark process can write it.
+# MULTI-NODE clusters must swap this hostPath for S3 (s3a://) or NFS — see k8s/bi/README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-mileage
+  labels: { app: elevator-bi, part-of: elevator }
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # one driver at a time — a new one must not race the old for the checkpoint
+  selector:
+    matchLabels: { app: elevator-bi, role: driver }
+  template:
+    metadata:
+      labels: { app: elevator-bi, role: driver, part-of: elevator }
+    spec:
+      serviceAccountName: elevator-bi-spark
+      terminationGracePeriodSeconds: 30
+      # Make the shared checkpoint dir writable by the non-root spark user (uid 185).
+      initContainers:
+        # Make the shared checkpoint (incl. Spark event logs) and the log dir writable by uid 185.
+        - name: init-dirs
+          image: elevator-bi:local
+          imagePullPolicy: IfNotPresent
+          command:
+            - "sh"
+            - "-c"
+            - "mkdir -p /checkpoint/spark-events /opt/elevator-bi/logs && chmod -R 0777 /checkpoint /opt/elevator-bi/logs"
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - { name: checkpoint, mountPath: /checkpoint }
+            - { name: logs, mountPath: /opt/elevator-bi/logs }
+      containers:
+        - name: driver
+          image: elevator-bi:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: elevator-bi-config }
+          env:
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            # spark-submit + the JVM write here; avoids HOME/uid-185 permission issues.
+            - { name: HOME, value: "/tmp" }
+            - { name: SPARK_LOCAL_DIRS, value: "/tmp" }
+          command: ["/opt/spark/bin/spark-submit"]
+          args:
+            - "--master"
+            - "k8s://https://kubernetes.default.svc:443"
+            - "--deploy-mode"
+            - "client"
+            - "--name"
+            - "elevator-mileage"
+            - "--class"
+            - "pl.feelcodes.elevator.bi.MileageJob"
+            - "--conf"
+            - "spark.kubernetes.namespace=default"
+            - "--conf"
+            - "spark.kubernetes.container.image=elevator-bi:local"
+            - "--conf"
+            - "spark.kubernetes.container.image.pullPolicy=IfNotPresent"
+            - "--conf"
+            - "spark.kubernetes.authenticate.driver.serviceAccountName=elevator-bi-spark"
+            # Executors are owned by this driver pod → GC'd automatically when the driver is replaced.
+            - "--conf"
+            - "spark.kubernetes.driver.pod.name=$(POD_NAME)"
+            - "--conf"
+            - "spark.executor.instances=2"
+            - "--conf"
+            - "spark.executor.cores=1"
+            - "--conf"
+            - "spark.executor.memory=512m"
+            - "--conf"
+            - "spark.driver.memory=512m"
+            - "--conf"
+            - "spark.sql.shuffle.partitions=4"
+            # Durable Spark event logs (job/stage history) on the persistent checkpoint volume.
+            - "--conf"
+            - "spark.eventLog.enabled=true"
+            - "--conf"
+            - "spark.eventLog.dir=file:///checkpoint/spark-events"
+            # Client-mode driver networking: fixed ports so executors can reach the driver and the
+            # NetworkPolicy is simple. driver.host = this pod's IP.
+            - "--conf"
+            - "spark.driver.host=$(POD_IP)"
+            - "--conf"
+            - "spark.driver.bindAddress=0.0.0.0"
+            - "--conf"
+            - "spark.driver.port=7078"
+            - "--conf"
+            - "spark.blockManager.port=7079"
+            - "--conf"
+            - "spark.kubernetes.executor.label.app=elevator-bi"
+            - "--conf"
+            - "spark.kubernetes.executor.label.part-of=elevator"
+            - "--conf"
+            - "spark.kubernetes.executor.label.role=executor"
+            # Same shared hostPath checkpoint on the executors.
+            - "--conf"
+            - "spark.kubernetes.executor.volumes.hostPath.checkpoint.mount.path=/checkpoint"
+            - "--conf"
+            - "spark.kubernetes.executor.volumes.hostPath.checkpoint.options.path=/mnt/elevator-bi-checkpoint"
+            # Executors write their durable rolling logs to the same persistent hostPath.
+            - "--conf"
+            - "spark.kubernetes.executor.volumes.hostPath.logs.mount.path=/opt/elevator-bi/logs"
+            - "--conf"
+            - "spark.kubernetes.executor.volumes.hostPath.logs.options.path=/mnt/elevator-bi-logs"
+            - "local:///opt/spark/jobs/elevator-bi.jar"
+          ports:
+            - { name: driver-rpc, containerPort: 7078 }
+            - { name: blockmanager, containerPort: 7079 }
+          resources:
+            requests: { cpu: "250m", memory: "1Gi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+          volumeMounts:
+            - { name: checkpoint, mountPath: /checkpoint }
+            - { name: logs, mountPath: /opt/elevator-bi/logs }
+      volumes:
+        - name: checkpoint
+          hostPath:
+            path: /mnt/elevator-bi-checkpoint
+            type: DirectoryOrCreate
+        - name: logs
+          hostPath:
+            path: /mnt/elevator-bi-logs
+            type: DirectoryOrCreate
