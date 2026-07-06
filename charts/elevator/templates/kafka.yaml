@@ -6,7 +6,8 @@ kind: Deployment
 metadata:
   name: kafka
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   replicas: 1
   selector:
@@ -19,7 +20,7 @@ spec:
     spec:
       containers:
         - name: kafka
-          image: {{ .Values.images.kafka }}
+          image: {{ .Values.global.images.kafka }}
           ports:
             - containerPort: 9092
             - containerPort: 9094
@@ -42,7 +43,8 @@ kind: Service
 metadata:
   name: kafka
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   selector:
     app: kafka

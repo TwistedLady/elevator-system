@@ -6,6 +6,8 @@ name: Release & Deploy
 # (kind + Calico + the elevator-api-tls / ghcr-pull secrets) is provisioned
 # separately, once, by `terraform apply` — see docs/cluster.md.
 on:
+  push:
+    tags: ['v*.*.*']          # a version tag cuts a proper release: images :X.Y.Z + GitHub Release + deploy
   workflow_run:
     workflows: ["Build & Test"]
     types: [completed]
@@ -17,18 +19,19 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write             # create the GitHub Release on a version tag
   packages: write
 
 jobs:
   publish:
     name: Publish images → GHCR
     # Skip unless the triggering build passed (workflow_dispatch has no run to check).
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       owner: ${{ steps.meta.outputs.owner }}
       tag: ${{ steps.meta.outputs.tag }}
+      release: ${{ steps.meta.outputs.release }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,9 +49,17 @@ jobs:
       - id: meta
         name: Compute image coordinates
         run: |
-          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
           echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
-          echo "tag=sha-${sha:0:12}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            # release: tag images with the one project version (v1.0.0 -> 1.0.0)
+            echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            # rolling main build: tag by commit sha
+            sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "tag=sha-${sha:0:12}" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build & push elevator-app
         uses: docker/build-push-action@v6
@@ -111,6 +122,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # On a version tag only: the tag must equal the VERSION file, then publish a GitHub Release.
+      # The GHCR packages auto-link to the repo via each image's org.opencontainers.image.source label.
+      - name: Create GitHub Release
+        if: ${{ steps.meta.outputs.release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "v$(cat VERSION)" = "${GITHUB_REF_NAME}" \
+            || { echo "::error::tag ${GITHUB_REF_NAME} != v$(cat VERSION) (bump VERSION or fix the tag)"; exit 1; }
+          gh release create "${GITHUB_REF_NAME}" --title "elevator ${GITHUB_REF_NAME}" --generate-notes
+
   deploy:
     name: Deploy → Kubernetes (Pekko cluster)
     needs: publish
@@ -166,9 +188,9 @@ jobs:
         run: |
           helm upgrade --install elevator charts/elevator \
             --namespace default \
-            --set images.app="ghcr.io/${OWNER}/elevator-app:${TAG}" \
-            --set images.api="ghcr.io/${OWNER}/elevator-api:${TAG}" \
-            --set images.consoleWeb="ghcr.io/${OWNER}/elevator-console-web:${TAG}" \
+            --set global.images.app="ghcr.io/${OWNER}/elevator-app:${TAG}" \
+            --set global.images.api="ghcr.io/${OWNER}/elevator-api:${TAG}" \
+            --set global.images.consoleWeb="ghcr.io/${OWNER}/elevator-console-web:${TAG}" \
             --set bi.enabled=false \
             --set seed.enabled=false \
             --wait --timeout 10m

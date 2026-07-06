@@ -91,7 +91,7 @@ Real hazards to be aware of (fix deliberately, on their own branch):
   partitions and, with no committed offsets, empty groups don't leak.
 - **Huge sims bloat the journal** → slow recovery → "Kafka stream failed", app stops consuming.
   Wipe + reseed to recover (Kafka has no volume, so a demo restart also empties the live chart —
-  reseed via `demo-up.sh`).
+  reseed via the compose `--profile seed`).
 - **`DefaultScalaModule` is registered in the pure-Java api** and a custom `ObjectMapper` bean
   overrides Boot's auto-config. Leftover — safe to remove.
 - **Rust console has unit tests now** (`cargo test` in `elevator-console-cli`, run by CI). Keep it that

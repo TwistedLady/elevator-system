@@ -2,7 +2,7 @@
     <!-- Logging profile, chosen with -Dapp.profile=prod|test (default: test).
            test → verbose, human-readable colored console      (logback-profile-test.xml)
            prod → INFO+, one-line JSON to console + rolling file (logback-profile-prod.xml)
-         scripts/demo-up.sh sets this from its PROFILE variable.
+         the compose demo sets this via SPRING_PROFILES_ACTIVE / app.profile.
          NB: the included files must NOT be named logback-test.xml / logback.xml — logback
          auto-loads those as top-level config, which breaks the <included> include mechanism. -->
     <include resource="logback-profile-${app.profile:-test}.xml"/>

@@ -1,6 +1,5 @@
-# Single-node kind dev loop (Skaffold's default). The one node can't hold api:2 + full Spark BI
-# at once (Spark wants whole cores), so trim to api:1 and BI off. Turn BI on with the `bi`
-# Skaffold profile (or `helm upgrade --set bi.enabled=true`).
+# Single-node kind dev loop (Skaffold's default). The one node can't hold api:2 + full Spark BI at
+# once, so trim to api:1 and BI off. Turn BI on with `skaffold run -p bi`.
 api:
   replicas: 1
 

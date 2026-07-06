@@ -5,7 +5,8 @@ kind: Deployment
 metadata:
   name: elevator-api
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   replicas: {{ .Values.api.replicas }}
   # Roll in place (no surge pod) on a CPU-constrained single node — see app.yaml.
@@ -22,11 +23,12 @@ spec:
       labels:
         app: elevator-api
     spec:
-      {{- include "elevator.imagePullSecrets" . | nindent 6 }}
+      imagePullSecrets:
+        - name: {{ .Values.global.imagePullSecret }}
       containers:
         - name: elevator-api
-          image: {{ .Values.images.api }}
-          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          image: {{ .Values.global.images.api }}
+          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
           ports:
             - containerPort: 8080
           envFrom:
@@ -67,7 +69,8 @@ kind: Service
 metadata:
   name: elevator-api
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   selector:
     app: elevator-api

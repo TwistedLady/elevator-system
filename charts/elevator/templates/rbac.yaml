@@ -5,14 +5,16 @@ kind: ServiceAccount
 metadata:
   name: elevator-app
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: elevator-app-pod-reader
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 rules:
   - apiGroups: [""]
     resources: ["pods"]
@@ -23,7 +25,8 @@ kind: RoleBinding
 metadata:
   name: elevator-app-pod-reader
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 subjects:
   - kind: ServiceAccount
     name: elevator-app

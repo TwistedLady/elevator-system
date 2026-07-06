@@ -1,83 +1,72 @@
-# Default values = the full cluster, faithful to the old k8s/*.yaml (api:2, app:2, BI on).
-# For the CPU-constrained single-node kind loop, Skaffold layers values-dev.yaml on top
-# (api:1, BI off — see the note in cpu-fit docs).
+# Default values = the full system (api:2, app:2, web console + BI + seed on). Skaffold layers
+# values-dev.yaml on top for the single-node kind loop (api:1, BI off).
 
-images:
-  app: elevator-app:local
-  api: elevator-api:local
-  consoleWeb: elevator-console-web:local
-  bi: elevator-bi:local
-  consoleCli: elevator-console-cli:local
-  kafka: apache/kafka:3.8.1
-  postgres: postgres:17
-  # imagePullPolicy for the locally-built (:local) images. Kept IfNotPresent so kind uses
-  # the image Skaffold loaded instead of trying to pull it.
-  pullPolicy: IfNotPresent
+# ── global: shared with EVERY subchart (Helm auto-propagates `.Values.global`) ───────────────────
+global:
+  images:
+    app: elevator-app:local
+    api: elevator-api:local
+    consoleWeb: elevator-console-web:local
+    bi: elevator-bi:local
+    consoleCli: elevator-console-cli:local
+    kafka: apache/kafka:3.8.1
+    postgres: postgres:17
+    # IfNotPresent so kind uses the image Skaffold loaded instead of trying to pull it.
+    pullPolicy: IfNotPresent
+  # Pull secret the pods reference (created by Terraform; tolerated if absent for :local images).
+  imagePullSecret: ghcr-pull
+  # kind's node/docker network CIDR — kubelet probes originate here, so the netpols must allow it.
+  nodeCidr: "172.20.0.0/16"
+  kafka:
+    bootstrap: "kafka:9092"
+    commandTopic: "elevator-commands"
+    stateTopic: "elevator-state"
+    groupId: "elevator-app"
+  postgres:
+    host: "postgres"
+    database: "elevator"
+    user: "elevator"
+    # demo only — a real cluster should mount this from a Secret
+    password: "elevator"
+    storage: "1Gi"
+  # the SEPARATE analytics DB the api reads and the Spark BI jobs write
+  stats:
+    host: "postgres-stats"
+    database: "elevator_stats"
+    storage: "1Gi"
 
-# Secret holding the private GHCR pull token. Created by Terraform (a dummy on kind, a real
-# token in CD). Tolerated if absent while images are public / :local.
-imagePullSecret: ghcr-pull
-
-# kind's node/docker network CIDR. Under Calico, kubelet liveness/readiness probes originate
-# from the node, so the app + console-web ingress policies must allow this range on the probe port.
-nodeCidr: "172.20.0.0/16"
-
+# ── parent-only: the always-on core ──────────────────────────────────────────────────────────────
 app:
   replicas: 2
 
 api:
   replicas: 2
-  # TLS secret (keystore.p12 + password) mounted at /etc/tls. Created by Terraform (tls provider).
+  # TLS keystore secret mounted at /etc/tls (created by Terraform's tls provider).
   tlsSecret: elevator-api-tls
-
-consoleWeb:
-  enabled: true
-  replicas: 1
-
-kafka:
-  bootstrap: "kafka:9092"
-  commandTopic: "elevator-commands"
-  stateTopic: "elevator-state"
-  groupId: "elevator-app"
-
-postgres:
-  host: "postgres"
-  database: "elevator"
-  user: "elevator"
-  # demo only — a real cluster should mount this from a Secret
-  password: "elevator"
-  storage: "1Gi"
 
 # elevator-config: the one place app params live (mounted as env + as files for hot reload).
 config:
   maxFloor: 15
   elevators: "e1,e2,e3,e4,e5,e6,e7,e8,e9,e10"
-  # elevator engine, hot-swapped per move (no restart). fast | slow — replaces the old
-  # comment-swap in k8s/configmap.yaml.
-  engine: "fast"
-  # api runs the prod Spring profile in-cluster (no baked test limits -> fail-fast).
+  engine: "fast"          # fast | slow — hot-swapped per move
   springProfile: "prod"
 
-# BI (Spark analytics). enabled=true renders postgres-stats + the two Spark drivers and flips
-# ELEVATOR_BI_ENABLED so the api exposes /api/mileage & /api/served. This replaces scripts/bi.sh:
-# `helm upgrade --set bi.enabled=true|false` reconciles pods + flag in one step.
+# ── optional components (subcharts; see Chart.yaml dependencies) ──────────────────────────────────
+# `<name>.enabled` is BOTH the subchart condition AND passed into the subchart as its values.
+console-web:
+  enabled: true
+  replicas: 1
+
 bi:
   enabled: true
-  stats:
-    host: "postgres-stats"
-    database: "elevator_stats"
-    storage: "1Gi"
-  # shared hostPath dirs on the single kind node (checkpoint + durable logs)
   checkpointHostPath: "/mnt/elevator-bi-checkpoint"
   logsHostPath: "/mnt/elevator-bi-logs"
 
-# Seed orders on first install (replaces scripts/seed-k8s.sh). A Helm post-install hook Job runs the
-# console CLI `simulate` against the api. post-install only, so a `skaffold dev` redeploy (an upgrade)
-# does NOT re-seed — Kafka has no volume, so this fills the empty chart once on cluster bring-up.
+# Seed orders on FIRST install (post-install hook Job runs the console CLI `simulate`). post-install
+# only, so a `skaffold dev` redeploy (an upgrade) does not re-seed the empty Kafka.
 seed:
   enabled: true
   count: 300
   elevatorCount: 10
   maxFloor: 15
-  # api URL the seed Job hits (in-cluster HTTPS; the CLI image bundles the CA Terraform generated).
   apiUrl: "https://elevator-api:8080"

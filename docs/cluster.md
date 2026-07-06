@@ -55,5 +55,5 @@ cd terraform && terraform destroy      # deletes the whole kind cluster (and eve
   emits a PKCS12 keystore, so Terraform builds it there and loads it into the secret.
 - **CD** (`.github/workflows/cd.yml`) deploys this same chart with `helm upgrade` (images pinned to
   the commit). The old `k8s/*.yaml` is gone — the chart is the single source.
-- **Still on scripts:** the local host-JVM demo (`scripts/demo-up.sh`, compose + JVMs — [run.md](run.md)).
-  A different environment (not kind); it can move to `docker compose` next.
+- **Local (non-cluster) alternative:** `docker compose -f docker-compose.demo.yml up` runs the whole
+  backend in containers — see [run.md](run.md). `scripts/` now holds only the `pre-commit` hook.

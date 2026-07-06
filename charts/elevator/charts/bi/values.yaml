@@ -1,0 +1,6 @@
+# Defaults; the parent's `bi:` block overrides these (and carries `enabled` for the condition).
+# Shared DB/kafka/image settings come from `.Values.global.*`.
+enabled: true
+# shared hostPath dirs on the single kind node (checkpoint + durable logs)
+checkpointHostPath: "/mnt/elevator-bi-checkpoint"
+logsHostPath: "/mnt/elevator-bi-logs"

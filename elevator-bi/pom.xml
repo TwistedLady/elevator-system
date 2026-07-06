@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!-- STANDALONE module: deliberately NOT a child of the root reactor. Spark has no Scala 3
-         build, so this is pinned to Scala 2.13 and must not mix with the Scala 3 reactor.
+         build, so this is pinned to Scala 2.12 and must not mix with the Scala 3 reactor.
          Build it on its own:  mvn -f elevator-bi/pom.xml package  -->
     <groupId>pl.feelcodes.elevator</groupId>
     <artifactId>elevator-bi</artifactId>
-    <version>0.1.0</version>
+    <version>1.0.0</version>
     <packaging>jar</packaging>
     <name>elevator-bi</name>
     <description>Spark Structured Streaming BI: per-elevator mileage from the elevator-state topic</description>
@@ -86,6 +86,7 @@
     </dependencies>
 
     <build>
+        <finalName>elevator-bi</finalName>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>

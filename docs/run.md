@@ -6,22 +6,25 @@ A working backend (no web frontend) proving the full path: `POST /api/order` →
 
 ## Demo
 
+The whole backend runs in containers — no host JVMs, no shell scripts:
+
 ```bash
-scripts/demo-up.sh          # infra + both JVMs, seeds a fleet (e1..eN), opens the chart
-scripts/demo.sh lift-a 5    # order lift-a to floor 5, poll until it arrives (PASS/FAIL)
-scripts/demo-down.sh        # stop everything
+docker compose -f docker-compose.demo.yml up --build          # kafka + postgres + app + api
+docker compose -f docker-compose.demo.yml --profile seed up    # …and seed a fleet of orders (one-shot Job)
+docker compose -f docker-compose.demo.yml down                 # stop everything (add -v to wipe data)
+docker compose -f docker-compose.demo.yml logs -f app api      # follow the JVM logs
 
 # durable read-model (survives a restart, unlike the Kafka cache):
 docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
   "SELECT elevator_name, floor, direction, motion FROM elevator_state_view;"
 ```
 
-`demo-up.sh` knobs: `PROFILE=test|prod` · `ELEVATORS=N` · `FLEET_FILE=scripts/fleet.txt` ·
-`SEED=N` · `SEED_MAX_FLOOR=20` · `NO_UI=1`.
+Seed knobs live in the `seed` service's `command:` in `docker-compose.demo.yml`
+(`--elevator-count`, `--max-floor`, `--count`).
 
-> **Why it seeds a fleet:** Kafka has no volume, so a restart wipes `elevator-state` (and the
-> api cache) — the chart would start blank though the Postgres journal still has the actors.
-> So `demo-up.sh` fires a burst of orders after boot.
+> **Why seed:** Kafka has no volume, so a restart wipes `elevator-state` (and the api cache) — the
+> chart starts blank though the Postgres journal still has the actors. The `seed` profile fires a
+> burst of orders after boot.
 
 > Schema is created from `db/init/` on first Postgres start. Recreate from scratch:
 > `docker compose -p elevator-demo -f docker-compose.demo.yml down -v`.
@@ -36,8 +39,7 @@ SSE `GET /api/elevator/stream`).
 cd elevator-console-cli && cargo run -- monitor      # or: elevator-console-cli watch  (stream to stdout)
 ```
 
-Bash fallback chart: `scripts/monitor.sh` (auto-discovers elevators; `MAX_FLOOR`, `INTERVAL`,
-`FRAMES=N`). Logs while running: `.run/app.log`, `.run/api.log`.
+Logs while running: `docker compose -f docker-compose.demo.yml logs -f app api`.
 
 ## Endpoints
 

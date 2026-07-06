@@ -1,4 +1,3 @@
-{{- if .Values.consoleWeb.enabled }}
 # The Angular web console: nginx serving the static bundle + reverse-proxying /api + /actuator to
 # the elevator-api Service. Internal-only (ClusterIP) — reach it with:
 #   kubectl port-forward svc/elevator-console-web 8081:80
@@ -7,9 +6,10 @@ kind: Deployment
 metadata:
   name: elevator-console-web
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
-  replicas: {{ .Values.consoleWeb.replicas }}
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
       app: elevator-console-web
@@ -18,11 +18,12 @@ spec:
       labels:
         app: elevator-console-web
     spec:
-      {{- include "elevator.imagePullSecrets" . | nindent 6 }}
+      imagePullSecrets:
+        - name: {{ .Values.global.imagePullSecret }}
       containers:
         - name: elevator-console-web
-          image: {{ .Values.images.consoleWeb }}
-          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          image: {{ .Values.global.images.consoleWeb }}
+          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
           ports:
             - containerPort: 80
           readinessProbe:
@@ -38,11 +39,29 @@ kind: Service
 metadata:
   name: elevator-console-web
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   selector:
     app: elevator-console-web
   ports:
     - port: 80
       targetPort: 80
-{{- end }}
+---
+# The kubelet readiness probe on :80 must be allowed under Calico (default-deny in the parent).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-webconsole-probe
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
+spec:
+  podSelector:
+    matchLabels: { app: elevator-console-web }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: {{ .Values.global.nodeCidr | quote }} }   # kubelet probe source
+      ports:
+        - { protocol: TCP, port: 80 }

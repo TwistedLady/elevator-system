@@ -6,28 +6,27 @@ kind: ConfigMap
 metadata:
   name: elevator-config
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 data:
   # ---- managed app params (hot-reloaded) ----
   ELEVATOR_MAXFLOOR: {{ .Values.config.maxFloor | quote }}
   ELEVATOR_ELEVATORS: {{ .Values.config.elevators | quote }}
-  # elevator engine, hot-swapped per move. fast | slow.
   ELEVATOR_ENGINE: {{ .Values.config.engine | quote }}
-  # BI on/off. Read at api startup (@ConditionalOnProperty); Helm keeps it in step with the pods.
   ELEVATOR_BI_ENABLED: {{ .Values.bi.enabled | quote }}
 
   # ---- infra wiring (needs a restart to change) ----
-  ELEVATOR_PG_HOST: {{ .Values.postgres.host | quote }}
-  ELEVATOR_STATS_PG_HOST: {{ .Values.bi.stats.host | quote }}
-  ELEVATOR_STATS_PG_DATABASE: {{ .Values.bi.stats.database | quote }}
+  ELEVATOR_PG_HOST: {{ .Values.global.postgres.host | quote }}
+  ELEVATOR_STATS_PG_HOST: {{ .Values.global.stats.host | quote }}
+  ELEVATOR_STATS_PG_DATABASE: {{ .Values.global.stats.database | quote }}
   SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
   SERVER_PORT: "8080"
   # Kafka — app-side env names
-  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrap | quote }}
-  ELEVATOR_KAFKA_GROUP_ID: {{ .Values.kafka.groupId | quote }}
-  ELEVATOR_KAFKA_COMMAND_TOPIC: {{ .Values.kafka.commandTopic | quote }}
-  ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.kafka.stateTopic | quote }}
+  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
+  ELEVATOR_KAFKA_GROUP_ID: {{ .Values.global.kafka.groupId | quote }}
+  ELEVATOR_KAFKA_COMMAND_TOPIC: {{ .Values.global.kafka.commandTopic | quote }}
+  ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
   # Kafka — api-side env names (same values, different keys)
-  SPRING_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrap | quote }}
-  ELEVATOR_COMMAND_TOPIC: {{ .Values.kafka.commandTopic | quote }}
-  ELEVATOR_STATE_TOPIC: {{ .Values.kafka.stateTopic | quote }}
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
+  ELEVATOR_COMMAND_TOPIC: {{ .Values.global.kafka.commandTopic | quote }}
+  ELEVATOR_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}

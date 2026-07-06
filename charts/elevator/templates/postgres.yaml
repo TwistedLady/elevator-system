@@ -5,7 +5,8 @@ kind: Service
 metadata:
   name: postgres
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   clusterIP: None          # headless: stable DNS for the StatefulSet pod
   selector:
@@ -19,7 +20,8 @@ kind: StatefulSet
 metadata:
   name: postgres
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   serviceName: postgres
   replicas: 1
@@ -33,14 +35,14 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: {{ .Values.images.postgres }}
+          image: {{ .Values.global.images.postgres }}
           ports:
             - containerPort: 5432
           env:
-            - { name: POSTGRES_DB, value: {{ .Values.postgres.database | quote }} }
-            - { name: POSTGRES_USER, value: {{ .Values.postgres.user | quote }} }
+            - { name: POSTGRES_DB, value: {{ .Values.global.postgres.database | quote }} }
+            - { name: POSTGRES_USER, value: {{ .Values.global.postgres.user | quote }} }
             # demo only — replace with a valueFrom: secretKeyRef in a real cluster
-            - { name: POSTGRES_PASSWORD, value: {{ .Values.postgres.password | quote }} }
+            - { name: POSTGRES_PASSWORD, value: {{ .Values.global.postgres.password | quote }} }
             - { name: PGDATA, value: "/var/lib/postgresql/data/pgdata" }
           volumeMounts:
             - name: pgdata
@@ -49,12 +51,12 @@ spec:
               mountPath: /docker-entrypoint-initdb.d
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", {{ .Values.postgres.user | quote }}, "-d", {{ .Values.postgres.database | quote }}]
+              command: ["pg_isready", "-U", {{ .Values.global.postgres.user | quote }}, "-d", {{ .Values.global.postgres.database | quote }}]
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", {{ .Values.postgres.user | quote }}, "-d", {{ .Values.postgres.database | quote }}]
+              command: ["pg_isready", "-U", {{ .Values.global.postgres.user | quote }}, "-d", {{ .Values.global.postgres.database | quote }}]
             initialDelaySeconds: 15
             periodSeconds: 20
       volumes:
@@ -68,4 +70,4 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: {{ .Values.postgres.storage | quote }}
+            storage: {{ .Values.global.postgres.storage | quote }}

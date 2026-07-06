@@ -1,11 +1,13 @@
-# NetworkPolicies — expose ONLY the api; keep kafka/postgres/app internal. Enforced under Calico
-# (Terraform installs it). Policies are a UNION; the BI ones below are added when bi.enabled.
+# Base NetworkPolicies — expose ONLY the api; keep kafka/postgres/app internal. Enforced under
+# Calico. Policies are a UNION: the console-web + BI subcharts add their own policies when enabled,
+# so nothing here is conditional.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-ingress
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   podSelector: {}            # all pods in the namespace
   policyTypes: [Ingress]
@@ -16,7 +18,8 @@ kind: NetworkPolicy
 metadata:
   name: allow-api-external
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   podSelector:
     matchLabels: { app: elevator-api }
@@ -31,7 +34,8 @@ kind: NetworkPolicy
 metadata:
   name: allow-kafka-internal
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   podSelector:
     matchLabels: { app: kafka }
@@ -40,9 +44,6 @@ spec:
     - from:
         - podSelector: { matchLabels: { app: elevator-api } }
         - podSelector: { matchLabels: { app: elevator-app } }
-        {{- if .Values.bi.enabled }}
-        - podSelector: { matchLabels: { app: elevator-bi } }
-        {{- end }}
       ports:
         - { protocol: TCP, port: 9092 }
 ---
@@ -51,7 +52,8 @@ kind: NetworkPolicy
 metadata:
   name: allow-postgres-internal
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   podSelector:
     matchLabels: { app: postgres }
@@ -60,9 +62,6 @@ spec:
     - from:
         - podSelector: { matchLabels: { app: elevator-api } }
         - podSelector: { matchLabels: { app: elevator-app } }
-        {{- if .Values.bi.enabled }}
-        - podSelector: { matchLabels: { app: elevator-bi } }
-        {{- end }}
       ports:
         - { protocol: TCP, port: 5432 }
 ---
@@ -71,7 +70,8 @@ kind: NetworkPolicy
 metadata:
   name: allow-app-cluster-internal
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   podSelector:
     matchLabels: { app: elevator-app }
@@ -83,24 +83,6 @@ spec:
         - { protocol: TCP, port: 2551 }   # Pekko remoting
         - { protocol: TCP, port: 8558 }   # Pekko management / cluster bootstrap
     - from:                               # kubelet liveness/readiness probes come from the node
-        - ipBlock: { cidr: {{ .Values.nodeCidr | quote }} }
+        - ipBlock: { cidr: {{ .Values.global.nodeCidr | quote }} }
       ports:
         - { protocol: TCP, port: 8558 }
-{{- if .Values.consoleWeb.enabled }}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-webconsole-probe
-  labels:
-    {{- include "elevator.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels: { app: elevator-console-web }
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - ipBlock: { cidr: {{ .Values.nodeCidr | quote }} }   # kubelet probe source
-      ports:
-        - { protocol: TCP, port: 80 }
-{{- end }}

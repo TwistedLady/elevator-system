@@ -28,13 +28,17 @@ flowchart LR
 ## Quick start
 
 ```bash
-scripts/demo-up.sh          # infra + both JVMs, seeds a fleet, opens the chart
-scripts/demo.sh lift-a 5    # order an elevator, watch it arrive
-scripts/demo-down.sh
+docker compose -f docker-compose.demo.yml up --build           # kafka + postgres + app + api
+docker compose -f docker-compose.demo.yml --profile seed up     # …and seed a fleet of orders
+( cd elevator-console-cli && cargo run -- monitor )             # live chart (talks to http://localhost:8080)
+docker compose -f docker-compose.demo.yml down                  # stop  (add -v to wipe data)
 ```
 
+Or run it on a real cluster (kind) with Terraform + Helm + Skaffold — see
+**[docs/cluster.md](docs/cluster.md)**.
+
 Build: Maven multi-module, Java 21 — `mvn package`. The Rust console is a separate `cargo`
-build behind `-Pconsole`.
+build behind `-Pconsole`. One version for the whole project (root `VERSION`, CI-enforced).
 
 ## Docs
 

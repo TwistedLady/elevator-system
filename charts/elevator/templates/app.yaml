@@ -7,7 +7,8 @@ kind: Deployment
 metadata:
   name: elevator-app
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 spec:
   replicas: {{ .Values.app.replicas }}
   # Roll in place (no surge pod) so a new revision schedules on a CPU-constrained single node.
@@ -28,11 +29,12 @@ spec:
       serviceAccountName: elevator-app
       # Allow graceful drain: stop the Kafka consumer + hand off shards before the pod dies.
       terminationGracePeriodSeconds: 60
-      {{- include "elevator.imagePullSecrets" . | nindent 6 }}
+      imagePullSecrets:
+        - name: {{ .Values.global.imagePullSecret }}
       containers:
         - name: elevator-app
-          image: {{ .Values.images.app }}
-          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          image: {{ .Values.global.images.app }}
+          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
           envFrom:
             - configMapRef:
                 name: elevator-config

@@ -41,10 +41,10 @@ manifests:
         valuesFiles:
           - charts/elevator/values-dev.yaml
         setValueTemplates:
-          images.app: '{{.IMAGE_FULLY_QUALIFIED_elevator_app}}'
-          images.api: '{{.IMAGE_FULLY_QUALIFIED_elevator_api}}'
-          images.consoleWeb: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_web}}'
-          images.consoleCli: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_cli}}'
+          global.images.app: '{{.IMAGE_FULLY_QUALIFIED_elevator_app}}'
+          global.images.api: '{{.IMAGE_FULLY_QUALIFIED_elevator_api}}'
+          global.images.consoleWeb: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_web}}'
+          global.images.consoleCli: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_cli}}'
         setValues: {}
 
 # ── deploy ─────────────────────────────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ profiles:
                 - elevator-bi/Dockerfile
                 - elevator-bi/conf
       - op: add
-        path: /manifests/helm/releases/0/setValueTemplates/images.bi
+        path: /manifests/helm/releases/0/setValueTemplates/global.images.bi
         value: '{{.IMAGE_FULLY_QUALIFIED_elevator_bi}}'
       - op: add
         path: /manifests/helm/releases/0/setValues/bi.enabled

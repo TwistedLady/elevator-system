@@ -5,7 +5,8 @@ kind: ConfigMap
 metadata:
   name: postgres-init
   labels:
-    {{- include "elevator.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
 data:
   01-pekko-r2dbc.sql: |
     -- Pekko-owned schema for pekko-persistence-r2dbc + pekko-projection-r2dbc 1.1.0.

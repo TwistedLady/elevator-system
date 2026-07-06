@@ -1,37 +1,38 @@
-# Slim demo infra: a single-node KRaft Kafka + Postgres (no ZooKeeper, no Oracle, no web).
-# Run under an isolated project name so it never collides with the full docker-compose.yml:
-#   docker compose -p elevator-demo -f docker-compose.demo.yml up -d
-# The two JVM apps (elevator-app, elevator-api) run on the host via scripts/demo-up.sh.
-# Postgres backs the Pekko event journal + the read-side projection (elevator_state_view).
-# Schema is created from ./db/init on first start; the named volume `pgdata` survives restarts.
+# Local demo — the WHOLE backend in containers, no cluster, no host JVMs, no shell scripts:
+#   docker compose -f docker-compose.demo.yml up --build          # kafka + postgres + app + api
+#   docker compose -f docker-compose.demo.yml --profile seed up    # …and seed a fleet of orders
+#   docker compose -f docker-compose.demo.yml down                 # stop   (add -v to wipe data)
+#   docker compose -f docker-compose.demo.yml logs -f app api      # follow the JVM logs
+#
+# app + api are built from their Dockerfiles (repo-root context) and wired to the in-network
+# kafka/postgres. The Rust console runs on the host: orders/monitor via the api at
+# http://localhost:8080; a host Kafka client uses localhost:9094 (the EXTERNAL listener).
 services:
   kafka:
     image: apache/kafka:3.8.1
     container_name: elevator-demo-kafka
     ports:
-      - "9092:9092"
+      - "9094:9094"                # EXTERNAL listener for host clients (the console)
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # Two client listeners: PLAINTEXT (in-network, advertised kafka:9092) and EXTERNAL
+      # (host, advertised localhost:9094). Controller listener is internal-only.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      # Persist broker + KRaft metadata so a restart no longer wipes topics (and the live chart).
-      # Default log.dirs is under /tmp, which is lost on recreate; point it at the mounted volume.
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-      # Pin the cluster id so the existing volume's meta.properties always matches on remount.
       CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
     volumes:
-      - kafkadata:/var/lib/kafka/data  # survives container restarts/recreates
-      - ./logs/kafka:/opt/kafka/logs   # server.log, controller.log, … on the host
+      - kafkadata:/var/lib/kafka/data
 
   postgres:
     image: postgres:17
@@ -42,28 +43,65 @@ services:
       POSTGRES_DB: elevator
       POSTGRES_USER: elevator
       POSTGRES_PASSWORD: elevator        # demo only — use a secret in real deployments
-    # Write the server log to a file (default is stderr only) so it lands in the host ./logs.
-    command:
-      - "postgres"
-      - "-c"
-      - "logging_collector=on"
-      - "-c"
-      - "log_directory=/var/log/postgresql"
-      - "-c"
-      - "log_filename=postgresql.log"
-      - "-c"
-      - "log_rotation_age=0"             # one growing file for the demo (no daily rotation)
-      - "-c"
-      - "log_rotation_size=0"
     volumes:
-      - pgdata:/var/lib/postgresql/data  # persists across container restarts/recreates
+      - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro  # schema; runs once on a fresh pgdata volume
-      - ./logs/postgres:/var/log/postgresql  # postgresql.log on the host (dir must be writable: chmod 777)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U elevator -d elevator"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: elevator-app/Dockerfile
+    image: elevator-app:local
+    container_name: elevator-demo-app
+    depends_on:
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+      ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELEVATOR_PG_HOST: postgres
+      # single-node demo: no Pekko cluster bootstrap (that's a k8s-only concern)
+
+  api:
+    build:
+      context: .
+      dockerfile: elevator-api/Dockerfile
+    image: elevator-api:local
+    container_name: elevator-demo-api
+    depends_on:
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: test        # test profile bakes validation limits (no fail-fast)
+      SERVER_PORT: "8080"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELEVATOR_PG_HOST: postgres
+      # TLS off for the local demo (the cluster serves HTTPS; here it's plain http on :8080)
+
+  # Opt-in one-shot seeding: `docker compose -f docker-compose.demo.yml --profile seed up`
+  seed:
+    build:
+      context: elevator-console-cli
+      dockerfile: Dockerfile
+    image: elevator-console-cli:local
+    profiles: [seed]
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      ELEVATOR_API: "http://api:8080"
+    command: ["simulate", "--elevator-count", "4", "--max-floor", "10", "--count", "300"]
 
 volumes:
   pgdata:
