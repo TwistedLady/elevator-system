@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::BoxErr;
 
@@ -47,6 +47,20 @@ pub fn agent() -> ureq::Agent {
 /// The API base URL, e.g. `http://localhost:8080`. Endpoints hang off it.
 pub fn health_url(api_base: &str) -> String {
     format!("{api_base}/actuator/health")
+}
+
+#[derive(Deserialize)]
+struct VersionResp {
+    version: String,
+}
+
+/// GET /api/version — the backend's build version. Used to check the console matches the backend.
+/// Parsed via serde_json (ureq's `json` feature is off) to keep the dependency surface small.
+pub fn get_version(agent: &ureq::Agent, api_base: &str) -> Result<String, BoxErr> {
+    let url = format!("{api_base}/api/version");
+    let body = agent.get(&url).call()?.into_string()?;
+    let resp: VersionResp = serde_json::from_str(&body)?;
+    Ok(resp.version)
 }
 
 /// POST an order. The API validates it and publishes it to the system; we don't wait for the car.

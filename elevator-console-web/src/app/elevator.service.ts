@@ -67,4 +67,8 @@ export class ElevatorService {
   health(): Promise<{ status: string }> {
     return firstValueFrom(this.http.get<{ status: string }>('/actuator/health'));
   }
+
+  version(): Promise<{ version: string }> {
+    return firstValueFrom(this.http.get<{ version: string }>('/api/version'));
+  }
 }

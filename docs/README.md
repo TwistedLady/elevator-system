@@ -16,6 +16,7 @@ One topic per file. New here? Read [architecture](architecture.md) first.
 - [scheduling.md](scheduling.md) — the SCAN next-move policy.
 - [core.md](core.md) — `elevator-common-core`: domain + engine.
 - [cicd.md](cicd.md) — CI build/test gate and CD deploy.
+- [versioning.md](versioning.md) — one `VERSION` file; how the API and both consoles check it.
 
 ## How-to — do it
 - [run.md](run.md) — run the demo, endpoints, live view, config.
