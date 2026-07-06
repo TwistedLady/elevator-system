@@ -1,0 +1,5 @@
+apiVersion: v2
+name: console-web
+description: The Angular web console (nginx). Optional — toggled by console-web.enabled in the parent.
+type: application
+version: 1.0.0

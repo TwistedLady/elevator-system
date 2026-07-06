@@ -11,7 +11,7 @@ flowchart TB
   bt --> img["images (PR only, no push)"]
   bt -->|success on main| rd["Release & Deploy (cd.yml)"]
   rd --> pub["publish → GHCR<br/>tag sha-&lt;12&gt; + latest"]
-  pub --> dep["deploy → Kubernetes"] --> k8s[("kind cluster")]
+  pub --> dep["deploy → helm upgrade"] --> k8s[("kind cluster")]
 ```
 
 ## Build & Test — `ci.yml` (push + PR to `main`)
@@ -29,10 +29,11 @@ flowchart TB
 
 - **publish**: builds + pushes `ghcr.io/<owner>/elevator-{app,api}`, tagged `sha-<12>` + `latest`.
   Uses built-in `GITHUB_TOKEN` — no secret to configure.
-- **deploy** (`runs-on: self-hosted`): applies manifests in cluster order — RBAC/config/DB-schema
-  → stateful backends (`postgres`, `kafka`, wait for rollout) → app/api, then
-  `kubectl set image …:sha-<12>` to pin this exact commit → wait for rollout
-  (`maxUnavailable: 0`, generous timeout for cluster-formation + journal recovery).
+- **deploy** (`runs-on: self-hosted`): `helm upgrade --install elevator charts/elevator` with the
+  images pinned to this commit (`--set images.*=…:sha-<12>`), `--wait` until every rollout is Ready
+  (the app's generous startup probe tolerates Helm's apply order — it retries until Postgres/Kafka
+  are up). BI + one-shot seeding stay off in CD. The cluster + Calico + the `elevator-api-tls` /
+  `ghcr-pull` secrets are provisioned once by `terraform apply` ([cluster.md](cluster.md)), not by CD.
 
 ## Self-hosted runner (why + recreate)
 
@@ -66,9 +67,9 @@ Notes:
 
 ## Notes
 
-- **Images stay `:local` in manifests** so the kind demo (`kind load … :local`) keeps working;
-  CD overrides the image at deploy time with `kubectl set image` — local and cloud never fight.
+- **Image refs are chart values** (`images.*`, default `:local` for the kind/Skaffold loop); CD
+  overrides them at deploy time with `helm --set images.*=…:sha-<12>` — local and cloud never fight.
 - **GHCR is public** → no pull secret. If made private, add `GHCR_PULL_TOKEN` (PAT,
-  `read:packages`); CD then creates the `ghcr-pull` secret both deployments reference.
-- **Follow-ups:** `terraform/` drifts from `k8s/` (`k8s/` is authoritative, not wired into CD);
-  Postgres password is still in a ConfigMap — move to a `Secret` before any real deploy.
+  `read:packages`); the `ghcr-pull` secret the chart references is provisioned by Terraform.
+- **Follow-ups:** the Postgres password is still a chart value (not a `Secret`) — move it to a
+  `Secret` before any real deploy.

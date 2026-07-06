@@ -4,6 +4,6 @@
 # Spark itself is provided by this base image.
 FROM apache/spark:3.5.3-java17
 
-COPY target/elevator-bi-0.1.0.jar /opt/spark/jobs/elevator-bi.jar
+COPY target/elevator-bi.jar /opt/spark/jobs/elevator-bi.jar
 # Log4j2 config used by both the driver and executors (console + durable rolling file).
 COPY conf/log4j2.properties /opt/spark/conf/log4j2.properties

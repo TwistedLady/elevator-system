@@ -3,7 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>pl.feelcodes.elevator</groupId>
     <artifactId>elevator</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <!-- Lockstep version: every module is this same number (the repo-root VERSION file is the
+         source of truth; a CI check fails the build if any module drifts). Bump all modules with
+         `mvn versions:set -DnewVersion=X` and keep VERSION + Cargo.toml + package.json + the Helm
+         chart in step. -->
+    <version>1.0.0</version>
     <packaging>pom</packaging>
     <name>elevator</name>
 
@@ -254,6 +258,19 @@
             <properties>
                 <cargo.skip>false</cargo.skip>
             </properties>
+        </profile>
+
+        <!-- Opt in to building the Scala 2.12 / Spark BI module as part of the reactor:
+             `mvn -Pbi package` builds the whole project INCLUDING elevator-bi. It is kept out of the
+             default <modules> on purpose — Spark has no Scala 3 build (the reactor is Scala 3) and its
+             uber-jar pulls the heavy Spark graph, so a plain `mvn` stays fast and Scala-3-only. bi is
+             parent-less, so it does not inherit the reactor's requireUpperBoundDeps enforcer (which
+             Spark's dependency graph would fail). In IntelliJ, tick `bi` in the Maven panel. -->
+        <profile>
+            <id>bi</id>
+            <modules>
+                <module>elevator-bi</module>
+            </modules>
         </profile>
     </profiles>
 

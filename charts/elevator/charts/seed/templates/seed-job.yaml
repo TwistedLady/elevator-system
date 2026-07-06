@@ -1,0 +1,40 @@
+# Seed the chart on FIRST install (replaces scripts/seed-k8s.sh). A Helm post-install hook Job runs
+# the console CLI `simulate` against the api over in-cluster HTTPS (the CLI image bundles the CA).
+# post-install only => a `skaffold dev` redeploy (an upgrade) does not re-seed. No conditionals here —
+# the whole subchart is skipped when seed.enabled is false (see the parent Chart.yaml condition).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elevator-seed
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6            # the api may still be rolling out; retry until it answers
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: elevator-seed
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: {{ .Values.global.imagePullSecret }}
+      containers:
+        - name: seed
+          image: {{ .Values.global.images.consoleCli }}
+          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
+          env:
+            - { name: ELEVATOR_API, value: {{ .Values.apiUrl | quote }} }
+          args:
+            - "simulate"
+            - "--elevator-count"
+            - {{ .Values.elevatorCount | quote }}
+            - "--max-floor"
+            - {{ .Values.maxFloor | quote }}
+            - "--count"
+            - {{ .Values.count | quote }}

@@ -20,6 +20,7 @@ One topic per file. New here? Read [architecture](architecture.md) first.
 
 ## How-to — do it
 - [run.md](run.md) — run the demo, endpoints, live view, config.
+- [cluster.md](cluster.md) — run on kind with Terraform · Helm · Skaffold (no shell scripts).
 - [apt-repo.md](apt-repo.md) — install the console with `apt install` from a signed local repo.
 - [dev-worktrees.md](dev-worktrees.md) — many branches in one IntelliJ window.
 

@@ -27,3 +27,6 @@ scripts/fleet.txt
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# Local backup of the pre-Helm terraform (kept on disk, not tracked)
+terraform.old-june15.bak/

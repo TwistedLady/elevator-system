@@ -1,0 +1,73 @@
+# Postgres for the Pekko event journal + projections. A StatefulSet (stable identity + own PVC) so
+# data survives pod restarts/reschedules. Reached at "postgres:5432" via the headless Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
+spec:
+  clusterIP: None          # headless: stable DNS for the StatefulSet pod
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.global.images.postgres }}
+          ports:
+            - containerPort: 5432
+          env:
+            - { name: POSTGRES_DB, value: {{ .Values.global.postgres.database | quote }} }
+            - { name: POSTGRES_USER, value: {{ .Values.global.postgres.user | quote }} }
+            # demo only — replace with a valueFrom: secretKeyRef in a real cluster
+            - { name: POSTGRES_PASSWORD, value: {{ .Values.global.postgres.password | quote }} }
+            - { name: PGDATA, value: "/var/lib/postgresql/data/pgdata" }
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.global.postgres.user | quote }}, "-d", {{ .Values.global.postgres.database | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.global.postgres.user | quote }}, "-d", {{ .Values.global.postgres.database | quote }}]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.global.postgres.storage | quote }}

@@ -1,0 +1,10 @@
+# Single-node kind dev loop (Skaffold's default). The one node can't hold api:2 + full Spark BI at
+# once, so trim to api:1 and BI off. Turn BI on with `skaffold run -p bi`.
+api:
+  replicas: 1
+
+app:
+  replicas: 2   # keep 2 so the Pekko cluster still forms (min-members = 2)
+
+bi:
+  enabled: false

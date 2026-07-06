@@ -94,7 +94,7 @@ cargo run -- order --elevator e3 --floor 7
 cargo run --release -- simulate                       # 10k orders across e1..e10, 4 threads
 cargo run --release -- simulate --count 100000 --threads 8 --max-floor 20
 cargo run --release -- simulate --elevator-count 6 --count 500
-cargo run --release -- simulate --elevators-file scripts/fleet.txt --count 500
+cargo run --release -- simulate --elevators-file fleet.example.txt --count 500
 ```
 
 Source precedence: `--elevator-count` > `--elevators-file` > `--elevators`. Names are de-duplicated

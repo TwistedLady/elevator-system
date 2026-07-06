@@ -23,6 +23,35 @@ permissions:
   contents: read
 
 jobs:
+  # The lockstep guard: every module's version MUST equal the repo-root VERSION file. Fails the
+  # build on drift (so app can never be 1.0.0 while api is 0.1.0). Bump all at once with
+  # `mvn versions:set -DnewVersion=X` + edit Cargo.toml / package.json / Chart.yaml / VERSION.
+  version-check:
+    name: Version lockstep (all modules == VERSION)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare every module version to VERSION
+        run: |
+          python3 - <<'PY'
+          import re, sys, json, xml.etree.ElementTree as ET
+          V = open('VERSION').read().strip()
+          ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+          pomv = lambda p: ET.parse(p).getroot().findtext('m:version', namespaces=ns)
+          got = {
+            'VERSION':                 V,
+            'pom.xml':                 pomv('pom.xml'),
+            'elevator-bi/pom.xml':     pomv('elevator-bi/pom.xml'),
+            'Cargo.toml':              re.search(r'^version\s*=\s*"([^"]+)"', open('elevator-console-cli/Cargo.toml').read(), re.M).group(1),
+            'package.json':            json.load(open('elevator-console-web/package.json'))['version'],
+            'charts/elevator/Chart.yaml': re.search(r'^version:\s*(\S+)', open('charts/elevator/Chart.yaml').read(), re.M).group(1),
+          }
+          for k, v in got.items():
+              print(f"  {k:32} {v}")
+          bad = {k: v for k, v in got.items() if v != V}
+          sys.exit(f"::error::version drift vs VERSION={V}: {bad}") if bad else print(f"OK — all modules == {V}")
+          PY
+
   jvm:
     name: Scala/Java · Maven (unit + Testcontainers IT)
     runs-on: ubuntu-latest

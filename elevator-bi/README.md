@@ -57,12 +57,14 @@ mvn -f elevator-bi/pom.xml package      # compiles (Scala 2.12) + runs ScalaTest
 
 The uber jar bundles the Kafka source + Postgres driver; Spark itself is `provided` by the runtime image.
 
-## Deploy (full Spark-on-Kubernetes, no operator/Helm)
+## Deploy (full Spark-on-Kubernetes, via the Helm chart)
+
+The BI layer is part of the `elevator` Helm chart, gated by `bi.enabled` (see [docs/cluster.md](../docs/cluster.md)):
 
 ```bash
-scripts/bi-up.sh          # build jar + image, kind-load, apply manifests, wait for driver + executors
-scripts/bi-logs.sh        # collect driver + executor logs into logs/bi/
-scripts/bi-down.sh        # tear down (add --purge to also drop the table)
+skaffold run -p bi        # build jar + image (custom builder), load into kind, deploy stats DB + drivers
+kubectl logs deploy/elevator-mileage -f          # driver logs (executors: kubectl logs -l role=executor)
+helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false   # tear the BI layer down
 ```
 
 - The `elevator-mileage` **Deployment** runs the Spark **driver** in *client mode*; it spawns 2
@@ -73,12 +75,12 @@ scripts/bi-down.sh        # tear down (add --purge to also drop the table)
 
 ## Logs
 
-Stored three ways (see `conf/log4j2.properties` + `k8s/bi/mileage-driver.yaml`):
+Stored three ways (see `conf/log4j2.properties` + `charts/elevator/templates/bi-jobs.yaml`):
 1. **stdout** — `kubectl logs` / the driver Deployment.
 2. **durable rolling files** — one per pod on the persistent `/opt/elevator-bi/logs` hostPath volume.
 3. **Spark event logs** — `file:///checkpoint/spark-events` (job/stage history, History-Server-readable).
 
-`scripts/bi-logs.sh` pulls all three into `logs/bi/`.
+Collect them with `kubectl logs` / `kubectl cp` from the driver + executor pods.
 
 ## Query via the API
 

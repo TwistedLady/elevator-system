@@ -1,0 +1,32 @@
+# The ONE place app params live. Both elevator-app and elevator-api mount this ConfigMap as env
+# (envFrom) and as files under /etc/elevator-config for LIVE, restart-free reconfiguration.
+# Do NOT use subPath on the mounts, or the kubelet stops syncing edits into the files.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elevator-config
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
+data:
+  # ---- managed app params (hot-reloaded) ----
+  ELEVATOR_MAXFLOOR: {{ .Values.config.maxFloor | quote }}
+  ELEVATOR_ELEVATORS: {{ .Values.config.elevators | quote }}
+  ELEVATOR_ENGINE: {{ .Values.config.engine | quote }}
+  ELEVATOR_BI_ENABLED: {{ .Values.bi.enabled | quote }}
+
+  # ---- infra wiring (needs a restart to change) ----
+  ELEVATOR_PG_HOST: {{ .Values.global.postgres.host | quote }}
+  ELEVATOR_STATS_PG_HOST: {{ .Values.global.stats.host | quote }}
+  ELEVATOR_STATS_PG_DATABASE: {{ .Values.global.stats.database | quote }}
+  SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
+  SERVER_PORT: "8080"
+  # Kafka — app-side env names
+  ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
+  ELEVATOR_KAFKA_GROUP_ID: {{ .Values.global.kafka.groupId | quote }}
+  ELEVATOR_KAFKA_COMMAND_TOPIC: {{ .Values.global.kafka.commandTopic | quote }}
+  ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
+  # Kafka — api-side env names (same values, different keys)
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
+  ELEVATOR_COMMAND_TOPIC: {{ .Values.global.kafka.commandTopic | quote }}
+  ELEVATOR_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}

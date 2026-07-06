@@ -1,0 +1,19 @@
+apiVersion: v2
+name: elevator
+description: The elevator system — Pekko app, Spring api, Kafka, Postgres, and optional web console / Spark BI / seed.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+# Optional components are subcharts toggled by a `condition` — no {{- if }} inside their templates.
+# Each condition reads a parent value; false => Helm skips the whole subchart.
+dependencies:
+  - name: console-web
+    version: 1.0.0
+    condition: console-web.enabled
+  - name: bi
+    version: 1.0.0
+    condition: bi.enabled
+  - name: seed
+    version: 1.0.0
+    condition: seed.enabled

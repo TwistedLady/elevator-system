@@ -1,0 +1,80 @@
+# The Pekko brain. No inbound HTTP for traffic (Kafka only), but exposes Pekko Management on :8558
+# (/ready, /alive) for k8s probes and cluster bootstrap. Two replicas form ONE Pekko cluster via
+# Cluster Bootstrap + Kubernetes API discovery; sharding spreads entities across both pods so a
+# rolling restart stays available. State lives in the Postgres R2DBC journal (survives restarts).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-app
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: elevator
+spec:
+  replicas: {{ .Values.app.replicas }}
+  # Roll in place (no surge pod) so a new revision schedules on a CPU-constrained single node.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: elevator-app
+  template:
+    metadata:
+      labels:
+        app: elevator-app
+    spec:
+      # Needed by kubernetes-api discovery to list sibling pods (see rbac.yaml).
+      serviceAccountName: elevator-app
+      # Allow graceful drain: stop the Kafka consumer + hand off shards before the pod dies.
+      terminationGracePeriodSeconds: 60
+      imagePullSecrets:
+        - name: {{ .Values.global.imagePullSecret }}
+      containers:
+        - name: elevator-app
+          image: {{ .Values.global.images.app }}
+          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: elevator-config
+          env:
+            # Pekko remoting + management bind to the pod's own IP so peers can reach it.
+            - name: ELEVATOR_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ELEVATOR_CLUSTER_BOOTSTRAP
+              value: "on"
+            # A node only reports Ready once it has joined a real (>=2 member) cluster.
+            - name: ELEVATOR_CLUSTER_MIN_MEMBERS
+              value: "2"
+          ports:
+            - name: remoting
+              containerPort: 2551
+            - name: management
+              containerPort: 8558
+          startupProbe:
+            httpGet: { path: /alive, port: 8558 }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /ready, port: 8558 }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /alive, port: 8558 }
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }
+          volumeMounts:
+            # Same ConfigMap as files, for live engine reload (no subPath — keeps updates flowing).
+            - name: elevator-config
+              mountPath: /etc/elevator-config
+              readOnly: true
+      volumes:
+        - name: elevator-config
+          configMap:
+            name: elevator-config
