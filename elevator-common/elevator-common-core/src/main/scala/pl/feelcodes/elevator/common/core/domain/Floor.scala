@@ -1,11 +1,11 @@
-package pl.feelcodes.elevator.common.core
+package pl.feelcodes.elevator.common.core.domain
 
-// Reviewed — core domain: floor number type, ordered, with ++/-- navigation.
 type FloorNum = Int
 
 trait HasFloorNum:
   def num: FloorNum
 
+/** A floor, ordered by number; `++` / `--` step one level. */
 final case class Floor(num: FloorNum) extends HasFloorNum, Ordered[Floor]:
   def ++ : Floor = Floor(num + 1)
 

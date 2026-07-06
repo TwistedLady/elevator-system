@@ -1,6 +1,6 @@
 package pl.feelcodes.elevator.common.logic
 
-import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.events.ControllerEvents.*
 import pl.feelcodes.elevator.common.strategy.NextFloorStrategy
 

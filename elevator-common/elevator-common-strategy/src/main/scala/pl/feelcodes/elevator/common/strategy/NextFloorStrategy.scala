@@ -1,7 +1,7 @@
 package pl.feelcodes.elevator.common.strategy
 
-import pl.feelcodes.elevator.common.core.*
-import pl.feelcodes.elevator.common.core.Command.{Go, Stop}
+import pl.feelcodes.elevator.common.core.domain.*
+import pl.feelcodes.elevator.common.core.domain.Command.{Go, Stop}
 
 trait NextFloorStrategy:
   def next(current: Floor, direction: Direction, targets: Set[Floor]): Command

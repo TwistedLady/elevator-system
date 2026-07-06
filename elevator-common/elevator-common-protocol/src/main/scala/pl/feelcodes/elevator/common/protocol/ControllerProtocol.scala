@@ -1,7 +1,7 @@
 package pl.feelcodes.elevator.common.protocol
 
 // Reviewed — data-only commands for the Controller: AddUniqueOrderSet, ChooseNextOrder, PublishState.
-import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.core.domain.*
 
 object ControllerProtocol:
   sealed trait Command

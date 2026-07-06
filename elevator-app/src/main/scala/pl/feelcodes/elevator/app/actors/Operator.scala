@@ -3,7 +3,8 @@ package pl.feelcodes.elevator.app.actors
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityTypeKey
-import pl.feelcodes.elevator.common.core.{Elevator, ElevatorState}
+import pl.feelcodes.elevator.common.core.domain.ElevatorState
+import pl.feelcodes.elevator.common.core.engine.Elevator
 import pl.feelcodes.elevator.common.protocol.OperatorProtocol
 
 object Operator:
