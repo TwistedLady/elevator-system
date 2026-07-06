@@ -78,8 +78,10 @@ Two Kafka topics: `elevator-commands` (api → app), `elevator-state` (app → a
 
 Real hazards to be aware of (fix deliberately, on their own branch):
 
-- **Blocking Engine.** `Engine.burn()` busy-waits and `SlowEngine` spins ~500M iterations on the
-  sharded entity's dispatcher thread — blocks the actor thread under load. Don't block actor threads.
+- **Engine is a real-time cost, isolated.** `Engine.burn()` is `Thread.sleep(cost)` — `cost` is the
+  move's travel time (`SlowEngine` 2s, `FastEngine` 100ms), modelling the physical action and pacing
+  the Controller's self-driven loop. It blocks, so `Operator` entities run on the dedicated
+  `elevator-blocking-dispatcher` (application.conf) — never the default one. Keep that isolation.
 - **API Kafka state consumer replays the whole topic on restart.** `ElevatorStateConsumer` uses a
   random consumer group id + `auto.offset.reset=earliest`, so every restart full-replays
   `elevator-state` and leaks consumer groups on the broker. Use a stable group id.

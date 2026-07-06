@@ -1,7 +1,7 @@
 package pl.feelcodes.elevator.app
 
 import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
-import org.apache.pekko.actor.typed.ActorSystem
+import org.apache.pekko.actor.typed.{ActorSystem, DispatcherSelector}
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
@@ -49,7 +49,7 @@ object ElevatorApp extends App {
                 throw new IllegalArgumentException(
                   s"Unknown elevator.operator-class '$other'. Known: FastOperator, SlowOperator")
           Operator(publishMove, buildElevator)
-        })
+        }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
         sharding.init(Entity(Controller.TypeKey) { e =>
           Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
         })
