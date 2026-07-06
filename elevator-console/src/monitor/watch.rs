@@ -6,7 +6,11 @@ use super::app::ElevatorState;
 use super::sources;
 use crate::BoxErr;
 
-pub fn run_watch(api_base: &str, refresh_ms: u64, duration_secs: Option<u64>) -> Result<(), BoxErr> {
+pub fn run_watch(
+    api_base: &str,
+    refresh_ms: u64,
+    duration_secs: Option<u64>,
+) -> Result<(), BoxErr> {
     let (tx, rx) = mpsc::channel::<ElevatorState>();
     sources::spawn_state_source(api_base.to_string(), tx);
 

@@ -3,9 +3,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use rand::Rng;
-
 use crate::api;
+use crate::rng::Rng;
 use crate::BoxErr;
 
 pub fn send_one(api_base: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
@@ -57,7 +56,9 @@ pub fn run_simulation(
         let mut handles = Vec::new();
         for t in 0..threads {
             let n = per + if t < rem { 1 } else { 0 };
-            handles.push(s.spawn(move || worker(api_base, t, n, elevators, max_floor, sent, pace, run_id)));
+            handles.push(
+                s.spawn(move || worker(api_base, t, n, elevators, max_floor, sent, pace, run_id)),
+            );
         }
         for h in handles {
             h.join().expect("worker thread panicked")?;
@@ -81,7 +82,9 @@ pub fn simulate(
     );
     let start = Instant::now();
     let run_id = std::process::id() as u64;
-    run_simulation(api_base, count, threads, elevators, max_floor, &sent, None, run_id)?;
+    run_simulation(
+        api_base, count, threads, elevators, max_floor, &sent, None, run_id,
+    )?;
 
     let secs = start.elapsed().as_secs_f64();
     let total = sent.load(Ordering::Relaxed);
@@ -102,14 +105,14 @@ fn worker(
     run_id: u64,
 ) -> Result<(), BoxErr> {
     let agent = api::agent();
-    let mut rng = rand::thread_rng();
+    let mut rng = Rng::seeded(run_id ^ (tid.wrapping_add(1).wrapping_mul(0x9E3779B9)));
     let delay = pace
         .filter(|_| n > 0)
         .map(|p| p / n as u32)
         .filter(|d| *d >= Duration::from_millis(1));
     for i in 0..n {
-        let elevator = &elevators[rng.gen_range(0..elevators.len())];
-        let floor = rng.gen_range(0..=max_floor);
+        let elevator = &elevators[rng.below(elevators.len())];
+        let floor = rng.floor(max_floor);
         let tag = sim_tag(run_id, tid, i);
         if api::post_order_retry(&agent, api_base, elevator, floor, &tag).is_ok() {
             sent.fetch_add(1, Ordering::Relaxed);
@@ -119,4 +122,46 @@ fn worker(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn tag_format_is_stable() {
+        assert_eq!(sim_tag(7, 2, 5), "sim-7-2-5");
+    }
+
+    #[test]
+    fn tags_cover_the_full_count_and_are_unique() {
+        let tags = sim_tags(1, 100, 4, usize::MAX);
+        assert_eq!(tags.len(), 100);
+        assert_eq!(
+            tags.iter().collect::<HashSet<_>>().len(),
+            100,
+            "no duplicates"
+        );
+    }
+
+    #[test]
+    fn tags_split_evenly_with_remainder_on_low_threads() {
+        // 10 orders over 3 threads → 4,3,3. Thread 0 carries the remainder.
+        let t0 = sim_tags(1, 10, 3, usize::MAX)
+            .into_iter()
+            .filter(|t| t.starts_with("sim-1-0-"))
+            .count();
+        assert_eq!(t0, 4);
+    }
+
+    #[test]
+    fn limit_caps_the_number_of_tags() {
+        assert_eq!(sim_tags(1, 100, 4, 12).len(), 12);
+    }
+
+    #[test]
+    fn zero_threads_is_treated_as_one() {
+        assert_eq!(sim_tags(1, 5, 0, usize::MAX).len(), 5);
+    }
 }

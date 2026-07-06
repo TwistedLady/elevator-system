@@ -50,3 +50,29 @@ fn run(args: &[&str]) -> Option<String> {
     }
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_is_empty_when_not_in_a_repo() {
+        assert_eq!(GitInfo::default().label(), "");
+    }
+
+    #[test]
+    fn label_marks_a_dirty_tree_with_a_star() {
+        let clean = GitInfo {
+            branch: "main".into(),
+            sha: "a2bfac9".into(),
+            dirty: false,
+            available: true,
+        };
+        assert_eq!(clean.label(), "⎇ main@a2bfac9");
+        let dirty = GitInfo {
+            dirty: true,
+            ..clean
+        };
+        assert_eq!(dirty.label(), "⎇ main@a2bfac9*");
+    }
+}
