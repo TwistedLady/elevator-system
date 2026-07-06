@@ -1,9 +1,9 @@
 package pl.feelcodes.elevator.common.strategy
 
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.common.core.*
-import pl.feelcodes.elevator.common.core.Direction.*
-import pl.feelcodes.elevator.common.core.Command.*
+import pl.feelcodes.elevator.common.core.domain.*
+import pl.feelcodes.elevator.common.core.domain.Direction.*
+import pl.feelcodes.elevator.common.core.domain.Command.*
 
 final class NextFloorStrategyTests extends AnyFunSuite:
   import NextFloorStrategy.default.next as choose

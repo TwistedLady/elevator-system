@@ -1,7 +1,7 @@
 package pl.feelcodes.elevator.common.logic
 
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
+import pl.feelcodes.elevator.common.core.domain.{ElevatorOrder, Floor}
 
 final class CoordinatorLogicTests extends AnyFunSuite:
   import CoordinatorLogic.*

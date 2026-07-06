@@ -1,6 +1,6 @@
 package pl.feelcodes.elevator.common.events
 
-import pl.feelcodes.elevator.common.core.{ElevatorOrder, ElevatorState}
+import pl.feelcodes.elevator.common.core.domain.{ElevatorOrder, ElevatorState}
 
 object ControllerEvents:
   sealed trait Event

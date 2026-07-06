@@ -5,7 +5,7 @@ import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.{PersistenceId, RecoveryCompleted}
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
-import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
 import pl.feelcodes.elevator.common.protocol.ControllerProtocol
 import pl.feelcodes.elevator.common.events.ControllerEvents

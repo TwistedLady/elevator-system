@@ -7,7 +7,7 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.app.actors.Controller
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
-import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.core.domain.*
 
 import java.util.Base64
 

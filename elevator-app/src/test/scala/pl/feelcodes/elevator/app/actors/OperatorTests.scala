@@ -2,10 +2,11 @@ package pl.feelcodes.elevator.app.actors
 
 import org.apache.pekko.actor.testkit.typed.scaladsl.BehaviorTestKit
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.common.core.*
-import pl.feelcodes.elevator.common.core.Direction.*
-import pl.feelcodes.elevator.common.core.Motion.*
-import pl.feelcodes.elevator.common.core.Command.*
+import pl.feelcodes.elevator.common.core.domain.*
+import pl.feelcodes.elevator.common.core.domain.Direction.*
+import pl.feelcodes.elevator.common.core.domain.Motion.*
+import pl.feelcodes.elevator.common.core.domain.Command.*
+import pl.feelcodes.elevator.common.core.engine.Elevator
 
 final class OperatorTests extends AnyFunSuite:
 

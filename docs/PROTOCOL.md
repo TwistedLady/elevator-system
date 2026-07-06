@@ -63,7 +63,7 @@ event-sourced); the `Operator` is a stateless worker.
 |-------|-----|----------------|
 | **Coordinator** | Intake + confirm. Accept orders, group by floor, hand to Controller; mark each order done when its floor is reached. | yes |
 | **Controller** | The brain. Hold pending orders, pick the next move, own publishing state to Kafka, tell the Coordinator which orders are served. | yes |
-| **Operator** | The muscle. Run one move on the car, report the new state back. Decides nothing, publishes nothing. | no (stateless) |
+| **Operator** | The muscle. Run one move on the elevator, report the new state back. Decides nothing, publishes nothing. | no (stateless) |
 
 ---
 
@@ -118,7 +118,7 @@ ElevatorStateDto(tag, elevatorName, direction, motion, floor)  // topic: elevato
 
 ## 4. End-to-end sequence
 
-The full life of one order: HTTP in, car moves, status queryable.
+The full life of one order: HTTP in, elevator moves, status queryable.
 
 ```mermaid
 sequenceDiagram
@@ -171,7 +171,7 @@ Key points:
 - The Controller **drives its own loop** by self-sending `ChooseNextOrder` after
   every move. There is no external timer; pacing comes from the engine
   (`SlowEngine` burns CPU per step, `FastEngine` is near-instant).
-- `served = orders where floor == newState.floor` — when the car reaches a floor,
+- `served = orders where floor == newState.floor` — when the elevator reaches a floor,
   every order waiting there is marked done in one go.
 
 ---
@@ -212,7 +212,7 @@ They solve different problems at different layers.
 |---|---|---|
 | Where | `OrderConsumer` + `processed_orders` table | `Controller` (`ControllerLogic.evolve`) |
 | Keyed by | order **tag** | **floor** |
-| Purpose | drop a Kafka message redelivered after a crash | one car stop serves every order waiting at that floor |
+| Purpose | drop a Kafka message redelivered after a crash | one elevator stop serves every order waiting at that floor |
 | How | `alreadyProcessed(tag)` → skip; else forward + `markProcessed(tag)` | targets are a `Set[Floor]`; on arrival `evolve` drops **all** orders with `floor == reached`, and each of their tags gets a `MarkOrderDone` |
 
 So: every distinct order is recorded (audit + per-tag status), but two orders for
@@ -243,7 +243,7 @@ flowchart TD
 - **Controller — re-dispatch the in-flight move.** `WaitingSet(true)` is durable
   but the `Move` it waits on went to the stateless Operator. A crash before the
   Operator reports back would replay `waiting=true` with the command gone — a
-  frozen car. On `RecoveryCompleted` the Controller re-sends the command; the
+  frozen elevator. On `RecoveryCompleted` the Controller re-sends the command; the
   latch is still set, so no duplicate, and the Operator's report clears it.
 
 - **Ingress — claim _after_ forwarding, never before.** `OrderConsumer` **checks**
@@ -301,6 +301,6 @@ flowchart TD
 | Controller logic (decide/evolve) | `elevator-common-logic/.../ControllerLogic.scala` |
 | Coordinator logic (merge) | `elevator-common-logic/.../CoordinatorLogic.scala` |
 | Scheduling | `elevator-common-strategy/.../NextFloorStrategy.scala` |
-| Core domain | `elevator-common-core/.../{Elevator,ElevatorOrder}.scala` |
+| Core (domain data + engine) | `elevator-common-core/.../core/{domain,engine}/` — see [CORE.md](CORE.md) |
 | Ingress dedup | `elevator-app/.../inbound/{OrderConsumer,OrderDedup}.scala` |
 | Projections | `elevator-app/.../readside/{ElevatorState,OrderStatus}Projection.scala` |
