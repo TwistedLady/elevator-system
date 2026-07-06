@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ElevatorService } from './elevator.service';
 import { Shaft, PLOT_H, floorToY } from './shaft';
 import { Trend } from './trend';
+import { APP_VERSION } from './version';
 
 // Floor range mirrors elevator-api application.yml (max-floor 15).
 const MAX_FLOOR = 15;
@@ -20,6 +21,17 @@ export class App implements OnInit, OnDestroy {
   protected readonly maxFloor = MAX_FLOOR;
   protected readonly plotH = PLOT_H;
   protected readonly health = signal<string>('unknown');
+
+  /** This build's version (baked in from the repo-root VERSION file) vs the backend's. */
+  protected readonly webVersion = APP_VERSION;
+  protected readonly backendVersion = signal<string>('unknown');
+  /** True once we've read a backend version that matches this build. */
+  protected readonly versionMatch = computed(() => this.backendVersion() === this.webVersion);
+  /** Warn only once we've actually read a real backend version that differs from this build. */
+  protected readonly versionMismatch = computed(() => {
+    const backend = this.backendVersion();
+    return backend !== 'unknown' && backend !== 'unreachable' && backend !== this.webVersion;
+  });
 
   /** The two tabs carried over from the Rust console. */
   protected readonly tab = signal<'chart' | 'trend'>('chart');
@@ -59,6 +71,7 @@ export class App implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.api.connect();
     this.refreshHealth();
+    this.checkVersion();
   }
 
   ngOnDestroy(): void {
@@ -70,6 +83,14 @@ export class App implements OnInit, OnDestroy {
       this.health.set((await this.api.health()).status);
     } catch {
       this.health.set('DOWN');
+    }
+  }
+
+  async checkVersion(): Promise<void> {
+    try {
+      this.backendVersion.set((await this.api.version()).version);
+    } catch {
+      this.backendVersion.set('unreachable');
     }
   }
 }
