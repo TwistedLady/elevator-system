@@ -58,13 +58,23 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
         &mut app,
         &state_rx,
         &log_rx,
-        &health,
-        &k8s_state,
-        &config,
-        &stats,
+        &Shared {
+            health: &health,
+            k8s: &k8s_state,
+            config: &config,
+            stats: &stats,
+        },
     );
     ratatui::restore();
     result
+}
+
+/// The background-polled shared state the event loop copies into `App` each tick.
+struct Shared<'a> {
+    health: &'a Arc<Mutex<HealthSnapshot>>,
+    k8s: &'a Arc<Mutex<K8sSnapshot>>,
+    config: &'a Arc<Mutex<crate::api::ElevatorConfig>>,
+    stats: &'a Arc<Mutex<Vec<StatsRow>>>,
 }
 
 fn event_loop(
@@ -72,10 +82,7 @@ fn event_loop(
     app: &mut App,
     state_rx: &mpsc::Receiver<ElevatorState>,
     log_rx: &mpsc::Receiver<(LogSource, String)>,
-    health: &Arc<Mutex<HealthSnapshot>>,
-    k8s_state: &Arc<Mutex<K8sSnapshot>>,
-    config: &Arc<Mutex<crate::api::ElevatorConfig>>,
-    stats: &Arc<Mutex<Vec<StatsRow>>>,
+    shared: &Shared,
 ) -> Result<(), BoxErr> {
     loop {
         while let Ok(state) = state_rx.try_recv() {
@@ -84,16 +91,16 @@ fn event_loop(
         while let Ok((source, line)) = log_rx.try_recv() {
             app.push_log(source, line);
         }
-        if let Ok(h) = health.lock() {
+        if let Ok(h) = shared.health.lock() {
             app.health = h.clone();
         }
-        if let Ok(k) = k8s_state.lock() {
+        if let Ok(k) = shared.k8s.lock() {
             app.k8s = k.clone();
         }
-        if let Ok(c) = config.lock() {
+        if let Ok(c) = shared.config.lock() {
             app.config = c.clone();
         }
-        if let Ok(s) = stats.lock() {
+        if let Ok(s) = shared.stats.lock() {
             app.stats = s.clone();
         }
         app.refresh_sim();

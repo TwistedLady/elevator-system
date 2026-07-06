@@ -193,20 +193,6 @@ impl View {
         View::Stats,
     ];
 
-    pub fn index(self) -> usize {
-        match self {
-            View::Chart => 0,
-            View::Trend => 1,
-            View::Order => 2,
-            View::Sim => 3,
-            View::Health => 4,
-            View::Logs => 5,
-            View::K8s => 6,
-            View::Test => 7,
-            View::Stats => 8,
-        }
-    }
-
     pub fn title(self) -> &'static str {
         match self {
             View::Chart => "① CHART",
@@ -219,14 +205,6 @@ impl View {
             View::Test => "⑧ TEST",
             View::Stats => "⑨ STATS",
         }
-    }
-
-    pub fn next(self) -> View {
-        View::ALL[(self.index() + 1) % View::ALL.len()]
-    }
-
-    pub fn prev(self) -> View {
-        View::ALL[(self.index() + View::ALL.len() - 1) % View::ALL.len()]
     }
 }
 
@@ -545,14 +523,7 @@ impl App {
         let pace = Some(Duration::from_millis(2500));
         std::thread::spawn(move || {
             let _ = crate::sender::run_simulation(
-                &api_sim,
-                count,
-                threads,
-                &pool,
-                max_floor,
-                &sent_t,
-                pace,
-                run_id,
+                &api_sim, count, threads, &pool, max_floor, &sent_t, pace, run_id,
             );
             done_t.store(true, Ordering::Relaxed);
         });
@@ -810,14 +781,20 @@ mod tests {
     }
 
     #[test]
-    fn view_navigation_wraps_both_ways() {
-        assert_eq!(View::Chart.prev(), View::Stats);
-        assert_eq!(View::Stats.next(), View::Chart);
-        assert_eq!(View::Test.next(), View::Stats);
-        for v in View::ALL {
-            assert_eq!(v.next().prev(), v);
-            assert_eq!(View::ALL[v.index()], v);
-        }
+    fn stats_tab_visible_only_when_bi_enabled() {
+        let mut app = App::new("http://localhost:8080");
+        app.config.bi_enabled = true;
+        assert!(app.visible_views().contains(&View::Stats));
+        assert_eq!(app.visible_views().len(), View::ALL.len());
+
+        app.config.bi_enabled = false;
+        assert!(!app.visible_views().contains(&View::Stats));
+        assert_eq!(app.visible_views().len(), View::ALL.len() - 1);
+        // the other tabs are all still there, in order
+        assert_eq!(
+            app.visible_views(),
+            View::ALL[..View::ALL.len() - 1].to_vec()
+        );
     }
 
     fn mileage(name: &str, floors: i64) -> MileageRow {

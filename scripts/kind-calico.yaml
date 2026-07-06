@@ -8,3 +8,10 @@ networking:
   podSubnet: "192.168.0.0/16"      # matches Calico's default IPPool
 nodes:
   - role: control-plane
+    # Publish the api NodePort (k8s/api.yaml: nodePort 30080) to the host as 127.0.0.1:8080, so the
+    # console reaches the k8s-hosted api at its default https://localhost:8080 with no port-forward.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        listenAddress: "127.0.0.1"
+        protocol: TCP

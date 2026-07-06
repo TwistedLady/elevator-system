@@ -250,6 +250,7 @@ mod tests {
         let cfg = api::ElevatorConfig {
             max_floor: 15,
             elevators: v(&["e2", "e1"]),
+            ..Default::default()
         };
         let out = resolve_elevators(vec![], None, None, Some(&cfg)).unwrap();
         assert_eq!(out, v(&["e1", "e2"]));
