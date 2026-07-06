@@ -26,8 +26,9 @@ Rust (ratatui) terminal console.
 ## How it flows (one order)
 
 `POST /api/order` → api produces to Kafka `elevator-commands` → app `OrderConsumer` dedups by `tag`
-→ `Coordinator` (merge orders by floor, persist Accepted) → `Controller` (event-sourced scheduler,
-tick every 500 ms, pick next move via `NextFloorStrategy`) → `Operator` (stateless, applies one move)
+→ `Coordinator` (merge orders by floor, persist Accepted) → `Controller` (event-sourced scheduler;
+self-driven loop, no timer — pacing comes from the engine; picks next move via `NextFloorStrategy`)
+→ `Operator` (stateless, applies one move)
 → Controller publishes new state to Kafka `elevator-state` and marks reached orders done.
 
 Two Kafka topics: `elevator-commands` (api → app), `elevator-state` (app → api / console).
@@ -88,5 +89,5 @@ Real hazards to be aware of (fix deliberately, on their own branch):
 - **`DefaultScalaModule` is registered in the pure-Java api** and a custom `ObjectMapper` bean
   overrides Boot's auto-config. Leftover — safe to remove.
 - **Rust console has no tests** while Scala/Java do. When adding pure Rust functions, add a test.
-- **Docs drift.** The `README.md` architecture diagram still shows the console talking to Kafka
-  (pre-refactor). Re-verify generated docs/comments after a refactor — code is the source of truth.
+- **Docs drift.** Re-verify docs/comments after a refactor — code is the source of truth. Full
+  docs are in [`docs/`](docs/README.md) (one topic per file, indexed).
