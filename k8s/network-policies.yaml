@@ -87,3 +87,7 @@ spec:
       ports:
         - { protocol: TCP, port: 2551 }   # Pekko remoting
         - { protocol: TCP, port: 8558 }   # Pekko management / cluster bootstrap
+    - from:                               # kubelet liveness/readiness probes come from the node
+        - ipBlock: { cidr: 172.20.0.0/16 }   # kind node/docker network — needed under Calico
+      ports:
+        - { protocol: TCP, port: 8558 }
