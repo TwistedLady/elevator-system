@@ -5,14 +5,13 @@ import pl.feelcodes.elevator.common.core.domain.Command.{Go, Stop}
 import pl.feelcodes.elevator.common.core.domain.Direction.*
 import pl.feelcodes.elevator.common.core.domain.Motion.{Moving, Stopped}
 
+import scala.concurrent.duration.*
 import scala.language.postfixOps
 
-/** Elevator motor; `cost` busy-spins to pace travel. */
-trait Engine(val cost: BigInt):
+/** Elevator motor; `cost` is the real travel time one move takes (external physical action). */
+trait Engine(val cost: FiniteDuration):
 
-  protected def burn(): Unit =
-    var i = 0
-    while i < cost do i += 1
+  protected def burn(): Unit = Thread.sleep(cost.toMillis)
 
   def move(floor: Floor)(command: Command): Floor =
     burn()
@@ -21,9 +20,9 @@ trait Engine(val cost: BigInt):
       case Go(Direction.Down) => floor --
       case Stop() => floor
 
-final case class SlowEngine() extends Engine(500_000_000)
+final case class SlowEngine() extends Engine(2.seconds)
 
-final case class FastEngine() extends Engine(2_000)
+final case class FastEngine() extends Engine(100.millis)
 
 /** Elevator = name + engine + state; `move` advances it one command. */
 final case class Elevator(name: ElevatorName,
