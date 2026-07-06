@@ -4,7 +4,7 @@ import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.PersistenceId
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
-import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
+import pl.feelcodes.elevator.common.core.domain.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
 import pl.feelcodes.elevator.common.events.CoordinatorEvents.{OrderAccepted, OrderDone}

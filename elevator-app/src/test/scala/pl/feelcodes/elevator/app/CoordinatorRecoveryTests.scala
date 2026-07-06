@@ -7,7 +7,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import pl.feelcodes.elevator.app.actors.{Controller, Coordinator}
-import pl.feelcodes.elevator.common.core.{ElevatorOrder, Floor}
+import pl.feelcodes.elevator.common.core.domain.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
 

@@ -1,6 +1,6 @@
 package pl.feelcodes.elevator.common.logic
 
-import pl.feelcodes.elevator.common.core.ElevatorOrder
+import pl.feelcodes.elevator.common.core.domain.ElevatorOrder
 
 object CoordinatorLogic:
   final case class State()

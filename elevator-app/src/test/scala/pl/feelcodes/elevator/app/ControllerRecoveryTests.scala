@@ -7,7 +7,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
-import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.core.domain.*
 
 object ControllerRecoveryTests {
   val config = ConfigFactory

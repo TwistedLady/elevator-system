@@ -6,7 +6,7 @@ import org.apache.pekko.serialization.{SerializationExtension, Serializers}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.app.actors.{Controller, Operator}
-import pl.feelcodes.elevator.common.core.*
+import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.{AddOriginalStream, MarkOrderDone}
 

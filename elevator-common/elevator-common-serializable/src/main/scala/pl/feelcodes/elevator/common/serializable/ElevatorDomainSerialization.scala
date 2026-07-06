@@ -3,8 +3,8 @@ package pl.feelcodes.elevator.common.serializable
 import com.fasterxml.jackson.core.{JsonGenerator, JsonParser}
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.{DeserializationContext, JsonDeserializer, JsonSerializer, SerializerProvider}
-import pl.feelcodes.elevator.common.core.{Command, Direction, Motion}
-import pl.feelcodes.elevator.common.core.Command.{Go, Stop}
+import pl.feelcodes.elevator.common.core.domain.{Command, Direction, Motion}
+import pl.feelcodes.elevator.common.core.domain.Command.{Go, Stop}
 
 private class DirectionSerializer extends JsonSerializer[Direction]:
   override def serialize(value: Direction, generator: JsonGenerator, provider: SerializerProvider): Unit =
