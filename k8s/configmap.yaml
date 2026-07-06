@@ -41,6 +41,10 @@ data:
   ELEVATOR_STATE_TOPIC: "elevator-state"
   # Read-only R2DBC access to the order_status read-model (Service "postgres").
   ELEVATOR_PG_HOST: "postgres"
+  # Second datasource: the SEPARATE analytics DB (Service "postgres-stats") for the Spark BI
+  # read-models behind GET /api/mileage and /api/served.
+  ELEVATOR_STATS_PG_HOST: "postgres-stats"
+  ELEVATOR_STATS_PG_DATABASE: "elevator_stats"
   # Order-validation params (Spring relaxed binding -> elevator.max-floor / elevator.elevators).
   # The api rejects orders with floor outside 0..MAXFLOOR or an elevator not in the fleet.
   ELEVATOR_MAXFLOOR: "15"

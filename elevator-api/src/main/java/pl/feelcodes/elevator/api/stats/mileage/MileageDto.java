@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.mileage;
+package pl.feelcodes.elevator.api.stats.mileage;
 
 import java.time.OffsetDateTime;
 

@@ -28,6 +28,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" [class.active]="tab() === 'chart'" (click)="tab.set('chart')">Chart</button>
       <button role="tab" [class.active]="tab() === 'trend'" (click)="tab.set('trend')">Trend</button>
+      <button role="tab" [class.active]="tab() === 'stats'" (click)="tab.set('stats')">Stats</button>
     </div>
     <div class="filterbox">
       <input type="text" [ngModel]="filter()" (ngModelChange)="filter.set($event)"
@@ -39,7 +40,10 @@
   </div>
 
   <section class="panel">
-    @if (noData()) {
+    @if (tab() === 'stats') {
+      <!-- Stats owns its own polling + empty/filter states; it does not depend on SSE state. -->
+      <app-stats [filter]="filter()" />
+    } @else if (noData()) {
       <p class="muted">Waiting for elevator state…</p>
     } @else if (filtered().length === 0) {
       <p class="muted">No elevator matches “{{ filter() }}”.</p>

@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.served;
+package pl.feelcodes.elevator.api.stats.served;
 
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;

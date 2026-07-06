@@ -1,0 +1,26 @@
+# Stats schema for postgres-stats, generated from db/stats-init/*.sql:
+#   kubectl create configmap postgres-stats-init --from-file=db/stats-init/ --dry-run=client -o yaml
+# Mounted at /docker-entrypoint-initdb.d in the postgres-stats StatefulSet (runs once on first init).
+# Regenerate this file if db/stats-init/ changes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-stats-init
+  labels: { part-of: elevator }
+data:
+  01-elevator-mileage.sql: |
+    -- Analytics (BI) store — SEPARATE postgres-stats database (elevator_stats).
+    -- Maintained by the Spark mileage job: one row per elevator = cumulative floors travelled.
+    CREATE TABLE IF NOT EXISTS elevator_mileage (
+      elevator_name    VARCHAR(255) PRIMARY KEY,
+      floors_travelled BIGINT       NOT NULL,
+      updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+    );
+  02-elevator-orders-served.sql: |
+    -- Analytics (BI) store — SEPARATE postgres-stats database (elevator_stats).
+    -- Maintained by the Spark orders-served job: one row per elevator = times it reached an ordered floor.
+    CREATE TABLE IF NOT EXISTS elevator_orders_served (
+      elevator_name VARCHAR(255) PRIMARY KEY,
+      orders_served BIGINT       NOT NULL,
+      updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+    );
