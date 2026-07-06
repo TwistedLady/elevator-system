@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.mileage;
+package pl.feelcodes.elevator.api.stats.mileage;
 
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;

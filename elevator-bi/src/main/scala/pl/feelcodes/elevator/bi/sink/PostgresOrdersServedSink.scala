@@ -17,7 +17,7 @@ object PostgresOrdersServedSink {
 
     var conn: Connection = null
     try {
-      conn = DriverManager.getConnection(cfg.jdbcUrl, cfg.jdbcUser, cfg.jdbcPassword)
+      conn = DriverManager.getConnection(cfg.statsJdbcUrl, cfg.jdbcUser, cfg.jdbcPassword)
       conn.setAutoCommit(false)
       ensureTable(conn, cfg.servedTable)
 

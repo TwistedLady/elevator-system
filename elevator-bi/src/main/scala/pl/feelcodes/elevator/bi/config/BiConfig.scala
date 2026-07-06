@@ -9,7 +9,10 @@ final case class BiConfig(
     startingOffsets: String,
     checkpointLocation: String,
     triggerInterval: String,
-    jdbcUrl: String,
+    // Analytics sink: the SEPARATE postgres-stats DB (both jobs write their stats here).
+    statsJdbcUrl: String,
+    // Source read: the operational `elevator` DB (OrdersServedJob reads order_status here).
+    sourceJdbcUrl: String,
     jdbcUser: String,
     jdbcPassword: String,
     mileageTable: String,
@@ -27,7 +30,8 @@ object BiConfig {
     startingOffsets    = env("ELEVATOR_BI_STARTING_OFFSETS", "earliest"),
     checkpointLocation = env("ELEVATOR_BI_CHECKPOINT", "file:///checkpoint"),
     triggerInterval    = env("ELEVATOR_BI_TRIGGER", "10 seconds"),
-    jdbcUrl            = env("ELEVATOR_BI_JDBC_URL", "jdbc:postgresql://postgres:5432/elevator"),
+    statsJdbcUrl       = env("ELEVATOR_BI_STATS_JDBC_URL", "jdbc:postgresql://postgres-stats:5432/elevator_stats"),
+    sourceJdbcUrl      = env("ELEVATOR_BI_SOURCE_JDBC_URL", "jdbc:postgresql://postgres:5432/elevator"),
     jdbcUser           = env("ELEVATOR_PG_USER", "elevator"),
     jdbcPassword       = env("ELEVATOR_PG_PASSWORD", "elevator"),
     mileageTable       = env("ELEVATOR_BI_TABLE", "elevator_mileage"),

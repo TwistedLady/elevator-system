@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.served;
+package pl.feelcodes.elevator.api.stats.mileage;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
@@ -6,15 +6,15 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.OffsetDateTime;
 
-@Table("elevator_orders_served")
-class ServedEntity {
+@Table("elevator_mileage")
+class MileageEntity {
 
     @Id
     @Column("elevator_name")
     private String elevatorName;
 
-    @Column("orders_served")
-    private Long ordersServed;
+    @Column("floors_travelled")
+    private Long floorsTravelled;
 
     @Column("updated_at")
     private OffsetDateTime updatedAt;
@@ -23,8 +23,8 @@ class ServedEntity {
         return elevatorName;
     }
 
-    public Long getOrdersServed() {
-        return ordersServed;
+    public Long getFloorsTravelled() {
+        return floorsTravelled;
     }
 
     public OffsetDateTime getUpdatedAt() {

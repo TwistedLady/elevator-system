@@ -3,13 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { ElevatorService } from './elevator.service';
 import { Shaft, PLOT_H, floorToY } from './shaft';
 import { Trend } from './trend';
+import { Stats } from './stats';
 
 // Floor range mirrors elevator-api application.yml (max-floor 15).
 const MAX_FLOOR = 15;
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, Shaft, Trend],
+  imports: [FormsModule, Shaft, Trend, Stats],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -21,8 +22,8 @@ export class App implements OnInit, OnDestroy {
   protected readonly plotH = PLOT_H;
   protected readonly health = signal<string>('unknown');
 
-  /** The two tabs carried over from the Rust console. */
-  protected readonly tab = signal<'chart' | 'trend'>('chart');
+  /** Chart + Trend mirror the Rust console; Stats adds the Spark BI outcomes. */
+  protected readonly tab = signal<'chart' | 'trend' | 'stats'>('chart');
   /** Regex name filter, shared by both tabs (same behaviour as the console). */
   protected readonly filter = signal('');
 

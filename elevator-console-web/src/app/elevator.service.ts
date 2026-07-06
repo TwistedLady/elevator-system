@@ -1,7 +1,7 @@
 import { Injectable, signal, computed, NgZone, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { ElevatorState } from './models';
+import { firstValueFrom, Observable } from 'rxjs';
+import { ElevatorState, MileageStat, OrdersServedStat } from './models';
 
 // All calls are relative so the same build works behind the dev proxy (proxy.conf.json → :8080)
 // and when the compiled bundle is served from the same origin as the api.
@@ -66,5 +66,15 @@ export class ElevatorService {
 
   health(): Promise<{ status: string }> {
     return firstValueFrom(this.http.get<{ status: string }>('/actuator/health'));
+  }
+
+  /** Spark BI mileage per elevator (floors travelled). Polled by the Stats tab. */
+  mileage(): Observable<MileageStat[]> {
+    return this.http.get<MileageStat[]>('/api/mileage');
+  }
+
+  /** Spark BI orders-served per elevator (reached ordered floors). Polled by the Stats tab. */
+  served(): Observable<OrdersServedStat[]> {
+    return this.http.get<OrdersServedStat[]>('/api/served');
   }
 }

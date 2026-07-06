@@ -7,7 +7,7 @@ use ratatui::widgets::{
 };
 use ratatui::Frame;
 
-use super::app::{App, ElevatorState, View, TREND_WINDOW_SECS};
+use super::app::{App, ElevatorState, StatsRow, View, TREND_WINDOW_SECS};
 
 const PALETTE: [Color; 7] = [
     Color::Green,
@@ -39,6 +39,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         View::Logs => draw_logs(frame, app, chunks[1]),
         View::K8s => draw_k8s(frame, app, chunks[1]),
         View::Test => draw_test(frame, app, chunks[1]),
+        View::Stats => draw_stats(frame, app, chunks[1]),
     }
     draw_footer(frame, app, chunks[2]);
 }
@@ -566,10 +567,79 @@ fn draw_test(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+fn draw_stats(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" SPARK BI · mileage + orders served ");
+
+    let rows: Vec<&StatsRow> = app
+        .stats
+        .iter()
+        .filter(|r| app.elevator_matches(&r.name))
+        .collect();
+
+    if rows.is_empty() {
+        let msg = if app.stats.is_empty() {
+            if app.health.reachable {
+                Line::from("no stats yet — waiting for Spark BI (mileage / served)…".dim())
+            } else {
+                Line::from("⏳  no stats yet — elevator-api unreachable on :8080".yellow())
+            }
+        } else {
+            Line::from(format!("no elevators match /{}/", app.elevator_filter).dim())
+        };
+        frame.render_widget(Paragraph::new(msg).block(block), area);
+        return;
+    }
+
+    let max_mileage = rows.iter().map(|r| r.mileage).max().unwrap_or(0).max(1);
+    let max_served = rows.iter().map(|r| r.served).max().unwrap_or(0).max(1);
+
+    let inner_w = area.width.saturating_sub(2) as usize;
+    // Layout per line:  name(6) mileage#(6) bar | served#(5) bar  — split the leftover between bars.
+    let bar_w = inner_w.saturating_sub(6 + 6 + 3 + 5 + 1).max(4) / 2;
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::from(format!("{:<6}", "CAR")).dark_gray(),
+        Span::from(format!("{:>6} ", "MILE")).dark_gray(),
+        Span::from(format!("{:<bar_w$}", "floors travelled")).dark_gray(),
+        Span::from(" │ ").dark_gray(),
+        Span::from(format!("{:>5} ", "SRVD")).dark_gray(),
+        Span::from("orders served".to_string()).dark_gray(),
+    ]));
+
+    for r in &rows {
+        lines.push(Line::from(vec![
+            Span::from(format!("{:<6}", r.name)).cyan(),
+            Span::from(format!("{:>6} ", r.mileage)).white(),
+            Span::styled(
+                bar(r.mileage, max_mileage, bar_w),
+                Style::new().fg(Color::Green),
+            ),
+            Span::from(" │ ").dark_gray(),
+            Span::from(format!("{:>5} ", r.served)).white(),
+            Span::styled(
+                bar(r.served, max_served, bar_w),
+                Style::new().fg(Color::Cyan),
+            ),
+        ]));
+    }
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+/// A proportional bar `width` cells wide, filled to `value/max`. Pure — unit-tested.
+fn bar(value: i64, max: i64, width: usize) -> String {
+    if max <= 0 || value <= 0 {
+        return String::new();
+    }
+    let filled = ((value as f64 / max as f64) * width as f64).round() as usize;
+    "█".repeat(filled.min(width))
+}
+
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
     let content = match app.view {
-        View::Chart | View::Trend => {
+        View::Chart | View::Trend | View::Stats => {
             let mut spans = vec![
                 Span::from("filter ▸ ").green().bold(),
                 Span::from(app.elevator_filter.clone()).white(),
@@ -760,4 +830,28 @@ fn center(s: &str, w: usize) -> String {
     let pad = w - len;
     let left = pad / 2;
     format!("{}{}{}", " ".repeat(left), s, " ".repeat(pad - left))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bar;
+
+    #[test]
+    fn bar_scales_value_against_max() {
+        assert_eq!(bar(10, 10, 20).chars().count(), 20);
+        assert_eq!(bar(5, 10, 20).chars().count(), 10);
+        assert_eq!(bar(0, 10, 20), "");
+    }
+
+    #[test]
+    fn bar_is_empty_and_safe_for_nonpositive_max() {
+        assert_eq!(bar(5, 0, 20), "");
+        assert_eq!(bar(-3, 10, 20), "");
+    }
+
+    #[test]
+    fn bar_never_exceeds_width() {
+        // value > max shouldn't overflow the bar width.
+        assert_eq!(bar(30, 10, 8).chars().count(), 8);
+    }
 }
