@@ -110,6 +110,10 @@ jobs:
       - name: Build uber jar + ScalaTest
         run: ./mvnw -B -ntp -f elevator-bi/pom.xml package
 
+      # buildx (docker-container driver) is required for the gha cache backend below;
+      # the default docker driver can't export cache.
+      - uses: docker/setup-buildx-action@v3
+
       # Prove the image builds (the Dockerfile packages the uber jar just built).
       - name: Build image (no push)
         uses: docker/build-push-action@v6
