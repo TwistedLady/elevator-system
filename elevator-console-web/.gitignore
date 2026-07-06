@@ -6,6 +6,9 @@
 /out-tsc
 /bazel-out
 
+# Generated from the repo-root VERSION file at build time (scripts/gen-version.mjs)
+/src/app/version.ts
+
 # Node
 /node_modules
 npm-debug.log

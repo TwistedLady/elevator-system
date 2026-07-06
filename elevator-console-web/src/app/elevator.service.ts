@@ -77,4 +77,8 @@ export class ElevatorService {
   served(): Observable<OrdersServedStat[]> {
     return this.http.get<OrdersServedStat[]>('/api/served');
   }
+
+  version(): Promise<{ version: string }> {
+    return firstValueFrom(this.http.get<{ version: string }>('/api/version'));
+  }
 }

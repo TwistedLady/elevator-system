@@ -8,8 +8,20 @@
           (click)="refreshHealth()" title="click to refresh">
       api {{ health() }}
     </span>
+    <span class="badge" [class.ok]="versionMatch()" [class.bad]="versionMismatch()"
+          (click)="checkVersion()"
+          title="web console version vs backend version — click to recheck">
+      v{{ webVersion }} {{ versionMatch() ? '=' : '≠' }} api {{ backendVersion() }}
+    </span>
   </div>
 </header>
+
+@if (versionMismatch()) {
+  <div class="warnbar" role="alert">
+    ⚠ Version mismatch — web console <strong>v{{ webVersion }}</strong>,
+    backend <strong>v{{ backendVersion() }}</strong>. Run matching builds.
+  </div>
+}
 
 <main>
   <div class="tabbar">
