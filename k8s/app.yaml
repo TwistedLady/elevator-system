@@ -40,10 +40,8 @@ spec:
           image: elevator-app:local
           imagePullPolicy: IfNotPresent
           envFrom:
-            # Mode = which configmap this points at: elevator-app-config-fast or -slow
-            # (they differ only in ELEVATOR_OPERATOR_CLASS). Swap + rollout to flip mode.
             - configMapRef:
-                name: elevator-app-config-fast
+                name: elevator-config
           env:
             # Pekko remoting + management bind to the pod's own IP so peers can reach it.
             - name: ELEVATOR_POD_IP
@@ -78,3 +76,12 @@ spec:
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1",    memory: "512Mi" }
+          volumeMounts:
+            # Same ConfigMap as files, for live engine reload (no subPath — keeps updates flowing).
+            - name: elevator-config
+              mountPath: /etc/elevator-config
+              readOnly: true
+      volumes:
+        - name: elevator-config
+          configMap:
+            name: elevator-config

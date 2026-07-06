@@ -1,5 +1,6 @@
 package pl.feelcodes.elevator.api.stats.served;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import reactor.core.publisher.Mono;
  */
 @RestController
 @RequestMapping("/api/served")
+@ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 class ServedController {
 
     private final ServedService service;

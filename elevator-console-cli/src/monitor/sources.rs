@@ -85,6 +85,22 @@ fn stream_states(api_base: &str, tx: &Sender<ElevatorState>) -> Loop {
     Loop::Continue
 }
 
+/// Poll `GET /api/config` for the live limits (floor range + allowed fleet) so the console reflects
+/// them — including ConfigMap hot-reloads — instead of hardcoding. Keeps the last good value on error.
+pub fn spawn_config_poll(api_base: String, shared: Arc<Mutex<crate::api::ElevatorConfig>>) {
+    std::thread::spawn(move || {
+        let agent = crate::api::agent();
+        loop {
+            if let Ok(cfg) = crate::api::get_config(&agent, &api_base) {
+                if let Ok(mut c) = shared.lock() {
+                    *c = cfg;
+                }
+            }
+            std::thread::sleep(Duration::from_secs(5));
+        }
+    });
+}
+
 pub fn spawn_health_poll(health_url: String, shared: Arc<Mutex<HealthSnapshot>>) {
     std::thread::spawn(move || {
         let agent = crate::api::agent();

@@ -1,4 +1,8 @@
 # TEST profile: human-readable console, INFO level.
+# Order-validation limits for local/test runs (prod gets these from the mounted ConfigMap).
+elevator:
+  max-floor: 15
+  elevators: e1,e2,e3,e4,e5,e6,e7,e8,e9,e10
 logging:
   level:
     pl.feelcodes.elevator: INFO

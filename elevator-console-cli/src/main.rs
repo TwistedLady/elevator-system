@@ -51,18 +51,16 @@ enum Command {
         count: u64,
         #[arg(long, default_value_t = 4)]
         threads: u64,
-        #[arg(
-            long,
-            value_delimiter = ',',
-            default_value = "e1,e2,e3,e4,e5,e6,e7,e8,e9,e10"
-        )]
+        /// Explicit fleet; if omitted (and no --elevator-count/--elevators-file), taken from /api/config.
+        #[arg(long, value_delimiter = ',')]
         elevators: Vec<String>,
         #[arg(long)]
         elevator_count: Option<usize>,
         #[arg(long)]
         elevators_file: Option<String>,
-        #[arg(long, default_value_t = 15)]
-        max_floor: i32,
+        /// Max floor; if omitted, taken from /api/config.
+        #[arg(long)]
+        max_floor: Option<i32>,
     },
     /// Headless one-shot check: API health + live state, writes a pass/fail log.
     Selftest {
@@ -95,8 +93,7 @@ fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Monitor { app_log, api_log } => monitor::run(&cli.api, &app_log, &api_log),
-        Command::Order { elevator, floor } => sender::send_one(&cli.api, &elevator, floor)
-            .map(|()| println!("sent order: elevator={elevator} floor={floor}")),
+        Command::Order { elevator, floor } => run_order(&cli.api, &elevator, floor),
         Command::Simulate {
             count,
             threads,
@@ -104,8 +101,15 @@ fn main() {
             elevator_count,
             elevators_file,
             max_floor,
-        } => resolve_elevators(elevators, elevator_count, elevators_file)
-            .and_then(|list| sender::simulate(&cli.api, count, threads, &list, max_floor)),
+        } => run_simulate(
+            &cli.api,
+            count,
+            threads,
+            elevators,
+            elevator_count,
+            elevators_file,
+            max_floor,
+        ),
         Command::Selftest { duration, log } => monitor::run_selftest(&cli.api, duration, &log),
         Command::Watch {
             refresh_ms,
@@ -124,19 +128,59 @@ fn main() {
     }
 }
 
+/// Send a single order, pre-checking it against the API's live limits (the API stays authoritative).
+fn run_order(api: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
+    if let Ok(cfg) = api::get_config(&api::agent(), api) {
+        cfg.validate_order(elevator, floor)?;
+    }
+    sender::send_one(api, elevator, floor)?;
+    println!("sent order: elevator={elevator} floor={floor}");
+    Ok(())
+}
+
+/// Fire a burst of random orders. Fleet and max-floor default to the API's /api/config when not given.
+fn run_simulate(
+    api: &str,
+    count: u64,
+    threads: u64,
+    elevators: Vec<String>,
+    elevator_count: Option<usize>,
+    elevators_file: Option<String>,
+    max_floor: Option<i32>,
+) -> Result<(), BoxErr> {
+    let cfg = api::get_config(&api::agent(), api).ok();
+    let list = resolve_elevators(elevators, elevator_count, elevators_file, cfg.as_ref())?;
+    let floor = match max_floor.or_else(|| cfg.as_ref().map(|c| c.max_floor)) {
+        Some(f) if f > 0 => f,
+        _ => {
+            return Err(
+                "cannot determine max floor: pass --max-floor or make /api/config reachable".into(),
+            )
+        }
+    };
+    sender::simulate(api, count, threads, &list, floor)
+}
+
 fn resolve_elevators(
     elevators: Vec<String>,
     count: Option<usize>,
     file: Option<String>,
+    cfg: Option<&api::ElevatorConfig>,
 ) -> Result<Vec<String>, BoxErr> {
-    let mut names = match (count, file) {
-        (Some(n), _) if n > 0 => (1..=n).map(|i| format!("e{i}")).collect::<Vec<_>>(),
-        (_, Some(path)) => read_elevators_file(&path)?,
-        _ => elevators,
+    let mut names = if let Some(n) = count.filter(|n| *n > 0) {
+        (1..=n).map(|i| format!("e{i}")).collect::<Vec<_>>()
+    } else if let Some(path) = file {
+        read_elevators_file(&path)?
+    } else if !elevators.is_empty() {
+        elevators
+    } else if let Some(c) = cfg.filter(|c| !c.elevators.is_empty()) {
+        c.elevators.clone()
+    } else {
+        return Err(
+            "no elevators: pass --elevators / --elevator-count / --elevators-file, or make /api/config reachable"
+                .into(),
+        );
     };
-    if names.is_empty() {
-        return Err("no elevators specified".into());
-    }
     names.sort_by(|a, b| natural_key(a).cmp(&natural_key(b)));
     names.dedup();
     Ok(names)
@@ -191,19 +235,29 @@ mod tests {
 
     #[test]
     fn explicit_list_is_sorted_and_deduped() {
-        let out = resolve_elevators(v(&["e2", "e1", "e2", "e10"]), None, None).unwrap();
+        let out = resolve_elevators(v(&["e2", "e1", "e2", "e10"]), None, None, None).unwrap();
         assert_eq!(out, v(&["e1", "e2", "e10"]));
     }
 
     #[test]
     fn elevator_count_wins_over_the_list() {
-        let out = resolve_elevators(v(&["ignored"]), Some(3), None).unwrap();
+        let out = resolve_elevators(v(&["ignored"]), Some(3), None, None).unwrap();
         assert_eq!(out, v(&["e1", "e2", "e3"]));
     }
 
     #[test]
-    fn empty_selection_is_an_error() {
-        assert!(resolve_elevators(vec![], None, None).is_err());
+    fn config_fleet_is_the_last_resort_when_nothing_else_given() {
+        let cfg = api::ElevatorConfig {
+            max_floor: 15,
+            elevators: v(&["e2", "e1"]),
+        };
+        let out = resolve_elevators(vec![], None, None, Some(&cfg)).unwrap();
+        assert_eq!(out, v(&["e1", "e2"]));
+    }
+
+    #[test]
+    fn empty_selection_without_config_is_an_error() {
+        assert!(resolve_elevators(vec![], None, None, None).is_err());
     }
 
     #[test]

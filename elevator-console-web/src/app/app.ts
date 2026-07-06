@@ -3,6 +3,7 @@ import {
   OnDestroy,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -16,8 +17,6 @@ import { positionOption, trendOption } from './chart-options';
 import { APP_VERSION } from './version';
 import { log } from './logger';
 
-// Floor range mirrors elevator-api application.yml (max-floor 15).
-const MAX_FLOOR = 15;
 const HEALTH_POLL_MS = 15_000;
 
 @Component({
@@ -33,7 +32,8 @@ export class App implements OnInit, OnDestroy {
   private onThemeChange = () => this.dark.set(this.darkMedia.matches);
 
   protected readonly connected = this.api.connected;
-  protected readonly maxFloor = MAX_FLOOR;
+  /** Live floor range from the api (GET /api/config), not a compile-time constant. */
+  protected readonly maxFloor = this.api.maxFloor;
   protected readonly historyLen = ElevatorService.HISTORY_LEN;
   protected readonly health = signal<string>('unknown');
   protected readonly dark = signal(this.darkMedia.matches);
@@ -54,6 +54,15 @@ export class App implements OnInit, OnDestroy {
   /** Regex name filter, shared by all tabs (same behaviour as the console). */
   protected readonly filter = signal('');
 
+  /** Whether the BI layer is on (from /api/config); when off, the Stats tab is hidden. */
+  protected readonly biEnabled = this.api.biEnabled;
+  /** If BI gets turned off while the Stats tab is open, fall back to Chart. */
+  private readonly biTabGuard = effect(() => {
+    if (!this.biEnabled() && this.tab() === 'stats') {
+      this.tab.set('chart');
+    }
+  });
+
   protected readonly noData = computed(() => this.api.elevators().length === 0);
 
   private readonly rows = computed<Row[]>(() =>
@@ -68,13 +77,14 @@ export class App implements OnInit, OnDestroy {
   });
 
   protected readonly chartOption = computed(() =>
-    positionOption(this.filtered(), this.maxFloor, this.dark()));
+    positionOption(this.filtered(), this.maxFloor(), this.dark()));
 
   protected readonly trendOption = computed(() =>
-    trendOption(this.filtered(), this.maxFloor, this.historyLen, this.dark()));
+    trendOption(this.filtered(), this.maxFloor(), this.historyLen, this.dark()));
 
   ngOnInit(): void {
     this.api.connect();
+    this.api.loadConfig();
     this.refreshHealth();
     this.healthTimer = setInterval(() => this.refreshHealth(), HEALTH_POLL_MS);
     this.darkMedia.addEventListener('change', this.onThemeChange);

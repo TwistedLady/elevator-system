@@ -10,7 +10,6 @@ use serde::Deserialize;
 use super::k8s::K8sSnapshot;
 
 pub const MAX_LOG_LINES: usize = 1000;
-pub const SIM_MAX_FLOOR: i32 = 15;
 pub const TREND_WINDOW_SECS: f64 = 60.0;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -261,6 +260,7 @@ pub struct App {
     pub message: String,
     pub should_quit: bool,
     api_base: String,
+    pub config: crate::api::ElevatorConfig,
     pub git: super::git::GitInfo,
 }
 
@@ -299,6 +299,7 @@ impl App {
             message: String::new(),
             should_quit: false,
             api_base: api_base.to_string(),
+            config: crate::api::ElevatorConfig::default(),
             git: super::git::GitInfo::snapshot(),
         };
         app.reload_test_report();
@@ -314,6 +315,9 @@ impl App {
     }
 
     pub fn refresh_sim(&mut self) {
+        if !self.config.bi_enabled && self.view == View::Stats {
+            self.view = View::Chart;
+        }
         if let Some(sim) = &mut self.sim {
             if sim.elapsed.is_none() && sim.done.load(Ordering::Relaxed) {
                 sim.elapsed = Some(sim.start.elapsed());
@@ -382,10 +386,10 @@ impl App {
     }
 
     fn elevator_pool(&self) -> Vec<String> {
-        if self.seen_elevators.is_empty() {
-            (1..=10).map(|i| format!("e{i}")).collect()
-        } else {
+        if !self.seen_elevators.is_empty() {
             self.seen_elevators.iter().cloned().collect()
+        } else {
+            self.config.elevators.clone()
         }
     }
 
@@ -393,6 +397,22 @@ impl App {
         let mut v: Vec<String> = self.seen_elevators.iter().cloned().collect();
         v.sort_by(|a, b| crate::natural_key(a).cmp(&crate::natural_key(b)));
         v
+    }
+
+    /// Tabs to show: every view, minus Stats when BI is disabled (via /api/config).
+    pub fn visible_views(&self) -> Vec<View> {
+        View::ALL
+            .into_iter()
+            .filter(|v| *v != View::Stats || self.config.bi_enabled)
+            .collect()
+    }
+
+    fn cycle_view(&mut self, delta: isize) {
+        let views = self.visible_views();
+        let cur = views.iter().position(|v| *v == self.view).unwrap_or(0);
+        let n = views.len() as isize;
+        let idx = (cur as isize + delta).rem_euclid(n) as usize;
+        self.view = views[idx];
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -409,11 +429,11 @@ impl App {
                 return;
             }
             KeyCode::Tab => {
-                self.view = self.view.next();
+                self.cycle_view(1);
                 return;
             }
             KeyCode::BackTab => {
-                self.view = self.view.prev();
+                self.cycle_view(-1);
                 return;
             }
             _ => {}
@@ -512,6 +532,7 @@ impl App {
     fn start_sim(&mut self, count: u64) {
         let pool = self.elevator_pool();
         let elevators = pool.len();
+        let max_floor = self.config.max_floor;
         let api_sim = self.api_base.clone();
         let sent = Arc::new(AtomicU64::new(0));
         let done = Arc::new(AtomicBool::new(false));
@@ -528,7 +549,7 @@ impl App {
                 count,
                 threads,
                 &pool,
-                SIM_MAX_FLOOR,
+                max_floor,
                 &sent_t,
                 pace,
                 run_id,
@@ -651,6 +672,9 @@ impl App {
         match parse_sim_count(line) {
             Ok(None) => String::new(),
             Ok(Some(count)) => {
+                if !self.config.is_known() {
+                    return "waiting for /api/config… (limits not loaded yet)".to_string();
+                }
                 self.start_sim(count);
                 format!("running {count} orders")
             }
@@ -662,6 +686,9 @@ impl App {
         match parse_order(line) {
             Ok(None) => String::new(),
             Ok(Some((elevator, floor))) => {
+                if let Err(msg) = self.config.validate_order(&elevator, floor) {
+                    return msg;
+                }
                 let (api_base, name) = (self.api_base.clone(), elevator.clone());
                 std::thread::spawn(move || {
                     let _ = crate::sender::send_one(&api_base, &name, floor);

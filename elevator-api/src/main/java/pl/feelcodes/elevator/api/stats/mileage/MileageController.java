@@ -1,5 +1,6 @@
 package pl.feelcodes.elevator.api.stats.mileage;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import reactor.core.publisher.Mono;
  */
 @RestController
 @RequestMapping("/api/mileage")
+@ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 class MileageController {
 
     private final MileageService service;

@@ -8,6 +8,67 @@ use serde::{Deserialize, Serialize};
 
 use crate::BoxErr;
 
+/// The system's live limits, fetched from the API (`GET /api/config`) — never hardcoded here.
+/// `max_floor` = highest valid floor (0..max_floor); `elevators` = the allowed fleet.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ElevatorConfig {
+    #[serde(rename = "maxFloor")]
+    pub max_floor: i32,
+    pub elevators: Vec<String>,
+    /// Whether the BI (Stats) layer is on. When false, the console hides the Stats tab.
+    #[serde(rename = "biEnabled", default = "default_true")]
+    pub bi_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for ElevatorConfig {
+    fn default() -> Self {
+        Self {
+            max_floor: 0,
+            elevators: Vec::new(),
+            bi_enabled: true,
+        }
+    }
+}
+
+impl ElevatorConfig {
+    /// True once real values have been fetched (max_floor > 0 and a non-empty fleet).
+    pub fn is_known(&self) -> bool {
+        self.max_floor > 0 && !self.elevators.is_empty()
+    }
+
+    /// Friendly client-side pre-check against the fetched limits. The API stays authoritative;
+    /// when the config is unknown (API unreachable) this passes and lets the API decide.
+    pub fn validate_order(&self, elevator: &str, floor: i32) -> Result<(), String> {
+        if !self.is_known() {
+            return Ok(());
+        }
+        if floor < 0 || floor > self.max_floor {
+            return Err(format!("floor must be between 0 and {}", self.max_floor));
+        }
+        if !self.elevators.iter().any(|e| e == elevator) {
+            return Err(format!(
+                "unknown elevator '{elevator}' (allowed: {})",
+                self.elevators.join(", ")
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub fn config_url(api_base: &str) -> String {
+    format!("{api_base}/api/config")
+}
+
+/// Fetch the live limits from the API. Callers decide how to degrade if it fails.
+pub fn get_config(agent: &ureq::Agent, api_base: &str) -> Result<ElevatorConfig, BoxErr> {
+    let body = agent.get(&config_url(api_base)).call()?.into_string()?;
+    Ok(serde_json::from_str(&body)?)
+}
+
 /// A rustls config that trusts the bundled elevator-api certificate (self-signed). The console
 /// speaks TLS to the api and verifies it against this cert — plain HTTP is not accepted.
 pub fn tls_config() -> Arc<rustls::ClientConfig> {

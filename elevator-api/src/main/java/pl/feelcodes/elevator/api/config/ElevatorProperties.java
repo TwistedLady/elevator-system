@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "elevator")
 public class ElevatorProperties {
 
-    private int maxFloor = 15;
+    private int maxFloor = 0;
 
     private List<String> elevators = List.of();
 

@@ -12,6 +12,9 @@ import pl.feelcodes.elevator.app.inbound.{OrderConsumer, OrderDedup}
 import pl.feelcodes.elevator.app.outbound.StatePublisher
 import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusProjection}
 
+import java.nio.file.Path
+import scala.concurrent.duration.*
+
 object ElevatorApp extends App {
 
   // On Kubernetes the pods form one cluster via Pekko Management + Cluster Bootstrap (k8s-api
@@ -38,16 +41,21 @@ object ElevatorApp extends App {
         val controllerProvider = sharding.entityRefFor(Controller.TypeKey, _)
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
 
+        val engineMode = new EngineMode(ctx.system.settings.config.getString("elevator.engine"))
+        val enginePath = Path.of(ctx.system.settings.config.getString("elevator.engine-file"))
+        ctx.system.scheduler.scheduleWithFixedDelay(0.seconds, 5.seconds) { () =>
+          val _ = engineMode.refreshFrom(enginePath)
+        }(ctx.executionContext)
+
+        val buildElevator: Operator.BuildElevator = (name, state) =>
+          engineMode.current match
+            case EngineMode.Fast => Elevator.fast(name)(state)
+            case EngineMode.Slow => Elevator.slow(name)(state)
+            case other => throw new IllegalArgumentException(s"Unknown engine '$other'")
+
         sharding.init(Entity(Operator.TypeKey) { _ =>
           val publishMove: Operator.PublishMove =
             (name, state) => controllerProvider(name) ! Controller.PublishState(state)
-          val buildElevator: Operator.BuildElevator =
-            ctx.system.settings.config.getString("elevator.operator-class") match
-              case "FastOperator" => (name, state) => Elevator.fast(name)(state)
-              case "SlowOperator" => (name, state) => Elevator.slow(name)(state)
-              case other =>
-                throw new IllegalArgumentException(
-                  s"Unknown elevator.operator-class '$other'. Known: FastOperator, SlowOperator")
           Operator(publishMove, buildElevator)
         }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
         sharding.init(Entity(Controller.TypeKey) { e =>

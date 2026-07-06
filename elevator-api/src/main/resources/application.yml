@@ -29,10 +29,16 @@ elevator:
       password: ${ELEVATOR_STATS_PG_PASSWORD:elevator}
   command-topic: elevator-commands
   state-topic: elevator-state
-  # Order-validation params (overridable via env ELEVATOR_MAXFLOOR / ELEVATOR_ELEVATORS).
-  max-floor: 15
-  elevators: e1,e2,e3,e4,e5,e6,e7,e8,e9,e10
+  # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
+  # hot-reloaded by ElevatorLimits. No defaults here — a missing ConfigMap fails the pod fast.
+  # Test values live in application-test.yml.
+  # Per-replica id for the state consumer group (Downward API metadata.name); empty -> random uuid.
+  pod-name: ${ELEVATOR_POD_NAME:}
 management:
+  health:
+    r2dbc:
+      enabled: false                   # main + stats DBs are covered by custom indicators (db, bi);
+                                       # the built-in one would flag the optional stats DB when BI is off
   endpoints:
     web:
       exposure:
