@@ -8,30 +8,20 @@ use std::time::{Duration, Instant};
 
 use super::app::{ElevatorState, HealthSnapshot};
 use super::sources;
+use crate::api;
 use crate::BoxErr;
 
-pub fn run_selftest(
-    brokers: &str,
-    state_topic: &str,
-    health_url: &str,
-    duration_secs: u64,
-    log_path: &str,
-) -> Result<(), BoxErr> {
+pub fn run_selftest(api_base: &str, duration_secs: u64, log_path: &str) -> Result<(), BoxErr> {
     let mut log = Log::create(log_path)?;
     log.line(&format!(
-        "started: brokers={brokers} state-topic={state_topic} health-url={health_url} window={duration_secs}s"
+        "started: api={api_base} window={duration_secs}s"
     ));
 
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
-    sources::spawn_health_poll(health_url.to_string(), Arc::clone(&health));
+    sources::spawn_health_poll(api::health_url(api_base), Arc::clone(&health));
 
     let (tx, rx) = mpsc::channel::<ElevatorState>();
-    sources::spawn_consumer(
-        brokers.to_string(),
-        state_topic.to_string(),
-        "earliest".to_string(),
-        tx,
-    );
+    sources::spawn_state_source(api_base.to_string(), tx);
 
     let deadline = Instant::now() + Duration::from_secs(duration_secs);
     let mut count = 0u64;
@@ -58,15 +48,12 @@ pub fn run_selftest(
         h.reachable, h.overall, comps
     ));
     for c in h.components.iter().filter(|c| c.status != "UP") {
-        log.line(&format!(
-            "  DOWN: {} -> {} ({})",
-            c.name, c.status, c.detail
-        ));
+        log.line(&format!("  DOWN: {} -> {} ({})", c.name, c.status, c.detail));
     }
 
     let names: Vec<String> = elevators.iter().cloned().collect();
     log.line(&format!(
-        "kafka: consumed {count} states; distinct elevators={} [{}]",
+        "state: received {count} updates; distinct elevators={} [{}]",
         names.len(),
         names.join(",")
     ));
@@ -78,9 +65,9 @@ pub fn run_selftest(
     }
 
     let api_ok = h.reachable && h.overall == "UP";
-    let kafka_ok = count > 0;
-    if api_ok && kafka_ok {
-        log.line("RESULT: PASS (api UP, kafka consuming)");
+    let state_ok = count > 0;
+    if api_ok && state_ok {
+        log.line("RESULT: PASS (api UP, state streaming)");
         Ok(())
     } else {
         let mut reasons = Vec::new();
@@ -89,8 +76,8 @@ pub fn run_selftest(
         } else if h.overall != "UP" {
             reasons.push(format!("api health {}", h.overall));
         }
-        if !kafka_ok {
-            reasons.push("no kafka states consumed".to_string());
+        if !state_ok {
+            reasons.push("no elevator state received".to_string());
         }
         let msg = format!("RESULT: FAIL ({})", reasons.join("; "));
         log.line(&msg);

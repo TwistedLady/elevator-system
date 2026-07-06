@@ -1,0 +1,10 @@
+# kind cluster config for the elevator system, using Calico as the CNI so NetworkPolicy is enforced.
+# Recreate with: scripts/kind-calico-up.sh  (deletes + recreates + deploys + seeds).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: elevator
+networking:
+  disableDefaultCNI: true          # no kindnet — Calico is installed instead
+  podSubnet: "192.168.0.0/16"      # matches Calico's default IPPool
+nodes:
+  - role: control-plane

@@ -197,13 +197,12 @@ pub struct App {
     pub sim: Option<SimRun>,
     pub message: String,
     pub should_quit: bool,
-    brokers: String,
-    command_topic: String,
     api_base: String,
+    pub git: super::git::GitInfo,
 }
 
 impl App {
-    pub fn new(brokers: &str, command_topic: &str, api_base: &str) -> Self {
+    pub fn new(api_base: &str) -> Self {
         let mut app = Self {
             view: View::Chart,
             latest: BTreeMap::new(),
@@ -235,9 +234,8 @@ impl App {
             sim: None,
             message: String::new(),
             should_quit: false,
-            brokers: brokers.to_string(),
-            command_topic: command_topic.to_string(),
             api_base: api_base.to_string(),
+            git: super::git::GitInfo::snapshot(),
         };
         app.reload_test_report();
         app
@@ -379,24 +377,26 @@ impl App {
         self.test_running.store(true, Ordering::Relaxed);
         self.test_was_running = true;
         let running = Arc::clone(&self.test_running);
-        let brokers = self.brokers.clone();
-        let topic = self.command_topic.clone();
-        let health_url = format!("{}/actuator/health", self.api_base);
+        let api_base = self.api_base.clone();
         std::thread::spawn(move || {
-            let _ = crate::itest::run_itest(
-                &brokers,
-                &topic,
-                &health_url,
-                12,
-                75,
-                App::TEST_REPORT_PATH,
-                true,
-            );
+            let _ = crate::itest::run_itest(&api_base, 12, 75, App::TEST_REPORT_PATH, true);
             running.store(false, Ordering::Relaxed);
         });
     }
 
     fn on_key_k8s(&mut self, key: KeyEvent) {
+        if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
+            self.message = "restarting elevator-app…".to_string();
+            let slot = Arc::clone(&self.k8s_action);
+            std::thread::spawn(move || {
+                let result =
+                    super::k8s::restart().unwrap_or_else(|e| format!("restart failed: {e}"));
+                if let Ok(mut g) = slot.lock() {
+                    *g = Some(result);
+                }
+            });
+            return;
+        }
         let target = match key.code {
             KeyCode::Char('f') | KeyCode::Char('F') => "fast",
             KeyCode::Char('s') | KeyCode::Char('S') => "slow",
@@ -448,7 +448,7 @@ impl App {
     fn start_sim(&mut self, count: u64) {
         let pool = self.elevator_pool();
         let elevators = pool.len();
-        let (brokers, topic) = (self.brokers.clone(), self.command_topic.clone());
+        let api_sim = self.api_base.clone();
         let sent = Arc::new(AtomicU64::new(0));
         let done = Arc::new(AtomicBool::new(false));
         let (sent_t, done_t) = (Arc::clone(&sent), Arc::clone(&done));
@@ -460,8 +460,7 @@ impl App {
         let pace = Some(Duration::from_millis(2500));
         std::thread::spawn(move || {
             let _ = crate::sender::run_simulation(
-                &brokers,
-                &topic,
+                &api_sim,
                 count,
                 threads,
                 &pool,
@@ -611,13 +610,9 @@ impl App {
             [] => String::new(),
             [elevator, floor] => match floor.parse::<i32>() {
                 Ok(f) => {
-                    let (brokers, topic, name) = (
-                        self.brokers.clone(),
-                        self.command_topic.clone(),
-                        elevator.to_string(),
-                    );
+                    let (api_base, name) = (self.api_base.clone(), elevator.to_string());
                     std::thread::spawn(move || {
-                        let _ = crate::sender::send_one(&brokers, &topic, &name, f);
+                        let _ = crate::sender::send_one(&api_base, &name, f);
                     });
                     format!("ordered {elevator} → floor {f}")
                 }

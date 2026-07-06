@@ -1,3 +1,4 @@
+mod api;
 mod itest;
 mod monitor;
 mod sender;
@@ -9,16 +10,17 @@ pub type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Parser)]
 #[command(
     name = "elevator-console",
-    about = "Monitor elevators and send orders over Kafka"
+    about = "Monitor elevators and send orders — entirely through the elevator HTTP API (never Kafka)"
 )]
 struct Cli {
+    /// Base URL of the elevator-api. Everything (orders, state, status, health) goes through it.
     #[arg(
         long,
-        env = "KAFKA_BOOTSTRAP",
-        default_value = "localhost:9094",
+        env = "ELEVATOR_API",
+        default_value = "https://localhost:8080",
         global = true
     )]
-    brokers: String,
+    api: String,
 
     #[command(subcommand)]
     command: Command,
@@ -26,30 +28,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Live multi-view TUI dashboard (chart, trend, orders, sim, health, logs, k8s, test).
     Monitor {
-        #[arg(long, env = "STATE_TOPIC", default_value = "elevator-state")]
-        topic: String,
-        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
-        command_topic: String,
-        #[arg(
-            long,
-            env = "HEALTH_URL",
-            default_value = "http://localhost:8080/actuator/health"
-        )]
-        health_url: String,
         #[arg(long, default_value = "logs/app.log")]
         app_log: String,
         #[arg(long, default_value = "logs/api.log")]
         api_log: String,
     },
+    /// Send a single order.
     Order {
         #[arg(long)]
         elevator: String,
         #[arg(long)]
         floor: i32,
-        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
-        topic: String,
     },
+    /// Fire a burst of random orders (load/sim).
     Simulate {
         #[arg(long, default_value_t = 10_000)]
         count: u64,
@@ -67,42 +60,25 @@ enum Command {
         elevators_file: Option<String>,
         #[arg(long, default_value_t = 15)]
         max_floor: i32,
-        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
-        topic: String,
     },
+    /// Headless one-shot check: API health + live state, writes a pass/fail log.
     Selftest {
-        #[arg(long, env = "STATE_TOPIC", default_value = "elevator-state")]
-        topic: String,
-        #[arg(
-            long,
-            env = "HEALTH_URL",
-            default_value = "http://localhost:8080/actuator/health"
-        )]
-        health_url: String,
         #[arg(long, default_value_t = 8)]
         duration: u64,
         #[arg(long, default_value = "logs/console-selftest.log")]
         log: String,
     },
+    /// Automated integration test: fire orders, poll status, cross-check kubectl logs.
     Itest {
         #[arg(long, default_value_t = 20)]
         count: u64,
-        #[arg(long, env = "COMMAND_TOPIC", default_value = "elevator-commands")]
-        topic: String,
-        #[arg(
-            long,
-            env = "HEALTH_URL",
-            default_value = "http://localhost:8080/actuator/health"
-        )]
-        health_url: String,
         #[arg(long, default_value_t = 90)]
         timeout: u64,
         #[arg(long, default_value = "logs/itest-report.json")]
         out: String,
     },
+    /// Headless plain-text live view of the latest state per elevator.
     Watch {
-        #[arg(long, env = "STATE_TOPIC", default_value = "elevator-state")]
-        topic: String,
         #[arg(long, default_value_t = 1000)]
         refresh_ms: u64,
         #[arg(long)]
@@ -113,25 +89,8 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Monitor {
-            topic,
-            command_topic,
-            health_url,
-            app_log,
-            api_log,
-        } => monitor::run(
-            &cli.brokers,
-            &topic,
-            &command_topic,
-            &health_url,
-            &app_log,
-            &api_log,
-        ),
-        Command::Order {
-            elevator,
-            floor,
-            topic,
-        } => sender::send_one(&cli.brokers, &topic, &elevator, floor)
+        Command::Monitor { app_log, api_log } => monitor::run(&cli.api, &app_log, &api_log),
+        Command::Order { elevator, floor } => sender::send_one(&cli.api, &elevator, floor)
             .map(|()| println!("sent order: elevator={elevator} floor={floor}")),
         Command::Simulate {
             count,
@@ -140,36 +99,18 @@ fn main() {
             elevator_count,
             elevators_file,
             max_floor,
-            topic,
-        } => resolve_elevators(elevators, elevator_count, elevators_file).and_then(|list| {
-            sender::simulate(&cli.brokers, &topic, count, threads, &list, max_floor)
-        }),
-        Command::Selftest {
-            topic,
-            health_url,
-            duration,
-            log,
-        } => monitor::run_selftest(&cli.brokers, &topic, &health_url, duration, &log),
+        } => resolve_elevators(elevators, elevator_count, elevators_file)
+            .and_then(|list| sender::simulate(&cli.api, count, threads, &list, max_floor)),
+        Command::Selftest { duration, log } => monitor::run_selftest(&cli.api, duration, &log),
         Command::Watch {
-            topic,
             refresh_ms,
             duration,
-        } => monitor::run_watch(&cli.brokers, &topic, refresh_ms, duration),
+        } => monitor::run_watch(&cli.api, refresh_ms, duration),
         Command::Itest {
             count,
-            topic,
-            health_url,
             timeout,
             out,
-        } => itest::run_itest(
-            &cli.brokers,
-            &topic,
-            &health_url,
-            count,
-            timeout,
-            &out,
-            false,
-        ),
+        } => itest::run_itest(&cli.api, count, timeout, &out, false),
     };
     if let Err(e) = result {
         eprintln!("error: {e}");

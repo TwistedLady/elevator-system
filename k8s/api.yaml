@@ -27,13 +27,27 @@ spec:
           envFrom:
             - configMapRef:
                 name: elevator-api-config    # injects SPRING_KAFKA_* + topics
-          readinessProbe:                      # "is it ready for traffic?"
-            httpGet: { path: /api/elevator, port: 8080 }
+          env:                                 # TLS: serve HTTPS from the mounted keystore
+            - { name: ELEVATOR_TLS_ENABLED, value: "true" }
+            - { name: ELEVATOR_TLS_KEYSTORE, value: "/etc/tls/keystore.p12" }
+            - name: ELEVATOR_TLS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: elevator-api-tls, key: password }
+          volumeMounts:
+            - { name: tls, mountPath: /etc/tls, readOnly: true }
+          readinessProbe:                      # "is it ready for traffic?" (HTTPS now)
+            httpGet: { path: /api/elevator, port: 8080, scheme: HTTPS }
             initialDelaySeconds: 10
             periodSeconds: 5
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1",    memory: "512Mi" }
+      volumes:
+        - name: tls
+          secret:
+            secretName: elevator-api-tls
+            items:
+              - { key: keystore.p12, path: keystore.p12 }
 ---
 apiVersion: v1
 kind: Service
