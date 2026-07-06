@@ -12,8 +12,11 @@ edge, a Rust console, plus Kafka and Postgres.
 | `elevator-app` | Pekko | The brain: event-sourced [actors](actors.md) + R2DBC journal + [read-side projections](read-model.md). |
 | `elevator-api` | Spring WebFlux | HTTP edge + Actuator health. No actors. |
 | `elevator-console` | Rust (ratatui) | Terminal dashboard + order sender. |
+| `elevator-web-console` | Angular | Read-only browser monitor (Chart + Trend), a web sibling of the Rust console. |
 
 Infra: **Kafka** (2 topics) and **Postgres** (event journal + read-model tables).
+
+Both consoles are pure HTTP clients of `elevator-api` — neither touches Kafka.
 
 ## Data flow
 

@@ -88,6 +88,7 @@ Real hazards to be aware of (fix deliberately, on their own branch):
   reseed via `demo-up.sh`).
 - **`DefaultScalaModule` is registered in the pure-Java api** and a custom `ObjectMapper` bean
   overrides Boot's auto-config. Leftover — safe to remove.
-- **Rust console has no tests** while Scala/Java do. When adding pure Rust functions, add a test.
+- **Rust console has unit tests now** (`cargo test` in `elevator-console`, run by CI). Keep it that
+  way: when adding pure Rust functions, add a test alongside them.
 - **Docs drift.** Re-verify docs/comments after a refactor — code is the source of truth. Full
   docs are in [`docs/`](docs/README.md) (one topic per file, indexed).

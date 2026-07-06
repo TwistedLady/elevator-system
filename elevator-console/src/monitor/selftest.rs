@@ -13,9 +13,7 @@ use crate::BoxErr;
 
 pub fn run_selftest(api_base: &str, duration_secs: u64, log_path: &str) -> Result<(), BoxErr> {
     let mut log = Log::create(log_path)?;
-    log.line(&format!(
-        "started: api={api_base} window={duration_secs}s"
-    ));
+    log.line(&format!("started: api={api_base} window={duration_secs}s"));
 
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(api::health_url(api_base), Arc::clone(&health));
@@ -48,7 +46,10 @@ pub fn run_selftest(api_base: &str, duration_secs: u64, log_path: &str) -> Resul
         h.reachable, h.overall, comps
     ));
     for c in h.components.iter().filter(|c| c.status != "UP") {
-        log.line(&format!("  DOWN: {} -> {} ({})", c.name, c.status, c.detail));
+        log.line(&format!(
+            "  DOWN: {} -> {} ({})",
+            c.name, c.status, c.detail
+        ));
     }
 
     let names: Vec<String> = elevators.iter().cloned().collect();

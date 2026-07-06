@@ -91,3 +91,21 @@ spec:
         - ipBlock: { cidr: 172.20.0.0/16 }   # kind node/docker network — needed under Calico
       ports:
         - { protocol: TCP, port: 8558 }
+---
+# elevator-web-console stays INTERNAL (reach it via `kubectl port-forward`, which bypasses
+# NetworkPolicy). The only ingress it needs is the kubelet readiness probe on :80 under Calico.
+# Its egress to the api is unrestricted (no egress policies) and the api already allows all ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-webconsole-probe
+  labels: { part-of: elevator }
+spec:
+  podSelector:
+    matchLabels: { app: elevator-web-console }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 172.20.0.0/16 }   # kind node/docker network — probe source
+      ports:
+        - { protocol: TCP, port: 80 }

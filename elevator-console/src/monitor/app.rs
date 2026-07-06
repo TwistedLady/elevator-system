@@ -110,7 +110,7 @@ impl LogSource {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum View {
     Chart,
     Trend,
@@ -584,42 +584,60 @@ impl App {
     }
 
     fn run_sim(&mut self, line: &str) -> String {
-        let line = line.trim();
-        if line.is_empty() {
-            return String::new();
-        }
-        let lower = line.to_ascii_lowercase();
-        let rest = if lower.starts_with("sim") {
-            line[3..].trim()
-        } else {
-            line
-        };
-        match rest.parse::<u64>() {
-            Ok(count) if count > 0 => {
+        match parse_sim_count(line) {
+            Ok(None) => String::new(),
+            Ok(Some(count)) => {
                 self.start_sim(count);
                 format!("running {count} orders")
             }
-            Ok(_) => "count must be greater than 0".to_string(),
-            Err(_) => "type a number of orders, e.g. 300".to_string(),
+            Err(msg) => msg.to_string(),
         }
     }
 
     fn run_order(&mut self, line: &str) -> String {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        match parts.as_slice() {
-            [] => String::new(),
-            [elevator, floor] => match floor.parse::<i32>() {
-                Ok(f) => {
-                    let (api_base, name) = (self.api_base.clone(), elevator.to_string());
-                    std::thread::spawn(move || {
-                        let _ = crate::sender::send_one(&api_base, &name, f);
-                    });
-                    format!("ordered {elevator} → floor {f}")
-                }
-                Err(_) => "floor must be a number".to_string(),
-            },
-            _ => "type:  <elevator> <floor>   e.g.  e3 7".to_string(),
+        match parse_order(line) {
+            Ok(None) => String::new(),
+            Ok(Some((elevator, floor))) => {
+                let (api_base, name) = (self.api_base.clone(), elevator.clone());
+                std::thread::spawn(move || {
+                    let _ = crate::sender::send_one(&api_base, &name, floor);
+                });
+                format!("ordered {elevator} → floor {floor}")
+            }
+            Err(msg) => msg.to_string(),
         }
+    }
+}
+
+/// Parse the Sim input line. `Ok(None)` = nothing to do (blank); `Ok(Some(n))` = run `n` orders;
+/// `Err(msg)` = a hint to show the user. An optional leading `sim` prefix is tolerated.
+fn parse_sim_count(line: &str) -> Result<Option<u64>, &'static str> {
+    let line = line.trim();
+    if line.is_empty() {
+        return Ok(None);
+    }
+    let rest = line
+        .strip_prefix("sim")
+        .or_else(|| line.strip_prefix("SIM"))
+        .map(str::trim)
+        .unwrap_or(line);
+    match rest.parse::<u64>() {
+        Ok(count) if count > 0 => Ok(Some(count)),
+        Ok(_) => Err("count must be greater than 0"),
+        Err(_) => Err("type a number of orders, e.g. 300"),
+    }
+}
+
+/// Parse the Order input line into `(elevator, floor)`. `Ok(None)` = blank; `Err(msg)` = a hint.
+fn parse_order(line: &str) -> Result<Option<(String, i32)>, &'static str> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    match parts.as_slice() {
+        [] => Ok(None),
+        [elevator, floor] => match floor.parse::<i32>() {
+            Ok(f) => Ok(Some((elevator.to_string(), f))),
+            Err(_) => Err("floor must be a number"),
+        },
+        _ => Err("type:  <elevator> <floor>   e.g.  e3 7"),
     }
 }
 
@@ -666,5 +684,85 @@ fn poll_statuses(api_base: &str, tags: Vec<String>, done: &AtomicU64, in_progres
             break;
         }
         std::thread::sleep(Duration::from_millis(500));
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_order_accepts_elevator_and_floor() {
+        assert_eq!(parse_order("e3 7"), Ok(Some(("e3".to_string(), 7))));
+        assert_eq!(parse_order("  e3   7 "), Ok(Some(("e3".to_string(), 7))));
+        assert_eq!(parse_order("e3 -1"), Ok(Some(("e3".to_string(), -1))));
+    }
+
+    #[test]
+    fn parse_order_rejects_bad_input() {
+        assert_eq!(parse_order(""), Ok(None));
+        assert!(parse_order("e3 up").is_err());
+        assert!(parse_order("e3 7 extra").is_err());
+    }
+
+    #[test]
+    fn parse_sim_count_reads_number_with_optional_prefix() {
+        assert_eq!(parse_sim_count("300"), Ok(Some(300)));
+        assert_eq!(parse_sim_count("sim 300"), Ok(Some(300)));
+        assert_eq!(parse_sim_count("SIM50"), Ok(Some(50)));
+        assert_eq!(parse_sim_count(""), Ok(None));
+    }
+
+    #[test]
+    fn parse_sim_count_rejects_zero_and_junk() {
+        assert!(parse_sim_count("0").is_err());
+        assert!(parse_sim_count("lots").is_err());
+    }
+
+    #[test]
+    fn view_navigation_wraps_both_ways() {
+        assert_eq!(View::Chart.prev(), View::Test);
+        assert_eq!(View::Test.next(), View::Chart);
+        for v in View::ALL {
+            assert_eq!(v.next().prev(), v);
+            assert_eq!(View::ALL[v.index()], v);
+        }
+    }
+
+    #[test]
+    fn elevator_state_deserializes_from_api_json() {
+        let json = r#"{"elevatorName":"e2","direction":"UP","motion":"MOVING","floor":4}"#;
+        let s: ElevatorState = serde_json::from_str(json).unwrap();
+        assert_eq!(s.elevator_name, "e2");
+        assert_eq!(s.floor, 4);
+        assert_eq!(s.direction, "UP");
+    }
+
+    fn sim_run(total: u64, sent: u64, checked: u64, done: u64, progress: u64) -> SimRun {
+        SimRun {
+            total,
+            elevators: 1,
+            sent: Arc::new(AtomicU64::new(sent)),
+            done: Arc::new(AtomicBool::new(false)),
+            start: Instant::now(),
+            elapsed: None,
+            checked,
+            status_done: Arc::new(AtomicU64::new(done)),
+            status_progress: Arc::new(AtomicU64::new(progress)),
+        }
+    }
+
+    #[test]
+    fn sim_ratio_is_clamped() {
+        assert_eq!(sim_run(0, 0, 0, 0, 0).ratio(), 0.0);
+        assert_eq!(sim_run(100, 50, 0, 0, 0).ratio(), 0.5);
+        assert_eq!(sim_run(100, 999, 0, 0, 0).ratio(), 1.0);
+    }
+
+    #[test]
+    fn sim_pending_never_underflows() {
+        // done + in_progress may briefly exceed `checked`; pending must saturate at 0, not wrap.
+        assert_eq!(sim_run(10, 10, 8, 5, 3).pending(), 0);
+        assert_eq!(sim_run(10, 10, 8, 9, 9).pending(), 0);
+        assert_eq!(sim_run(10, 10, 10, 4, 3).pending(), 3);
     }
 }

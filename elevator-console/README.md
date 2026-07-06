@@ -15,12 +15,38 @@ e2                    0  NONE       IDLE
 
 ## Prerequisites
 
-- Rust toolchain (`rustup` / `cargo`). That's it — no `librdkafka`, no system libs.
-- A reachable `elevator-api` (default `http://localhost:8080`).
+- To **build**: a Rust toolchain (`rustup` / `cargo`). That's it — no `librdkafka`, no system libs.
+- To **install a prebuilt** binary/`.deb`/image: nothing (see [Install](#install)).
+- At **runtime**: a reachable `elevator-api` (default `https://localhost:8080`).
+
+## Install
+
+Pick whichever fits — all four give you an `elevator-console` on your PATH.
+
+```bash
+# 1) From source with cargo (installs to ~/.cargo/bin)
+cargo install --path .
+
+# 2) Build + install script (installs to ~/.local/bin, override with PREFIX=)
+./install.sh
+PREFIX=/usr/local ./install.sh          # system-wide (may need sudo)
+
+# 3) Debian / Ubuntu package
+cargo install cargo-deb && cargo deb     # -> target/debian/elevator-console_*.deb
+sudo dpkg -i target/debian/elevator-console_*.deb
+
+# 4) Docker image (headless subcommands; use -it for the TUI)
+docker build -t elevator-console .
+docker run --rm elevator-console --help
+```
+
+Prebuilt binaries, checksums and a `.deb` are attached to each **`console-v*`** GitHub release
+(built by `.github/workflows/console-release.yml`). The `Makefile` wraps all of the above —
+`make help`.
 
 ## Config
 
-Everything hangs off one flag: **`--api`** (env **`ELEVATOR_API`**, default `http://localhost:8080`).
+Everything hangs off one flag: **`--api`** (env **`ELEVATOR_API`**, default `https://localhost:8080`).
 Orders, live state, order status and health are all derived from it:
 
 | Concern | Endpoint |
@@ -82,11 +108,27 @@ cargo run -- selftest             # one-shot: api health + live state → pass/f
 cargo run -- itest --count 20     # fire orders, poll status, cross-check kubectl logs
 ```
 
-Build a release binary:
+## Test
+
+Pure logic (fleet/tag distribution, health parsing, latency stats, input parsing, the PRNG, view
+navigation) is covered by unit tests:
 
 ```bash
-cargo build --release   # -> target/release/elevator-console
+cargo test          # unit tests
+make check          # what CI runs: fmt --check + clippy -D warnings + tests
 ```
+
+## Build & package
+
+```bash
+cargo build --release   # -> target/release/elevator-console (stripped, ~2.8 MB)
+make dist               # stripped binary + sha256 in dist/
+make deb                # Debian package (needs: cargo install cargo-deb)
+make docker             # container image
+```
+
+The release profile (`opt-level="z"`, LTO, one codegen unit, `panic="abort"`, `strip`) plus trimmed
+dependency features roughly **halve** the binary versus a default `--release` build.
 
 ## Building with Maven
 

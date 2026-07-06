@@ -73,6 +73,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Self-contained npm project → its own build context (not the repo root).
+      - name: Build & push elevator-web-console
+        uses: docker/build-push-action@v6
+        with:
+          context: elevator-web-console
+          file: elevator-web-console/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-web-console:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-web-console:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy:
     name: Deploy → Kubernetes (Pekko cluster)
     needs: publish
@@ -141,6 +154,14 @@ jobs:
         run: |
           kubectl rollout status deployment/elevator-app --timeout=8m
           kubectl rollout status deployment/elevator-api --timeout=5m
+
+      # 4) Web console (nginx serving the bundle + proxying to the api). Apply the
+      #    NetworkPolicies too so the kubelet readiness probe is allowed under Calico.
+      - name: Deploy web console (pin image to commit)
+        run: |
+          kubectl apply -f k8s/network-policies.yaml -f k8s/web-console.yaml
+          kubectl set image deployment/elevator-web-console elevator-web-console="ghcr.io/${OWNER}/elevator-web-console:${TAG}"
+          kubectl rollout status deployment/elevator-web-console --timeout=3m
 
       - name: Deployment summary
         if: ${{ !cancelled() }}

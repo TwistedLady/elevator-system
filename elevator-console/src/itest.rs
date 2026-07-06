@@ -45,14 +45,7 @@ pub fn run_itest(
     let sent_ms = now_ms();
     let send_start = Instant::now();
     run_simulation(
-        api_base,
-        count,
-        THREADS,
-        &fleet,
-        MAX_FLOOR,
-        &sent,
-        None,
-        run_id,
+        api_base, count, THREADS, &fleet, MAX_FLOOR, &sent, None, run_id,
     )?;
     let send_secs = send_start.elapsed().as_secs_f64();
     if !quiet {
@@ -338,4 +331,31 @@ fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, boo
         sf = r["app_stream_failed"],
     );
     let _ = std::fs::write(md_path, md);
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latency_stats_from_sorted_samples() {
+        let sorted = vec![10u64, 20, 30, 40, 100];
+        let s = LatencyStats::from(&sorted);
+        assert_eq!(s.min, 10);
+        assert_eq!(s.max, 100);
+        assert_eq!(s.avg, 40); // (10+20+30+40+100)/5
+        assert_eq!(s.p50, 30);
+        assert_eq!(s.p95, 100);
+    }
+
+    #[test]
+    fn latency_stats_empty_is_all_zero() {
+        let s = LatencyStats::from(&[]);
+        assert_eq!((s.min, s.p50, s.p95, s.max, s.avg), (0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn strip_ansi_removes_colour_codes() {
+        let coloured = "\x1b[31mERROR\x1b[0m done";
+        assert_eq!(strip_ansi(coloured), "ERROR done");
+    }
 }
