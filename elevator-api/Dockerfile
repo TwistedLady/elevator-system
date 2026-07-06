@@ -6,6 +6,8 @@ COPY . .
 RUN mvn -B -ntp clean package -pl elevator-api -am -DskipTests
 
 FROM eclipse-temurin:21-jre-jammy
+# Links the GHCR package to this repository (github.com → Packages).
+LABEL org.opencontainers.image.source="https://github.com/TwistedLady/elevator-system"
 WORKDIR /srv/elevator-api
 COPY --from=build /home/build/elevator-api/target/elevator-api-*.jar app.jar
 ENTRYPOINT ["java","-jar","app.jar"]

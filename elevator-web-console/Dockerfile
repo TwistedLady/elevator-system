@@ -9,6 +9,8 @@ COPY . .
 RUN npm run build
 
 FROM nginx:1.27-alpine
+# Links the GHCR package to this repository (github.com → Packages).
+LABEL org.opencontainers.image.source="https://github.com/TwistedLady/elevator-system"
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist/elevator-web-console/browser /usr/share/nginx/html
 EXPOSE 80
