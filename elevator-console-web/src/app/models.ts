@@ -8,3 +8,9 @@ export interface ElevatorState {
   motion: string;    // Moving | Stopped   (core Motion enum)
   floor: number;
 }
+
+/** Live state paired with its recent floor history (oldest → newest), for the charts. */
+export interface Row {
+  state: ElevatorState;
+  history: number[];
+}
