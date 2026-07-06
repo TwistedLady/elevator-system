@@ -1,0 +1,68 @@
+<header class="topbar">
+  <h1>🛗 Elevator web console</h1>
+  <div class="badges">
+    <span class="badge" [class.ok]="connected()" [class.bad]="!connected()">
+      stream {{ connected() ? 'live' : 'offline' }}
+    </span>
+    <span class="badge" [class.ok]="health() === 'UP'" [class.bad]="health() !== 'UP'"
+          (click)="refreshHealth()" title="click to refresh">
+      api {{ health() }}
+    </span>
+  </div>
+</header>
+
+<main>
+  <div class="tabbar">
+    <div class="tabs" role="tablist">
+      <button role="tab" [class.active]="tab() === 'chart'" (click)="tab.set('chart')">Chart</button>
+      <button role="tab" [class.active]="tab() === 'trend'" (click)="tab.set('trend')">Trend</button>
+    </div>
+    <div class="filterbox">
+      <input type="text" [ngModel]="filter()" (ngModelChange)="filter.set($event)"
+             placeholder="filter name — regex, e.g. e[1-3]" aria-label="filter elevators by name" />
+      @if (filter()) {
+        <button class="clear" (click)="filter.set('')" aria-label="clear filter">✕</button>
+      }
+    </div>
+  </div>
+
+  <section class="panel">
+    @if (noData()) {
+      <p class="muted">Waiting for elevator state…</p>
+    } @else if (filtered().length === 0) {
+      <p class="muted">No elevator matches “{{ filter() }}”.</p>
+    } @else {
+      <div class="viz">
+        <!-- shared floor axis (one axis for every column, both tabs) -->
+        <svg class="axis" width="26" [attr.height]="plotH" aria-hidden="true">
+          @for (t of axisTicks(); track t.floor) {
+            <text class="tick" x="22" [attr.y]="t.y">{{ t.floor }}</text>
+          }
+        </svg>
+
+        @if (tab() === 'chart') {
+          <div class="rail">
+            @for (r of filtered(); track r.state.elevatorName) {
+              <app-shaft [state]="r.state" [maxFloor]="maxFloor" />
+            }
+          </div>
+        } @else {
+          <div class="rail">
+            @for (r of filtered(); track r.state.elevatorName) {
+              <app-trend [state]="r.state" [history]="r.history" [maxFloor]="maxFloor" />
+            }
+          </div>
+        }
+      </div>
+
+      @if (tab() === 'chart') {
+        <div class="legend">
+          <span class="key"><i class="swatch moving"></i>moving</span>
+          <span class="key"><i class="swatch idle"></i>idle</span>
+          <span class="key"><i class="chev up">▲</i>up</span>
+          <span class="key"><i class="chev down">▼</i>down</span>
+        </div>
+      }
+    }
+  </section>
+</main>

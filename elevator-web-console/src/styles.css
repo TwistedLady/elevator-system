@@ -1,0 +1,75 @@
+/* Global palette — validated dataviz reference values, exposed as roles so the
+   light/dark values swap in one place. Components reference the roles, never raw hex. */
+:root {
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+
+  --accent: #2a78d6;         /* sequential/primary blue */
+  --up: #008300;             /* direction up */
+  --down: #eb6834;           /* direction down */
+  --ok: #0ca30c;             /* status good */
+  --bad: #d03b3b;            /* status critical */
+
+  --cab-active-fill: #2a78d6;
+  --cab-active-ink: #ffffff;
+  --cab-idle-fill: #52514e;
+  --cab-idle-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+
+    --accent: #3987e5;
+    --up: #008300;
+    --down: #d95926;
+    --ok: #0ca30c;
+    --bad: #d03b3b;
+
+    --cab-active-fill: #3987e5;
+    --cab-active-ink: #ffffff;
+    --cab-idle-fill: #c3c2b7;
+    --cab-idle-ink: #0b0b0b;
+  }
+}
+
+/* Explicit theme toggle wins over the OS preference in both directions. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #3987e5;
+  --down: #d95926;
+  --cab-active-fill: #3987e5;
+  --cab-idle-fill: #c3c2b7;
+  --cab-idle-ink: #0b0b0b;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}

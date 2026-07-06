@@ -1,0 +1,194 @@
+:host {
+  display: block;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.topbar h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.badges {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.badge {
+  font: 0.8rem/1 ui-monospace, monospace;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  cursor: default;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.badge.ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.badge.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+main {
+  display: grid;
+  /* minmax(0,1fr) keeps the single column at container width so a wide chart
+     scrolls inside its own box instead of stretching the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.4rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.filterbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.filterbox input {
+  padding: 0.35rem 1.6rem 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  min-width: 14rem;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.filterbox .clear {
+  position: absolute;
+  right: 0.3rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.2rem;
+}
+
+.panel {
+  min-width: 0; /* allow the panel to shrink below the chart's intrinsic width */
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.viz {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.axis {
+  flex: none;
+  overflow: visible;
+}
+
+.axis .tick {
+  fill: var(--muted);
+  font: 10px/1 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-anchor: end;
+  dominant-baseline: central;
+}
+
+.rail {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.legend {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.swatch.moving {
+  background: var(--cab-active-fill);
+}
+
+.swatch.idle {
+  background: var(--cab-idle-fill);
+}
+
+.chev {
+  font-style: normal;
+  font-size: 0.7rem;
+}
+
+.chev.up {
+  color: var(--up);
+}
+
+.chev.down {
+  color: var(--down);
+}
+
+.muted {
+  color: var(--muted);
+}

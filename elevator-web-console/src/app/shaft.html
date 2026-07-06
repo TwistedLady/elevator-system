@@ -1,0 +1,29 @@
+<div class="shaft" [class.moving]="moving()">
+  <svg [attr.width]="w" [attr.height]="plotH" class="plot" role="img"
+       [attr.aria-label]="state().elevatorName + ' at floor ' + state().floor">
+    <!-- faint floor gridlines (recessive, one shared scale across all shafts) -->
+    @for (g of gridlines(); track g.floor) {
+      <line class="grid" x1="4" [attr.x2]="w - 4" [attr.y1]="g.y" [attr.y2]="g.y" />
+    }
+    <!-- shaft walls -->
+    <line class="wall" x1="8" [attr.y1]="0" x2="8" [attr.y2]="plotH" />
+    <line class="wall" [attr.x1]="w - 8" y1="0" [attr.x2]="w - 8" [attr.y2]="plotH" />
+    <!-- the cab: animates to its floor via a CSS transform transition -->
+    <g class="cab" [style.transform]="'translateY(' + cabY() + 'px)'">
+      <rect x="12" y="0" [attr.width]="w - 24" [attr.height]="cabH" rx="3" />
+      <text class="cab-floor" [attr.x]="w / 2" [attr.y]="cabH / 2">{{ state().floor }}</text>
+    </g>
+  </svg>
+
+  <div class="caption">
+    <span class="name">{{ state().elevatorName }}</span>
+    <span class="dir" [attr.data-dir]="state().direction">{{ chevron() }}</span>
+  </div>
+
+  <div class="tip" role="tooltip">
+    <strong>{{ state().elevatorName }}</strong>
+    <span>floor {{ state().floor }}</span>
+    <span>{{ state().direction }}</span>
+    <span>{{ state().motion }}</span>
+  </div>
+</div>
