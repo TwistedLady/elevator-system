@@ -30,8 +30,10 @@
               [class.active]="tab() === 'chart'" (click)="tab.set('chart')">Chart</button>
       <button role="tab" [attr.aria-selected]="tab() === 'trend'"
               [class.active]="tab() === 'trend'" (click)="tab.set('trend')">Trend</button>
-      <button role="tab" [attr.aria-selected]="tab() === 'stats'"
-              [class.active]="tab() === 'stats'" (click)="tab.set('stats')">Stats</button>
+      @if (biEnabled()) {
+        <button role="tab" [attr.aria-selected]="tab() === 'stats'"
+                [class.active]="tab() === 'stats'" (click)="tab.set('stats')">Stats</button>
+      }
     </div>
     <div class="filterbox">
       <input type="text" [ngModel]="filter()" (ngModelChange)="filter.set($event)"

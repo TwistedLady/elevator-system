@@ -10,11 +10,28 @@ use crate::BoxErr;
 
 /// The system's live limits, fetched from the API (`GET /api/config`) — never hardcoded here.
 /// `max_floor` = highest valid floor (0..max_floor); `elevators` = the allowed fleet.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ElevatorConfig {
     #[serde(rename = "maxFloor")]
     pub max_floor: i32,
     pub elevators: Vec<String>,
+    /// Whether the BI (Stats) layer is on. When false, the console hides the Stats tab.
+    #[serde(rename = "biEnabled", default = "default_true")]
+    pub bi_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for ElevatorConfig {
+    fn default() -> Self {
+        Self {
+            max_floor: 0,
+            elevators: Vec::new(),
+            bi_enabled: true,
+        }
+    }
 }
 
 impl ElevatorConfig {

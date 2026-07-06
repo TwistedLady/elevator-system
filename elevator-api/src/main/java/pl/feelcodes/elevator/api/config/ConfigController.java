@@ -9,13 +9,15 @@ import org.springframework.web.bind.annotation.RestController;
 class ConfigController {
 
     private final ElevatorLimits limits;
+    private final BiState bi;
 
-    ConfigController(ElevatorLimits limits) {
+    ConfigController(ElevatorLimits limits, BiState bi) {
         this.limits = limits;
+        this.bi = bi;
     }
 
     @GetMapping
     ElevatorConfigDto config() {
-        return new ElevatorConfigDto(limits.getMaxFloor(), limits.getElevators());
+        return new ElevatorConfigDto(limits.getMaxFloor(), limits.getElevators(), bi.isEnabled());
     }
 }

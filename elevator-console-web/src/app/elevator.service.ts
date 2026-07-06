@@ -22,6 +22,9 @@ export class ElevatorService {
   /** Live max floor from the api (GET /api/config); 0 until the first fetch. Never hardcoded. */
   private readonly maxFloorSig = signal<number>(0);
   readonly maxFloor = this.maxFloorSig.asReadonly();
+  /** Whether the BI (Stats) layer is on; from /api/config. Hides the Stats tab when false. */
+  private readonly biEnabledSig = signal<boolean>(true);
+  readonly biEnabled = this.biEnabledSig.asReadonly();
   private configTimer?: ReturnType<typeof setInterval>;
 
   /** Live elevator snapshots, sorted by name (e1, e2, … natural order). */
@@ -103,8 +106,9 @@ export class ElevatorService {
   private async fetchConfig(): Promise<void> {
     try {
       const cfg = await firstValueFrom(
-        this.http.get<{ maxFloor: number; elevators: string[] }>('/api/config'));
+        this.http.get<{ maxFloor: number; elevators: string[]; biEnabled: boolean }>('/api/config'));
       this.maxFloorSig.set(cfg.maxFloor);
+      this.biEnabledSig.set(cfg.biEnabled);
     } catch {
       // keep last known limits
     }

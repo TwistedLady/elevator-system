@@ -3,6 +3,7 @@ import {
   OnDestroy,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -52,6 +53,15 @@ export class App implements OnInit, OnDestroy {
   protected readonly tab = signal<'chart' | 'trend' | 'stats'>('chart');
   /** Regex name filter, shared by all tabs (same behaviour as the console). */
   protected readonly filter = signal('');
+
+  /** Whether the BI layer is on (from /api/config); when off, the Stats tab is hidden. */
+  protected readonly biEnabled = this.api.biEnabled;
+  /** If BI gets turned off while the Stats tab is open, fall back to Chart. */
+  private readonly biTabGuard = effect(() => {
+    if (!this.biEnabled() && this.tab() === 'stats') {
+      this.tab.set('chart');
+    }
+  });
 
   protected readonly noData = computed(() => this.api.elevators().length === 0);
 

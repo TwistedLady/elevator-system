@@ -315,6 +315,9 @@ impl App {
     }
 
     pub fn refresh_sim(&mut self) {
+        if !self.config.bi_enabled && self.view == View::Stats {
+            self.view = View::Chart;
+        }
         if let Some(sim) = &mut self.sim {
             if sim.elapsed.is_none() && sim.done.load(Ordering::Relaxed) {
                 sim.elapsed = Some(sim.start.elapsed());
@@ -396,6 +399,22 @@ impl App {
         v
     }
 
+    /// Tabs to show: every view, minus Stats when BI is disabled (via /api/config).
+    pub fn visible_views(&self) -> Vec<View> {
+        View::ALL
+            .into_iter()
+            .filter(|v| *v != View::Stats || self.config.bi_enabled)
+            .collect()
+    }
+
+    fn cycle_view(&mut self, delta: isize) {
+        let views = self.visible_views();
+        let cur = views.iter().position(|v| *v == self.view).unwrap_or(0);
+        let n = views.len() as isize;
+        let idx = (cur as isize + delta).rem_euclid(n) as usize;
+        self.view = views[idx];
+    }
+
     pub fn on_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press && key.kind != KeyEventKind::Repeat {
             return;
@@ -410,11 +429,11 @@ impl App {
                 return;
             }
             KeyCode::Tab => {
-                self.view = self.view.next();
+                self.cycle_view(1);
                 return;
             }
             KeyCode::BackTab => {
-                self.view = self.view.prev();
+                self.cycle_view(-1);
                 return;
             }
             _ => {}

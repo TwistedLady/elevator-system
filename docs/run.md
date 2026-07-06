@@ -80,6 +80,11 @@ hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5
 - **Engine — fast / slow** — the app reads `ELEVATOR_ENGINE` (`fast` / `slow`). Flip it from the
   console's **K8s tab** (`f` / `s`) or `kubectl edit configmap elevator-config`. The app hot-swaps
   the engine on the next move — **no rollout, no restart**.
+- **BI on / off** — `ELEVATOR_BI_ENABLED` toggles the Spark analytics layer. Use `scripts/bi.sh on|off`:
+  it sets the flag **and** applies/deletes `postgres-stats` + the Spark drivers (a ConfigMap can't
+  remove pods). The api hot-reloads the flag: when off, `GET /api/mileage` & `/api/served` return
+  **503**, `/actuator/health` shows the `bi` component **DISABLED** (overall stays **UP**), and both
+  consoles hide the **Stats** tab.
 
 ## Design note
 

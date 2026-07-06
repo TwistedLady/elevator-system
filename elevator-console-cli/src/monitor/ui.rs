@@ -52,7 +52,8 @@ fn retro_block(title: &str) -> Block<'_> {
 }
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
-    let titles: Vec<Line> = View::ALL.iter().map(|v| Line::from(v.title())).collect();
+    let views = app.visible_views();
+    let titles: Vec<Line> = views.iter().map(|v| Line::from(v.title())).collect();
     let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
         "fast" => ("FAST", Color::Cyan),
         "slow" => ("SLOW", Color::Magenta),
@@ -77,7 +78,7 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
     );
     let clock = header;
     let tabs = Tabs::new(titles)
-        .select(app.view.index())
+        .select(views.iter().position(|v| *v == app.view).unwrap_or(0))
         .block(clock)
         .style(Style::new().fg(Color::Green))
         .highlight_style(Style::new().fg(Color::Black).bg(Color::Yellow).bold())
