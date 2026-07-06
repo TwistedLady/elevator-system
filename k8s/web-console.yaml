@@ -1,0 +1,43 @@
+# The Angular web console: nginx serving the static bundle and reverse-proxying /api +
+# /actuator to the elevator-api Service. Internal-only (ClusterIP) to keep the api the sole
+# external edge — reach it with:  kubectl port-forward svc/elevator-web-console 8081:80
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-web-console
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elevator-web-console
+  template:
+    metadata:
+      labels:
+        app: elevator-web-console
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull            # tolerated if absent (public / :local images)
+      containers:
+        - name: elevator-web-console
+          image: elevator-web-console:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "10m", memory: "32Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elevator-web-console
+spec:
+  selector:
+    app: elevator-web-console
+  ports:
+    - port: 80
+      targetPort: 80

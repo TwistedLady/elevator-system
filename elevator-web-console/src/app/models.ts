@@ -4,7 +4,7 @@
 export interface ElevatorState {
   tag: string;
   elevatorName: string;
-  direction: string; // UP | DOWN | NONE
-  motion: string;    // MOVING | IDLE
+  direction: string; // Up | Down   (core Direction enum)
+  motion: string;    // Moving | Stopped   (core Motion enum)
   floor: number;
 }

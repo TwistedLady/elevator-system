@@ -28,7 +28,12 @@ export class Shaft {
   protected readonly plotH = PLOT_H;
   protected readonly cabH = CAB_H;
 
-  protected readonly moving = computed(() => this.state().motion === 'MOVING');
+  // The api serialises the core enums as Motion=Moving|Stopped, Direction=Up|Down.
+  // Compare case-insensitively so a capitalisation change on the api side can't break it.
+  protected readonly moving = computed(() => this.state().motion?.toUpperCase() === 'MOVING');
+
+  /** Normalised direction (UP | DOWN) for the chevron glyph and the data-dir colour hook. */
+  protected readonly dir = computed(() => this.state().direction?.toUpperCase());
 
   protected readonly cabY = computed(() => floorToY(this.state().floor, this.maxFloor()) - CAB_H / 2);
 
@@ -36,7 +41,7 @@ export class Shaft {
     Array.from({ length: this.maxFloor() + 1 }, (_, f) => ({ floor: f, y: floorToY(f, this.maxFloor()) })));
 
   protected readonly chevron = computed(() => {
-    switch (this.state().direction) {
+    switch (this.dir()) {
       case 'UP': return '▲';
       case 'DOWN': return '▼';
       default: return '•';
