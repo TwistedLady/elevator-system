@@ -15,7 +15,7 @@
          Always in the reactor (visible in the tree, targetable with -pl), but the cargo build
          is skipped unless ${cargo.skip} is false — enable it with the `console` profile in the
          root pom — so a normal build (incl. IDE/CI without cargo) doesn't fail. -->
-    <artifactId>elevator-console</artifactId>
+    <artifactId>cli-console</artifactId>
     <packaging>pom</packaging>
 
     <build>

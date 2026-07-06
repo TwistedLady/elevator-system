@@ -52,9 +52,9 @@ docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
 
 ### Watch it live
 
-The richer option is the **Rust console** (`elevator-console`): a retro TUI with tabs for
+The richer option is the **Rust console** (`cli-console`): a retro TUI with tabs for
 the building chart, floor-over-time, actuator health, and a live log viewer — and you can
-order / bulk-`sim` from inside it. See `elevator-console/README.md`.
+order / bulk-`sim` from inside it. See `cli-console/README.md`.
 
 The original quick bash chart still works too:
 

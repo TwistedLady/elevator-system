@@ -1,4 +1,4 @@
-# elevator-console (Rust)
+# cli-console (Rust)
 
 A terminal app for the elevator system. It can **monitor** elevator state, **send** a single order,
 and **simulate** a bulk load. It talks to the system **only through the `elevator-api` HTTP edge**
@@ -21,7 +21,7 @@ e2                    0  NONE       IDLE
 
 ## Install
 
-Pick whichever fits — all four give you an `elevator-console` on your PATH.
+Pick whichever fits — all four give you an `cli-console` on your PATH.
 
 ```bash
 # 1) From source with cargo (installs to ~/.cargo/bin)
@@ -32,12 +32,12 @@ cargo install --path .
 PREFIX=/usr/local ./install.sh          # system-wide (may need sudo)
 
 # 3) Debian / Ubuntu package
-cargo install cargo-deb && cargo deb     # -> target/debian/elevator-console_*.deb
-sudo dpkg -i target/debian/elevator-console_*.deb
+cargo install cargo-deb && cargo deb     # -> target/debian/cli-console_*.deb
+sudo dpkg -i target/debian/cli-console_*.deb
 
 # 4) Docker image (headless subcommands; use -it for the TUI)
-docker build -t elevator-console .
-docker run --rm elevator-console --help
+docker build -t cli-console .
+docker run --rm cli-console --help
 ```
 
 Prebuilt binaries, checksums and a `.deb` are attached to each **`console-v*`** GitHub release
@@ -121,7 +121,7 @@ make check          # what CI runs: fmt --check + clippy -D warnings + tests
 ## Build & package
 
 ```bash
-cargo build --release   # -> target/release/elevator-console (stripped, ~2.8 MB)
+cargo build --release   # -> target/release/cli-console (stripped, ~2.8 MB)
 make dist               # stripped binary + sha256 in dist/
 make deb                # Debian package (needs: cargo install cargo-deb)
 make docker             # container image
@@ -138,7 +138,7 @@ a Rust toolchain. Opt in:
 ```bash
 mvn package                                  # JVM modules only; cargo step skipped
 mvn -Pconsole package                        # also runs cargo build --release
-mvn -Pconsole -pl elevator-console package   # build ONLY the console
+mvn -Pconsole -pl cli-console package   # build ONLY the console
 ```
 
 Equivalent: `mvn -Dcargo.skip=false ...`. In IntelliJ, tick the `console` profile in the Maven panel

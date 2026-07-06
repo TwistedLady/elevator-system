@@ -18,7 +18,7 @@ coming together.
 ```mermaid
 flowchart LR
     client(["HTTP client"]) -->|"POST /api/order · GET /api/..."| api["elevator-api (Spring)<br/>REST edge + /actuator/health"]
-    console["elevator-console (Rust)<br/>tabs: chart · trend · order · sim · health · logs"]
+    console["cli-console (Rust)<br/>tabs: chart · trend · order · sim · health · logs"]
 
     api -->|produce| cmd[("Kafka: elevator-commands")]
     console -->|"one order · bulk sim"| cmd
@@ -131,7 +131,7 @@ is blank at startup), then **stream** live updates from the Kafka topic.
 | `elevator-common-dto`  | Scala 3 | Messages shared across the wire                                     |
 | `elevator-app`         | Pekko   | The brain: event-sourced `Coordinator` / `Controller` / `Operator` + R2DBC journal & read-side projection |
 | `elevator-api`         | Spring  | HTTP edge + Actuator health (Kafka readiness check)                 |
-| `elevator-console`     | Rust    | Tabbed terminal UI: chart, floor-over-time, single order, bulk `sim` (progress bar), actuator health, log viewer |
+| `cli-console`     | Rust    | Tabbed terminal UI: chart, floor-over-time, single order, bulk `sim` (progress bar), actuator health, log viewer |
 
 ## Run
 
@@ -139,7 +139,7 @@ is blank at startup), then **stream** live updates from the Kafka topic.
 scripts/demo-up.sh            # infra + both JVMs, seeds a fleet (e1..eN), opens the chart
                               #   PROFILE=test|prod | ELEVATORS=N | FLEET_FILE=scripts/fleet.txt | SEED=N | NO_UI=1
 # or run the rich console yourself:
-cd elevator-console && cargo run -- monitor      # Tab: chart / trend / order / sim / health / logs
+cd cli-console && cargo run -- monitor      # Tab: chart / trend / order / sim / health / logs
 scripts/demo-down.sh          # stop everything
 
 # inspect the durable read-model:
@@ -149,7 +149,7 @@ docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
 
 See **[docs/PROTOCOL.md](docs/PROTOCOL.md)** for the full protocol (messages, events,
 use-case / sequence / flow diagrams), **[demo.md](demo.md)** for the scripted demo and
-endpoints, and **[elevator-console/README.md](elevator-console/README.md)** for the console.
+endpoints, and **[cli-console/README.md](cli-console/README.md)** for the console.
 
 ## Build
 
@@ -164,13 +164,13 @@ harness** — it talks to the running system over Kafka + HTTP, so it tests the 
 
 ```bash
 # headless console self-checks (no TUI; safe in any shell):
-elevator-console selftest          # api health UP + Kafka consuming -> PASS/FAIL + exit code
-elevator-console watch             # live state stream to stdout
+cli-console selftest          # api health UP + Kafka consuming -> PASS/FAIL + exit code
+cli-console watch             # live state stream to stdout
 
 # big integration test: send N tagged orders, poll the api per order until DONE, then
 # CROSS-CHECK the run against the elevator-app + elevator-api pod logs, and report
 # requests / latency / loss. One self-contained Rust binary — no Python/Go.
-KAFKA_BOOTSTRAP=localhost:9094 elevator-console itest --count 20 --timeout 90
+KAFKA_BOOTSTRAP=localhost:9094 cli-console itest --count 20 --timeout 90
 #   -> logs/itest-report.{json,md}; exit 0 only if 0 lost, api confirms every tag DONE,
 #      the app actually moved, and there's no "Kafka stream failed".
 ```

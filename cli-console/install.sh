@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# Build the elevator-console release binary and install it on your PATH.
+# Build the cli-console release binary and install it on your PATH.
 #
-#   ./install.sh                 # -> ~/.local/bin/elevator-console
-#   PREFIX=/usr/local ./install.sh   # -> /usr/local/bin/elevator-console (may need sudo)
+#   ./install.sh                 # -> ~/.local/bin/cli-console
+#   PREFIX=/usr/local ./install.sh   # -> /usr/local/bin/cli-console (may need sudo)
 #
 # Needs a Rust toolchain (rustup/cargo). No system libraries.
 set -eu
@@ -20,9 +20,9 @@ echo "building release binary…"
 cargo build --release --manifest-path "$SCRIPT_DIR/Cargo.toml"
 
 mkdir -p "$BIN_DIR"
-install -m 0755 "$SCRIPT_DIR/target/release/elevator-console" "$BIN_DIR/elevator-console"
+install -m 0755 "$SCRIPT_DIR/target/release/cli-console" "$BIN_DIR/cli-console"
 
-echo "installed: $BIN_DIR/elevator-console"
+echo "installed: $BIN_DIR/cli-console"
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) echo "note: $BIN_DIR is not on your PATH — add it, e.g.  export PATH=\"$BIN_DIR:\$PATH\"" ;;

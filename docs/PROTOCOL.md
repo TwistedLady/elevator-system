@@ -9,7 +9,7 @@ ones in the code.
 
 - Domain & logic (Pekko-free, unit-tested): `elevator-common-*`
 - Actors (thin shells over the logic): `elevator-app/.../actors/`
-- Edges: `elevator-api` (Spring HTTP), `elevator-console` (Rust)
+- Edges: `elevator-api` (Spring HTTP), `cli-console` (Rust)
 
 ---
 
@@ -38,7 +38,7 @@ flowchart LR
 
     place -->|"POST /api/order"| api["elevator-api (Spring)"]
     track -->|"GET /api/order/{tag}"| api
-    watch -->|Kafka stream| console["elevator-console (Rust)"]
+    watch -->|Kafka stream| console["cli-console (Rust)"]
     sim -->|Kafka produce| console
     health -->|"/actuator/health"| api
     place -. or direct .-> console
