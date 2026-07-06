@@ -1,6 +1,7 @@
 mod api;
 mod itest;
 mod monitor;
+mod rng;
 mod sender;
 
 use clap::{Parser, Subcommand};
@@ -139,18 +140,23 @@ fn resolve_elevators(
 fn read_elevators_file(path: &str) -> Result<Vec<String>, BoxErr> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read elevators file '{path}': {e}"))?;
-    let names: Vec<String> = text
-        .lines()
+    let names = parse_elevators_text(&text);
+    if names.is_empty() {
+        return Err(format!("no elevator names found in '{path}'").into());
+    }
+    Ok(names)
+}
+
+/// Parse a fleet file: one or more comma-separated names per line, `#` starts a comment. Blank
+/// entries are dropped. Kept pure (text in, names out) so it can be unit tested without the disk.
+fn parse_elevators_text(text: &str) -> Vec<String> {
+    text.lines()
         .map(|l| l.split('#').next().unwrap_or(""))
         .flat_map(|l| l.split(','))
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from)
-        .collect();
-    if names.is_empty() {
-        return Err(format!("no elevator names found in '{path}'").into());
-    }
-    Ok(names)
+        .collect()
 }
 
 fn natural_key(name: &str) -> (&str, u64) {
@@ -160,5 +166,47 @@ fn natural_key(name: &str) -> (&str, u64) {
             (prefix, num.parse::<u64>().unwrap_or(u64::MAX))
         }
         None => (name, u64::MAX),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn natural_key_orders_numerically_not_lexically() {
+        let mut names = v(&["e10", "e2", "e1"]);
+        names.sort_by(|a, b| natural_key(a).cmp(&natural_key(b)));
+        assert_eq!(names, v(&["e1", "e2", "e10"]));
+    }
+
+    #[test]
+    fn explicit_list_is_sorted_and_deduped() {
+        let out = resolve_elevators(v(&["e2", "e1", "e2", "e10"]), None, None).unwrap();
+        assert_eq!(out, v(&["e1", "e2", "e10"]));
+    }
+
+    #[test]
+    fn elevator_count_wins_over_the_list() {
+        let out = resolve_elevators(v(&["ignored"]), Some(3), None).unwrap();
+        assert_eq!(out, v(&["e1", "e2", "e3"]));
+    }
+
+    #[test]
+    fn empty_selection_is_an_error() {
+        assert!(resolve_elevators(vec![], None, None).is_err());
+    }
+
+    #[test]
+    fn fleet_file_parsing_handles_comments_commas_and_blanks() {
+        let text = "e1, e2 # first two\n\n  e3  \n# comment only\ne4,e5\n";
+        assert_eq!(
+            parse_elevators_text(text),
+            v(&["e1", "e2", "e3", "e4", "e5"])
+        );
     }
 }

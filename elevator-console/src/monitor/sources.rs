@@ -187,3 +187,37 @@ pub fn spawn_log_tail(source: LogSource, path: String, tx: Sender<(LogSource, St
         }
     });
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_health_reads_overall_and_components() {
+        let body = r#"{
+            "status":"UP",
+            "components":{
+                "kafka":{"status":"UP","details":{"cluster":"local","nodes":3}},
+                "db":{"status":"DOWN","details":{"error":"timeout"}}
+            }
+        }"#;
+        let h = parse_health(body);
+        assert!(h.reachable);
+        assert_eq!(h.overall, "UP");
+        let db = h.components.iter().find(|c| c.name == "db").unwrap();
+        assert_eq!(db.status, "DOWN");
+        assert!(db.detail.contains("error=timeout"));
+    }
+
+    #[test]
+    fn parse_health_survives_garbage() {
+        let h = parse_health("not json");
+        assert_eq!(h.overall, "?");
+        assert!(h.components.is_empty());
+    }
+
+    #[test]
+    fn compact_unquotes_strings_but_keeps_numbers() {
+        assert_eq!(compact(&Value::String("local".into())), "local");
+        assert_eq!(compact(&serde_json::json!(3)), "3");
+    }
+}

@@ -67,10 +67,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # rdkafka links the system librdkafka by default.
-      - name: Install librdkafka
-        run: sudo apt-get update && sudo apt-get install -y librdkafka-dev
-
+      # No system libraries needed: the console is HTTP-only (ureq + rustls/ring),
+      # so there's nothing to apt-install before building.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
