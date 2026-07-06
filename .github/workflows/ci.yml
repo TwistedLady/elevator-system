@@ -5,7 +5,8 @@ name: Build & Test
 #   - elevator-app       (Pekko cluster)          - unit tested (actor recovery)
 #   - elevator-api       (Spring)                 - unit + Testcontainers IT
 #   - elevator-console   (Rust/Cargo)             - fmt + clippy + test
-# On PRs it also proves both Docker images still build.
+#   - elevator-web-console (Angular)              - image build proven on PRs
+# On PRs it also proves all three Docker images still build.
 
 on:
   push:
@@ -97,16 +98,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # elevator-web-console builds from its own dir (self-contained npm project);
+      # the JVM images build from the repo root. Carry context + file per entry.
       matrix:
-        module: [elevator-app, elevator-api]
+        include:
+          - { name: elevator-app,         context: .,                    file: elevator-app/Dockerfile }
+          - { name: elevator-api,         context: .,                    file: elevator-api/Dockerfile }
+          - { name: elevator-web-console, context: elevator-web-console, file: elevator-web-console/Dockerfile }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build ${{ matrix.module }} image
+      - name: Build ${{ matrix.name }} image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ${{ matrix.module }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

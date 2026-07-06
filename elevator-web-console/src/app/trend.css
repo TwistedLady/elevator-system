@@ -1,0 +1,54 @@
+.trend {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.plot {
+  overflow: visible;
+}
+
+.grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.now {
+  fill: var(--accent);
+  stroke: var(--surface-1);
+  stroke-width: 1.5;
+}
+
+.empty {
+  fill: var(--muted);
+  font: 11px/1 system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.caption {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.floor {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
