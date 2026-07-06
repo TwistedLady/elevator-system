@@ -8,9 +8,9 @@
 
 # Build output
 **/target/
-.angular/
-dist/
-node_modules/
+**/.angular/
+**/dist/
+**/node_modules/
 
 # Runtime / logs
 logs/
