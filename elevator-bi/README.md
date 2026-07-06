@@ -1,8 +1,15 @@
-# elevator-bi — Spark mileage BI
+# elevator-bi — Spark BI jobs
 
-A Spark Structured Streaming job that computes each elevator's **mileage** — the total number of
-floors it has travelled (`Σ |floor − previousFloor|`) — from the `elevator-state` Kafka topic, and
-upserts it into a Postgres `elevator_mileage` table for BI/reporting.
+Spark BI jobs over the elevator system, each upserting a Postgres read-model for reporting:
+
+| Job | Kind | What | Source → sink |
+|---|---|---|---|
+| **MileageJob** | Structured Streaming | each elevator's **mileage** = floors travelled (`Σ \|floor − prevFloor\|`) | `elevator-state` Kafka → `elevator_mileage` |
+| **OrdersServedJob** | Batch (interval loop) | how many times each elevator **reached an ordered floor** (= completed orders) | `order_status` (JDBC) → `elevator_orders_served` |
+
+> Why OrdersServedJob reads a table, not Kafka: the `elevator-state` topic publishes an **empty tag**
+> (`ElevatorStateDto("", …)` in `Controller.scala`), so it carries no order info. The completion
+> signal lives in the `order_status` read-model (`status='DONE'`), so the job counts DONE rows there.
 
 ```mermaid
 flowchart LR
@@ -38,6 +45,9 @@ keeps the analytics job decoupled from the producer's internal types anyway.
 | `config/BiConfig.scala` | Env-driven configuration (12-factor) |
 | `sink/PostgresMileageSink.scala` | Idempotent JDBC upsert (`CREATE TABLE IF NOT EXISTS` + `ON CONFLICT`) |
 | `MileageJob.scala` | The streaming job: Kafka → `flatMapGroupsWithState` per elevator → `foreachBatch` |
+| `OrdersServed.scala` | Pure Spark transform: `order_status` DataFrame → per-elevator DONE counts (unit-tested with a local `SparkSession`) |
+| `sink/PostgresOrdersServedSink.scala` | Idempotent JDBC upsert of the served counts |
+| `OrdersServedJob.scala` | The batch job: JDBC read `order_status` → `tally` → upsert, on a fixed interval loop |
 
 ## Build & test
 

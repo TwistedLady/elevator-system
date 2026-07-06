@@ -21,15 +21,17 @@ docker build -t elevator-bi:local elevator-bi
 echo "==> [3/5] load image into kind cluster 'elevator'"
 kind load docker-image elevator-bi:local --name elevator
 
-echo "==> [4/5] apply manifests (rbac, config, network policies, driver)"
+echo "==> [4/5] apply manifests (rbac, config, network policies, drivers)"
 kubectl apply \
   -f k8s/bi/rbac.yaml \
   -f k8s/bi/configmap.yaml \
   -f k8s/bi/network-policies.yaml \
-  -f k8s/bi/mileage-driver.yaml
+  -f k8s/bi/mileage-driver.yaml \
+  -f k8s/bi/orders-served-driver.yaml
 
-echo "==> [5/5] wait for the driver, then its executors"
+echo "==> [5/5] wait for the drivers, then their executors"
 kubectl rollout status deployment/elevator-mileage --timeout=180s
+kubectl rollout status deployment/elevator-orders-served --timeout=180s
 # Executors appear a few seconds after the driver's Spark context starts.
 for i in $(seq 1 30); do
   n=$(kubectl get pods -l app=elevator-bi,role=executor --no-headers 2>/dev/null | grep -c Running || true)
@@ -40,6 +42,8 @@ done
 echo
 kubectl get pods -l app=elevator-bi -o wide
 echo
-echo "Driver logs:   kubectl logs -f deploy/elevator-mileage"
+echo "Mileage logs:  kubectl logs -f deploy/elevator-mileage"
+echo "Served logs:   kubectl logs -f deploy/elevator-orders-served"
 echo "Mileage table: kubectl exec -it postgres-0 -- psql -U elevator -d elevator -c 'SELECT * FROM elevator_mileage ORDER BY floors_travelled DESC;'"
+echo "Served table:  kubectl exec -it postgres-0 -- psql -U elevator -d elevator -c 'SELECT * FROM elevator_orders_served ORDER BY orders_served DESC;'"
 echo "Save all logs: scripts/bi-logs.sh"
