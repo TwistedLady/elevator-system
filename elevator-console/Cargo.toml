@@ -13,9 +13,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive", "env"] }
 rand = "0.8"
-# Tiny blocking HTTP client (no TLS/async). The console's ONLY channel to the system: orders,
-# state (poll + SSE), order status, and actuator health all go through the elevator-api over this.
-ureq = { version = "2", default-features = false }
+# Tiny blocking HTTP client. The console's ONLY channel to the system: orders, state (poll + SSE),
+# order status, and actuator health all go through the elevator-api over this — now over TLS.
+ureq = { version = "2", default-features = false, features = ["tls"] }
+# Trust the api's self-signed cert. Pure-Rust; pin the `ring` provider so the build needs only a C
+# compiler (aws-lc-rs would need cmake, which isn't available here).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
 # Retro multi-view TUI (tabs, boxes, charts). Brings crossterm in via ratatui::crossterm.
 ratatui = "0.29"
 # Regex log filtering in the Logs view.

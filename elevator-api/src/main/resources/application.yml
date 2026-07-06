@@ -1,3 +1,10 @@
+server:
+  ssl:                    # HTTPS on 8080 when a keystore is provided (k8s mounts one; off by default for local/dev)
+    enabled: ${ELEVATOR_TLS_ENABLED:false}
+    key-store: ${ELEVATOR_TLS_KEYSTORE:/etc/tls/keystore.p12}
+    key-store-password: ${ELEVATOR_TLS_PASSWORD:changeit}
+    key-store-type: PKCS12
+    key-alias: elevator-api
 spring:
   profiles:
     active: test          # default; override with SPRING_PROFILES_ACTIVE=prod (env wins)

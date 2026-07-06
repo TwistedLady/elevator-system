@@ -55,6 +55,7 @@ fn stream_states(api_base: &str, tx: &Sender<ElevatorState>) -> Loop {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
         .timeout_read(Duration::from_secs(30))
+        .tls_config(crate::api::tls_config())
         .build();
     let url = format!("{api_base}/api/elevator/stream");
     let resp = match agent.get(&url).set("Accept", "text/event-stream").call() {

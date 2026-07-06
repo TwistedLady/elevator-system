@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 COUNT="${1:-300}"
-API="${ELEVATOR_API:-http://localhost:8080}"
+API="${ELEVATOR_API:-https://localhost:8080}"
 
 CONSOLE="$ROOT/elevator-console/target/release/elevator-console"
 [ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console/target/debug/elevator-console"

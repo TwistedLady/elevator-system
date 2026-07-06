@@ -1,11 +1,31 @@
 //! Thin blocking HTTP client for the elevator API. The console reaches the system ONLY through
 //! this API (never Kafka directly): orders are POSTed, state is polled/streamed, order status and
 //! health are GETed. No TLS, no async — just `ureq`.
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
 
 use crate::BoxErr;
+
+/// A rustls config that trusts the bundled elevator-api certificate (self-signed). The console
+/// speaks TLS to the api and verifies it against this cert — plain HTTP is not accepted.
+pub fn tls_config() -> Arc<rustls::ClientConfig> {
+    let mut roots = rustls::RootCertStore::empty();
+    let pem: &[u8] = include_bytes!("../certs/elevator-ca.crt");
+    let mut reader = std::io::BufReader::new(pem);
+    for cert in rustls_pemfile::certs(&mut reader).flatten() {
+        let _ = roots.add(cert);
+    }
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("rustls default protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    Arc::new(config)
+}
 
 #[derive(Serialize)]
 struct OrderPayload<'a> {
@@ -20,6 +40,7 @@ pub fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
         .timeout_read(Duration::from_secs(3))
+        .tls_config(tls_config())
         .build()
 }
 

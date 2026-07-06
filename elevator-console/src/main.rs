@@ -17,7 +17,7 @@ struct Cli {
     #[arg(
         long,
         env = "ELEVATOR_API",
-        default_value = "http://localhost:8080",
+        default_value = "https://localhost:8080",
         global = true
     )]
     api: String,
