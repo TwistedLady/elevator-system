@@ -14,7 +14,7 @@ Built in small, deliberate commits — read the history to watch it come togethe
 
 ```mermaid
 flowchart LR
-  console["cli-console (Rust)"] -->|HTTP| api["elevator-api (Spring)"]
+  console["elevator-console-cli (Rust)"] -->|HTTP| api["elevator-api (Spring)"]
   api -->|produce| cmd[("Kafka: elevator-commands")]
   subgraph app["elevator-app (Pekko)"]
     coord["Coordinator"] --> ctrl["Controller"] --> op["Operator"]

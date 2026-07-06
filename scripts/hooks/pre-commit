@@ -19,10 +19,10 @@ if ! kubectl get pods >/dev/null 2>&1; then
   exit 0
 fi
 
-CONSOLE="$ROOT/cli-console/target/release/cli-console"
-[ -x "$CONSOLE" ] || CONSOLE="$ROOT/cli-console/target/debug/cli-console"
+CONSOLE="$ROOT/elevator-console-cli/target/release/elevator-console-cli"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console-cli/target/debug/elevator-console-cli"
 if [ ! -x "$CONSOLE" ]; then
-  echo "pre-commit: console not built -> (cd cli-console && cargo build --release)"; exit 1
+  echo "pre-commit: console not built -> (cd elevator-console-cli && cargo build --release)"; exit 1
 fi
 
 ensure_forward() {  # <svc> <local:remote>

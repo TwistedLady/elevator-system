@@ -74,15 +74,39 @@ jobs:
           cache-to: type=gha,mode=max
 
       # Self-contained npm project → its own build context (not the repo root).
-      - name: Build & push elevator-web-console
+      - name: Build & push elevator-console-web
         uses: docker/build-push-action@v6
         with:
-          context: elevator-web-console
-          file: elevator-web-console/Dockerfile
+          context: elevator-console-web
+          file: elevator-console-web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-web-console:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-web-console:latest
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-console-web:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-console-web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # elevator-bi is a standalone Scala 2.12 / Spark module: build the uber jar on the host
+      # (JDK 17), then the Dockerfile packages it onto the apache/spark base image.
+      - name: Set up JDK 17 (Temurin) — for the Spark uber jar
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build elevator-bi uber jar
+        run: ./mvnw -B -ntp -f elevator-bi/pom.xml -DskipTests package
+
+      - name: Build & push elevator-bi
+        uses: docker/build-push-action@v6
+        with:
+          context: elevator-bi
+          file: elevator-bi/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-bi:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-bi:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -159,9 +183,9 @@ jobs:
       #    NetworkPolicies too so the kubelet readiness probe is allowed under Calico.
       - name: Deploy web console (pin image to commit)
         run: |
-          kubectl apply -f k8s/network-policies.yaml -f k8s/web-console.yaml
-          kubectl set image deployment/elevator-web-console elevator-web-console="ghcr.io/${OWNER}/elevator-web-console:${TAG}"
-          kubectl rollout status deployment/elevator-web-console --timeout=3m
+          kubectl apply -f k8s/network-policies.yaml -f k8s/console-web.yaml
+          kubectl set image deployment/elevator-console-web elevator-console-web="ghcr.io/${OWNER}/elevator-console-web:${TAG}"
+          kubectl rollout status deployment/elevator-console-web --timeout=3m
 
       - name: Deployment summary
         if: ${{ !cancelled() }}

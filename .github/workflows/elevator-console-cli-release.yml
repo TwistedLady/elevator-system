@@ -1,0 +1,97 @@
+name: Console Release
+
+# Publishes the Rust console on a console-scoped tag (this is a polyglot monorepo, so the console
+# has its own tag namespace):
+#
+#   git tag elevator-console-cli-v0.1.0 && git push origin elevator-console-cli-v0.1.0
+#
+# Produces:
+#   - a GitHub *Release* with:
+#       elevator-console-cli-<tag>-x86_64-linux.tar.gz  (stripped release binary + its sha256)
+#       elevator-console-cli_<ver>-1_amd64.deb          (Debian package)
+#   - a GitHub *Package* (container image) in GHCR:
+#       ghcr.io/<owner>/elevator-console-cli:<ver>  and  :latest
+
+on:
+  push:
+    tags: ["elevator-console-cli-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create the Release
+  packages: write   # push the image to GHCR
+
+jobs:
+  release:
+    name: Build & publish console artifacts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elevator-console-cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: elevator-console-cli
+
+      # Fast fail before packaging: the release must be green.
+      - name: Test
+        run: cargo test
+
+      - name: Build stripped release binary
+        run: cargo build --release
+
+      - id: meta
+        name: Compute image coordinates
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "ver=${GITHUB_REF_NAME#elevator-console-cli-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package tarball + checksum
+        run: |
+          dir="${GITHUB_REF_NAME:-elevator-console-cli-vdev}-x86_64-linux"
+          mkdir -p "dist/${dir}"
+          cp target/release/elevator-console-cli README.md LICENSE "dist/${dir}/"
+          tar -C dist -czf "dist/${dir}.tar.gz" "${dir}"
+          cd dist && sha256sum "${dir}.tar.gz" > "${dir}.tar.gz.sha256"
+
+      - name: Build Debian package
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build
+          cp target/debian/*.deb dist/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            elevator-console-cli/dist/*.tar.gz
+            elevator-console-cli/dist/*.sha256
+            elevator-console-cli/dist/*.deb
+          generate_release_notes: true
+
+      # Container image → GHCR, so `elevator-console-cli` shows up in the repo's Packages tab
+      # alongside elevator-app / elevator-api (which cd.yml publishes the same way).
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: elevator-console-cli
+          file: elevator-console-cli/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-console-cli:${{ steps.meta.outputs.ver }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/elevator-console-cli:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

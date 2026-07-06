@@ -88,11 +88,11 @@ ELEVATORS="${ELEVATORS:-4}"
 SEED="${SEED:-300}"
 SEED_MAX_FLOOR="${SEED_MAX_FLOOR:-10}"
 
-CONSOLE="$ROOT/cli-console/target/release/cli-console"
-[ -x "$CONSOLE" ] || CONSOLE="$ROOT/cli-console/target/debug/cli-console"
+CONSOLE="$ROOT/elevator-console-cli/target/release/elevator-console-cli"
+[ -x "$CONSOLE" ] || CONSOLE="$ROOT/elevator-console-cli/target/debug/elevator-console-cli"
 if [ ! -x "$CONSOLE" ]; then
-  echo "==> building cli-console (cargo)…"
-  ( cd "$ROOT/cli-console" && cargo build ) && CONSOLE="$ROOT/cli-console/target/debug/cli-console"
+  echo "==> building elevator-console-cli (cargo)…"
+  ( cd "$ROOT/elevator-console-cli" && cargo build ) && CONSOLE="$ROOT/elevator-console-cli/target/debug/elevator-console-cli"
 fi
 
 if [ "$SEED" -gt 0 ] && [ -x "$CONSOLE" ]; then

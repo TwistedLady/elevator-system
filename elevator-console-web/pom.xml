@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>pl.feelcodes.elevator</groupId>
+        <artifactId>elevator</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <!-- Not a Java module: it drives the Angular npm build from Maven. frontend-maven-plugin
+         downloads a project-local Node/npm into target/, so `mvn` builds the frontend even
+         where Node isn't on PATH (CI/IDE). Part of a normal build; skip with -Dnpm.skip=true. -->
+    <artifactId>elevator-console-web</artifactId>
+    <packaging>pom</packaging>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <configuration>
+                    <skip>${npm.skip}</skip>
+                    <!-- Node/npm land in target/, so `mvn clean` removes them and they're gitignored. -->
+                    <installDirectory>${project.build.directory}</installDirectory>
+                    <workingDirectory>${project.basedir}</workingDirectory>
+                </configuration>
+                <executions>
+                    <!-- Fetch Node/npm once (cached under target/node). -->
+                    <execution>
+                        <id>install-node-and-npm</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>install-node-and-npm</goal>
+                        </goals>
+                        <configuration>
+                            <nodeVersion>${node.version}</nodeVersion>
+                        </configuration>
+                    </execution>
+                    <!-- Reproducible install from package-lock.json. -->
+                    <execution>
+                        <id>npm-ci</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>ci</arguments>
+                        </configuration>
+                    </execution>
+                    <!-- Production bundle → dist/elevator-console-web. -->
+                    <execution>
+                        <id>ng-build</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

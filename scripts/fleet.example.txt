@@ -4,7 +4,7 @@
 #
 # Copy this to scripts/fleet.txt (picked up automatically by demo-up.sh), or point at
 # it explicitly:  FLEET_FILE=scripts/fleet.example.txt scripts/demo-up.sh
-# Or pass straight to the console:  cli-console simulate --elevators-file <path>
+# Or pass straight to the console:  elevator-console-cli simulate --elevators-file <path>
 
 e1
 e2

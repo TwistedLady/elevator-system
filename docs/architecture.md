@@ -11,8 +11,8 @@ edge, a Rust console, plus Kafka and Postgres.
 | `elevator-common-dto` | Scala 3 | Wire DTOs shared across modules. |
 | `elevator-app` | Pekko | The brain: event-sourced [actors](actors.md) + R2DBC journal + [read-side projections](read-model.md). |
 | `elevator-api` | Spring WebFlux | HTTP edge + Actuator health. No actors. |
-| `cli-console` | Rust (ratatui) | Terminal dashboard + order sender. |
-| `elevator-web-console` | Angular | Read-only browser monitor (Chart + Trend), a web sibling of the Rust console. |
+| `elevator-console-cli` | Rust (ratatui) | Terminal dashboard + order sender. |
+| `elevator-console-web` | Angular | Read-only browser monitor (Chart + Trend), a web sibling of the Rust console. |
 
 Infra: **Kafka** (2 topics) and **Postgres** (event journal + read-model tables).
 
@@ -22,7 +22,7 @@ Both consoles are pure HTTP clients of `elevator-api` — neither touches Kafka.
 
 ```mermaid
 flowchart LR
-  console["cli-console<br/>(Rust TUI)"]
+  console["elevator-console-cli<br/>(Rust TUI)"]
   api["elevator-api<br/>(Spring WebFlux)"]
   app["elevator-app<br/>(Pekko)"]
   cmd[("Kafka<br/>elevator-commands")]

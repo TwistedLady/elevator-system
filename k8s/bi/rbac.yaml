@@ -1,0 +1,37 @@
+# RBAC for Spark-on-Kubernetes. The driver (client mode, in the elevator-mileage Deployment) uses
+# this ServiceAccount to create/watch/delete its executor pods (and the small config maps Spark
+# creates for them) in the namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: elevator-bi-spark
+  labels: { app: elevator-bi, part-of: elevator }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: elevator-bi-spark
+  labels: { app: elevator-bi, part-of: elevator }
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: elevator-bi-spark
+  labels: { app: elevator-bi, part-of: elevator }
+subjects:
+  - kind: ServiceAccount
+    name: elevator-bi-spark
+roleRef:
+  kind: Role
+  name: elevator-bi-spark
+  apiGroup: rbac.authorization.k8s.io

@@ -92,7 +92,7 @@ spec:
       ports:
         - { protocol: TCP, port: 8558 }
 ---
-# elevator-web-console stays INTERNAL (reach it via `kubectl port-forward`, which bypasses
+# elevator-console-web stays INTERNAL (reach it via `kubectl port-forward`, which bypasses
 # NetworkPolicy). The only ingress it needs is the kubelet readiness probe on :80 under Calico.
 # Its egress to the api is unrestricted (no egress policies) and the api already allows all ingress.
 apiVersion: networking.k8s.io/v1
@@ -102,7 +102,7 @@ metadata:
   labels: { part-of: elevator }
 spec:
   podSelector:
-    matchLabels: { app: elevator-web-console }
+    matchLabels: { app: elevator-console-web }
   policyTypes: [Ingress]
   ingress:
     - from:
