@@ -1,0 +1,97 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: elevator
+
+# ── build ──────────────────────────────────────────────────────────────────────────────────────
+# Build the images locally and (because the deploy target is a kind cluster and push=false) Skaffold
+# loads them straight into the cluster's containerd — no `kind load`, no registry. app/api/console-web
+# build from the REPO ROOT context (their Dockerfiles run `mvn ... COPY . .`); console-cli from its
+# own module dir (it bundles the CA that Terraform wrote — so run `terraform apply` first).
+build:
+  local:
+    push: false
+    useBuildkit: true
+  artifacts:
+    - image: elevator-app
+      context: .
+      docker:
+        dockerfile: elevator-app/Dockerfile
+    - image: elevator-api
+      context: .
+      docker:
+        dockerfile: elevator-api/Dockerfile
+    - image: elevator-console-web
+      context: .
+      docker:
+        dockerfile: elevator-console-web/Dockerfile
+    - image: elevator-console-cli
+      context: elevator-console-cli
+      docker:
+        dockerfile: Dockerfile
+
+# ── render ─────────────────────────────────────────────────────────────────────────────────────
+# One Helm release = the whole system. Skaffold injects the freshly-built image refs into the
+# chart's image values. values-dev.yaml trims to the single-node profile (api:1, BI off).
+manifests:
+  helm:
+    releases:
+      - name: elevator
+        chartPath: charts/elevator
+        valuesFiles:
+          - charts/elevator/values-dev.yaml
+        setValueTemplates:
+          images.app: '{{.IMAGE_FULLY_QUALIFIED_elevator_app}}'
+          images.api: '{{.IMAGE_FULLY_QUALIFIED_elevator_api}}'
+          images.consoleWeb: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_web}}'
+          images.consoleCli: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_cli}}'
+        setValues: {}
+
+# ── deploy ─────────────────────────────────────────────────────────────────────────────────────
+deploy:
+  helm: {}
+
+# `skaffold dev` forwards the api to localhost:8080 so the host console/monitor can reach it.
+portForward:
+  - resourceType: service
+    resourceName: elevator-api
+    port: 8080
+    localPort: 8080
+  - resourceType: service
+    resourceName: elevator-console-web
+    port: 80
+    localPort: 8081
+
+# ── profiles ─────────────────────────────────────────────────────────────────────────────────────
+profiles:
+  # Turn the Spark BI layer on: build the (out-of-reactor, Scala 2.12) bi image via a custom builder
+  # that packages the jar first, then flip bi.enabled so the chart renders postgres-stats + drivers.
+  #   skaffold run -p bi
+  - name: bi
+    patches:
+      - op: add
+        path: /build/artifacts/-
+        value:
+          image: elevator-bi
+          custom:
+            buildCommand: mvn -f elevator-bi/pom.xml -q -DskipTests package && docker build -t $IMAGE -f elevator-bi/Dockerfile elevator-bi
+            dependencies:
+              paths:
+                - elevator-bi/src
+                - elevator-bi/pom.xml
+                - elevator-bi/Dockerfile
+                - elevator-bi/conf
+      - op: add
+        path: /manifests/helm/releases/0/setValueTemplates/images.bi
+        value: '{{.IMAGE_FULLY_QUALIFIED_elevator_bi}}'
+      - op: add
+        path: /manifests/helm/releases/0/setValues/bi.enabled
+        value: "true"
+
+  # The full production-shaped profile (api:2, BI on) — needs more than one kind node's worth of CPU.
+  #   skaffold run -p full
+  - name: full
+    patches:
+      - op: replace
+        path: /manifests/helm/releases/0/valuesFiles/0
+        value: charts/elevator/values.yaml

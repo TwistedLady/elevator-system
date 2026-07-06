@@ -1,0 +1,48 @@
+{{- if .Values.consoleWeb.enabled }}
+# The Angular web console: nginx serving the static bundle + reverse-proxying /api + /actuator to
+# the elevator-api Service. Internal-only (ClusterIP) — reach it with:
+#   kubectl port-forward svc/elevator-console-web 8081:80
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-console-web
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.consoleWeb.replicas }}
+  selector:
+    matchLabels:
+      app: elevator-console-web
+  template:
+    metadata:
+      labels:
+        app: elevator-console-web
+    spec:
+      {{- include "elevator.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: elevator-console-web
+          image: {{ .Values.images.consoleWeb }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "10m", memory: "32Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elevator-console-web
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: elevator-console-web
+  ports:
+    - port: 80
+      targetPort: 80
+{{- end }}

@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars and edit as needed.
+# cluster_name   = "elevator"
+# calico_version = "v3.28.2"
+# tls_password   = "changeit"

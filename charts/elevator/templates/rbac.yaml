@@ -1,0 +1,33 @@
+# RBAC for Pekko Cluster Bootstrap's kubernetes-api discovery: app pods LIST pods
+# (label app=elevator-app) to find each other and form one cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: elevator-app
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: elevator-app-pod-reader
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: elevator-app-pod-reader
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: elevator-app
+roleRef:
+  kind: Role
+  name: elevator-app-pod-reader
+  apiGroup: rbac.authorization.k8s.io

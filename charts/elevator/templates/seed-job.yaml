@@ -1,0 +1,39 @@
+{{- if .Values.seed.enabled }}
+# Seed the chart on FIRST install (replaces scripts/seed-k8s.sh). A Helm post-install hook Job runs
+# the console CLI `simulate` against the api over in-cluster HTTPS (the CLI image bundles the CA).
+# post-install only => a `skaffold dev` redeploy (an upgrade) does not re-seed.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elevator-seed
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6            # the api may still be rolling out; retry until it answers
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: elevator-seed
+    spec:
+      restartPolicy: Never
+      {{- include "elevator.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: seed
+          image: {{ .Values.images.consoleCli }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - { name: ELEVATOR_API, value: {{ .Values.seed.apiUrl | quote }} }
+          args:
+            - "simulate"
+            - "--elevator-count"
+            - {{ .Values.seed.elevatorCount | quote }}
+            - "--max-floor"
+            - {{ .Values.seed.maxFloor | quote }}
+            - "--count"
+            - {{ .Values.seed.count | quote }}
+{{- end }}

@@ -1,0 +1,76 @@
+# The Spring edge. Has a Service so you can reach POST /api/order and the monitor. Serves HTTPS
+# from the keystore in the elevator-api-tls secret (created by Terraform's tls provider).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elevator-api
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  # Roll in place (no surge pod) on a CPU-constrained single node — see app.yaml.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: elevator-api
+  template:
+    metadata:
+      labels:
+        app: elevator-api
+    spec:
+      {{- include "elevator.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: elevator-api
+          image: {{ .Values.images.api }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: elevator-config
+          env:                                 # TLS: serve HTTPS from the mounted keystore
+            - { name: ELEVATOR_TLS_ENABLED, value: "true" }
+            - { name: ELEVATOR_TLS_KEYSTORE, value: "/etc/tls/keystore.p12" }
+            - name: ELEVATOR_TLS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.api.tlsSecret }}, key: password }
+            # Per-replica id -> unique-but-stable state-consumer group (fanout: each replica reads all).
+            - name: ELEVATOR_POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+          volumeMounts:
+            - { name: tls, mountPath: /etc/tls, readOnly: true }
+            - { name: elevator-config, mountPath: /etc/elevator-config, readOnly: true }
+          readinessProbe:                      # HTTPS
+            httpGet: { path: /api/elevator, port: 8080, scheme: HTTPS }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.api.tlsSecret }}
+            items:
+              - { key: keystore.p12, path: keystore.p12 }
+        - name: elevator-config
+          configMap:
+            name: elevator-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elevator-api
+  labels:
+    {{- include "elevator.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: elevator-api
+  ports:
+    - port: 8080
+      targetPort: 8080

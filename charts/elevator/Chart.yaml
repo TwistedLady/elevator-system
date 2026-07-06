@@ -1,0 +1,7 @@
+apiVersion: v2
+name: elevator
+description: The elevator system — Pekko app, Spring api, Kafka, Postgres, web console, and the optional Spark BI layer.
+type: application
+version: 0.1.0
+# Tracks the repo-root VERSION; bump on user-visible changes.
+appVersion: "1.0"
