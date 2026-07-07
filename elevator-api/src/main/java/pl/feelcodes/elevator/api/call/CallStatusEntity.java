@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.call;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
@@ -6,16 +6,21 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.OffsetDateTime;
 
-@Table("order_status")
-class OrderStatusEntity {
+@Table("call_status")
+class CallStatusEntity {
 
     @Id
-    private String tag;
+    @Column("call_id")
+    private String callId;
 
     @Column("elevator_name")
     private String elevatorName;
 
     private Integer floor;
+
+    @Column("order_id")
+    private String orderId;
+
     private String status;
 
     @Column("created_at")
@@ -24,8 +29,8 @@ class OrderStatusEntity {
     @Column("done_at")
     private OffsetDateTime doneAt;
 
-    public String getTag() {
-        return tag;
+    public String getCallId() {
+        return callId;
     }
 
     public String getElevatorName() {
@@ -34,6 +39,10 @@ class OrderStatusEntity {
 
     public Integer getFloor() {
         return floor;
+    }
+
+    public String getOrderId() {
+        return orderId;
     }
 
     public String getStatus() {

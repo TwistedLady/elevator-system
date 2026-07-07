@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.call;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -9,13 +9,13 @@ import org.springframework.context.annotation.Configuration;
 import java.util.Properties;
 
 @Configuration
-class OrderProducerConfig {
+class CallProducerConfig {
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
     @Bean(destroyMethod = "close")
-    public KafkaProducer<String, String> elevatorCommandProducer() {
+    public KafkaProducer<String, String> elevatorCallProducer() {
         Properties props = new Properties();
         props.put("bootstrap.servers", bootstrapServers);
         props.put("key.serializer", StringSerializer.class.getName());

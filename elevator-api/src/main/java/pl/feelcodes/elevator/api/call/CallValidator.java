@@ -1,19 +1,19 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.call;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import pl.feelcodes.elevator.api.config.ElevatorLimits;
 
-public class OrderValidator implements ConstraintValidator<ValidOrder, OrderRequestDto> {
+public class CallValidator implements ConstraintValidator<ValidCall, CallRequestDto> {
 
     private final ElevatorLimits limits;
 
-    public OrderValidator(ElevatorLimits limits) {
+    public CallValidator(ElevatorLimits limits) {
         this.limits = limits;
     }
 
     @Override
-    public boolean isValid(OrderRequestDto dto, ConstraintValidatorContext ctx) {
+    public boolean isValid(CallRequestDto dto, ConstraintValidatorContext ctx) {
         if (dto == null) {
             return true;
         }

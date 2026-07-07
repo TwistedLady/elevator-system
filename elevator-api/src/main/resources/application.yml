@@ -24,7 +24,7 @@ spring:
 elevator:
   stats:                  # Spark BI read-model: a single Parquet file read via DuckDB (shared volume)
     parquet-path: ${ELEVATOR_STATS_PARQUET_PATH:/data/elevators.parquet}
-  command-topic: elevator-commands
+  call-topic: elevator-calls
   state-topic: elevator-state
   # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
   # hot-reloaded by ElevatorLimits. No defaults here — a missing ConfigMap fails the pod fast.
