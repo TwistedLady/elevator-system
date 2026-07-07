@@ -1,31 +1,48 @@
-# elevator-bi — Spark BI jobs
+# elevator-bi — Spark BI job
 
-Spark BI jobs over the elevator system, each upserting a Postgres read-model for reporting:
+One Spark **batch** job that builds a single per-elevator read-model and writes it as **one Parquet
+file** (no analytics database). The api reads that file directly via **DuckDB**.
 
-| Job | Kind | What | Source → sink |
-|---|---|---|---|
-| **MileageJob** | Structured Streaming | each elevator's **mileage** = floors travelled (`Σ \|floor − prevFloor\|`) | `elevator-state` Kafka → `elevator_mileage` |
-| **OrdersServedJob** | Batch (interval loop) | how many times each elevator **reached an ordered floor** (= completed orders) | `order_status` (JDBC) → `elevator_orders_served` |
+| Metric | What | Source |
+|---|---|---|
+| **floorsTravelled** (mileage) | `Σ \|floor − prevFloor\|` over the elevator's state history | `elevator-state` Kafka (batch read) |
+| **ordersServed** | how many times it **reached an ordered floor** (= completed orders) | `order_status` (JDBC), `status='DONE'` |
 
-> Why OrdersServedJob reads a table, not Kafka: the `elevator-state` topic publishes an **empty tag**
+Each run re-scans both sources, joins them into **one row per elevator**
+(`elevatorName, floorsTravelled, ordersServed`), and **overwrites** `elevators.parquet`. The fleet is
+tiny, so a full re-scan is cheap and needs no streaming checkpoint.
+
+**Orchestration:** a Kubernetes **CronJob** (default `*/15 * * * *`) runs the job — each tick spins up
+the driver + executors, does **one pass** (`ELEVATOR_BI_RUN_ONCE=true`), and exits, so nothing holds
+CPU between runs. The job also supports a self-scheduling loop (`ELEVATOR_BI_RUN_ONCE=false` +
+`ELEVATOR_BI_INTERVAL`) if you'd rather run it as an always-on Deployment.
+
+> Why orders-served reads a table, not Kafka: the `elevator-state` topic publishes an **empty tag**
 > (`ElevatorStateDto("", …)` in `Controller.scala`), so it carries no order info. The completion
-> signal lives in the `order_status` read-model (`status='DONE'`), so the job counts DONE rows there.
+> signal lives in the `order_status` read-model (`status='DONE'`).
+
+> Why Parquet is overwritten, not appended: Parquet files are **immutable** (no row-level upsert), so
+> "one current row per elevator" means rewriting the whole snapshot. `ParquetSink` writes to a
+> `.staging` dir then swaps it onto the target with a single move, so readers never see a half-written
+> file.
 
 ```mermaid
 flowchart LR
   kafka(("Kafka<br/>elevator-state"))
+  pgSrc[("Postgres<br/>order_status")]
   subgraph spark["Spark on Kubernetes (elevator-bi)"]
     driver["driver<br/>(Deployment, client mode)"]
     ex1["executor 1"]
     ex2["executor 2"]
   end
-  pg[("Postgres<br/>elevator_mileage")]
+  parquet[["elevators.parquet<br/>(shared hostPath)"]]
+  api["elevator-api<br/>(DuckDB reader)"]
 
-  kafka -- "read stream (JSON)" --> ex1
-  kafka --> ex2
-  ex1 -- "state deltas" --> driver
-  ex2 --> driver
-  driver -- "foreachBatch upsert" --> pg
+  kafka -- "batch read (JSON)" --> ex1 & ex2
+  pgSrc -- "JDBC read" --> ex1 & ex2
+  ex1 & ex2 --> driver
+  driver -- "coalesce(1) + atomic swap" --> parquet
+  parquet -- "read_parquet(...)" --> api
 ```
 
 ## Why standalone + Scala 2.12
@@ -33,21 +50,19 @@ flowchart LR
 Spark has **no Scala 3 build** ([SPARK-54150](https://issues.apache.org/jira/browse/SPARK-54150) is
 open, no release), and the official Spark images are published for **Scala 2.12 only**. So this is a
 **standalone** Maven module (its own pom, NOT in the root reactor) pinned to Scala 2.12. It does not
-depend on the Scala 3 `elevator-common`; it reads `elevator-state` by its JSON wire schema, which
-keeps the analytics job decoupled from the producer's internal types anyway.
+depend on the Scala 3 `elevator-common`; it reads `elevator-state` by its JSON wire schema.
 
 ## Layout
 
 | File | Role |
 |---|---|
 | `Mileage.scala` | Pure fold `Option[MileageState] × Seq[Int] → Option[MileageState]` (unit-tested, no Spark) |
+| `OrdersServed.scala` | Pure Spark transform: `order_status` DataFrame → per-elevator DONE counts |
+| `ElevatorStats.scala` | Spark transforms: batch mileage per elevator + the join into one row per elevator |
 | `kafka/ElevatorStateSchema.scala` | Explicit `StructType` for the `elevator-state` JSON |
 | `config/BiConfig.scala` | Env-driven configuration (12-factor) |
-| `sink/PostgresMileageSink.scala` | Idempotent JDBC upsert (`CREATE TABLE IF NOT EXISTS` + `ON CONFLICT`) |
-| `MileageJob.scala` | The streaming job: Kafka → `flatMapGroupsWithState` per elevator → `foreachBatch` |
-| `OrdersServed.scala` | Pure Spark transform: `order_status` DataFrame → per-elevator DONE counts (unit-tested with a local `SparkSession`) |
-| `sink/PostgresOrdersServedSink.scala` | Idempotent JDBC upsert of the served counts |
-| `OrdersServedJob.scala` | The batch job: JDBC read `order_status` → `tally` → upsert, on a fixed interval loop |
+| `sink/ParquetSink.scala` | `coalesce(1)` overwrite to Parquet via a staging dir + atomic swap |
+| `ElevatorStatsJob.scala` | The batch job: read Kafka + `order_status` → join → write Parquet. One pass (CronJob), or a self-scheduling loop |
 
 ## Build & test
 
@@ -62,50 +77,28 @@ The uber jar bundles the Kafka source + Postgres driver; Spark itself is `provid
 The BI layer is part of the `elevator` Helm chart, gated by `bi.enabled` (see [docs/cluster.md](../docs/cluster.md)):
 
 ```bash
-skaffold run -p bi        # build jar + image (custom builder), load into kind, deploy stats DB + drivers
-kubectl logs deploy/elevator-mileage -f          # driver logs (executors: kubectl logs -l role=executor)
+skaffold run -p bi        # build jar + image, load into kind, deploy the stats CronJob
+kubectl create job --from=cronjob/elevator-stats stats-now   # trigger a run immediately (don't wait for the tick)
+kubectl logs -l app=elevator-bi,role=driver -f              # driver logs (executors: -l role=executor)
 helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false   # tear the BI layer down
 ```
 
-- The `elevator-mileage` **Deployment** runs the Spark **driver** in *client mode*; it spawns 2
-  **executor pods** via the Kubernetes resource manager. The Deployment restarts the driver if it dies.
-- **Checkpoint** (stateful streaming state) lives on a `hostPath` shared by driver + executors —
-  correct because kind is a **single node**. On a multi-node cluster, point
-  `ELEVATOR_BI_CHECKPOINT` / `spark.eventLog.dir` at **S3 (`s3a://`)** or **NFS** instead.
-
-## Logs
-
-Stored three ways (see `conf/log4j2.properties` + `charts/elevator/templates/bi-jobs.yaml`):
-1. **stdout** — `kubectl logs` / the driver Deployment.
-2. **durable rolling files** — one per pod on the persistent `/opt/elevator-bi/logs` hostPath volume.
-3. **Spark event logs** — `file:///checkpoint/spark-events` (job/stage history, History-Server-readable).
-
-Collect them with `kubectl logs` / `kubectl cp` from the driver + executor pods.
-
-## Query via the API
-
-The elevator-api exposes the `elevator_mileage` read-model (Java/WebFlux, R2DBC — same pattern as
-`order_status`):
-
-| Endpoint | Returns |
-|---|---|
-| `GET /api/mileage` | every elevator's mileage, sorted by floors travelled (desc) |
-| `GET /api/mileage/{name}` | one elevator's mileage (404 if unknown) |
-
-```json
-GET /api/mileage
-[ { "elevatorName": "e4", "floorsTravelled": 65, "updatedAt": "2026-07-06T11:18:02.206Z" }, ... ]
-```
+- `elevator-stats` is a **CronJob** (`bi.schedule`, default `*/15 * * * *`). Each tick a Job pod is the
+  Spark **driver** (client mode); it spawns 2 **executor pods**, does one pass, and exits —
+  `concurrencyPolicy: Forbid` so runs never overlap on the Parquet swap.
+- The **Parquet** file lives on a `hostPath` shared by driver + executors + the api — correct because
+  kind is a **single node**. On a multi-node cluster, point `ELEVATOR_BI_PARQUET_PATH` at **S3
+  (`s3a://`)** or **NFS** instead.
 
 ## Config (env)
 
 | Var | Default | Meaning |
 |---|---|---|
 | `ELEVATOR_KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` | Kafka brokers |
-| `ELEVATOR_KAFKA_STATE_TOPIC` | `elevator-state` | source topic |
-| `ELEVATOR_BI_STARTING_OFFSETS` | `earliest` | first-run offset (checkpoint takes over after) |
-| `ELEVATOR_BI_CHECKPOINT` | `file:///checkpoint` | streaming checkpoint dir (shared FS) |
-| `ELEVATOR_BI_TRIGGER` | `10 seconds` | micro-batch interval |
-| `ELEVATOR_BI_JDBC_URL` | `jdbc:postgresql://postgres:5432/elevator` | sink DB |
-| `ELEVATOR_PG_USER` / `ELEVATOR_PG_PASSWORD` | `elevator` / `elevator` | sink creds (demo — use a Secret in prod) |
-| `ELEVATOR_BI_TABLE` | `elevator_mileage` | sink table |
+| `ELEVATOR_KAFKA_STATE_TOPIC` | `elevator-state` | source topic (mileage) |
+| `ELEVATOR_BI_SOURCE_JDBC_URL` | `jdbc:postgresql://postgres:5432/elevator` | operational DB (orders served) |
+| `ELEVATOR_BI_ORDER_STATUS_TABLE` | `order_status` | source table for DONE counts |
+| `ELEVATOR_PG_USER` / `ELEVATOR_PG_PASSWORD` | `elevator` / `elevator` | DB creds (demo — use a Secret in prod) |
+| `ELEVATOR_BI_PARQUET_PATH` | `file:///data/elevators.parquet` | output Parquet (shared volume) |
+| `ELEVATOR_BI_RUN_ONCE` | `false` | `true` → one pass then exit (CronJob); `false` → self-scheduling loop |
+| `ELEVATOR_BI_INTERVAL` | `30` | loop interval in seconds (only when `RUN_ONCE=false`) |

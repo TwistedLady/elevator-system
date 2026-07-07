@@ -6,9 +6,9 @@ import org.springframework.boot.autoconfigure.data.r2dbc.R2dbcRepositoriesAutoCo
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-// Two R2DBC datasources (operational `elevator` + analytics `postgres-stats`), so Boot's
-// single-datasource repository auto-config is excluded — MainR2dbcConfig / StatsR2dbcConfig each
-// enable repositories for their own package + connection factory.
+// One R2DBC datasource (operational `elevator`); MainR2dbcConfig scopes repositories to the `order`
+// package + its connection factory, so Boot's blanket single-datasource auto-config is excluded. The
+// BI stats read-model is no longer a DB — it's a Parquet file read via DuckDB (see stats package).
 @SpringBootApplication(exclude = R2dbcRepositoriesAutoConfiguration.class)
 @ConfigurationPropertiesScan
 @EnableScheduling

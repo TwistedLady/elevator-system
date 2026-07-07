@@ -2,8 +2,8 @@
 # the base — so no conditionals anywhere: the whole subchart is skipped when bi.enabled is false.
 #   - bi <-> bi        : driver <-> executor RPC
 #   - bi -> kafka      : executors read elevator-state
-#   - bi -> postgres   : the driver upserts (foreachBatch runs on the driver)
-#   - postgres-stats   : 5432 only from the api (reads) + the Spark BI jobs (writes)
+#   - bi -> postgres   : read order_status (orders served). The stats read-model is now a Parquet
+#                        file on a shared volume, so there is no analytics DB to reach.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -52,25 +52,6 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - podSelector: { matchLabels: { app: elevator-bi } }
-      ports:
-        - { protocol: TCP, port: 5432 }
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-postgres-stats-internal
-  labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/part-of: elevator
-    app: elevator-bi
-spec:
-  podSelector:
-    matchLabels: { app: postgres-stats }
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - podSelector: { matchLabels: { app: elevator-api } }
         - podSelector: { matchLabels: { app: elevator-bi } }
       ports:
         - { protocol: TCP, port: 5432 }

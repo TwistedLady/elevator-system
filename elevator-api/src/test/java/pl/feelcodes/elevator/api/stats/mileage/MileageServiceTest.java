@@ -2,8 +2,9 @@ package pl.feelcodes.elevator.api.stats.mileage;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import pl.feelcodes.elevator.api.stats.ElevatorStat;
+import pl.feelcodes.elevator.api.stats.ParquetStatsReader;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -13,33 +14,26 @@ import static org.mockito.Mockito.when;
 
 class MileageServiceTest {
 
-    private final MileageRepository repository = Mockito.mock(MileageRepository.class);
-    private final MileageService service = new MileageService(repository);
+    private final ParquetStatsReader reader = Mockito.mock(ParquetStatsReader.class);
+    private final MileageService service = new MileageService(reader);
 
-    private static MileageEntity entity(String name, long floors) {
-        MileageEntity e = Mockito.mock(MileageEntity.class);
-        when(e.getElevatorName()).thenReturn(name);
-        when(e.getFloorsTravelled()).thenReturn(floors);
-        when(e.getUpdatedAt()).thenReturn(OffsetDateTime.now());
-        return e;
+    private static ElevatorStat stat(String name, long floors, long served) {
+        return new ElevatorStat(name, floors, served, OffsetDateTime.now());
     }
 
     @Test
-    void allMapsEntitiesToDtosPreservingRepositoryOrder() {
-        MileageEntity e4 = entity("e4", 65);
-        MileageEntity e1 = entity("e1", 59);
-        when(repository.findAllByOrderByFloorsTravelledDesc()).thenReturn(Flux.just(e4, e1));
+    void allSortsByFloorsTravelledDescRegardlessOfReaderOrder() {
+        when(reader.all()).thenReturn(Flux.just(stat("e1", 59, 0), stat("e4", 65, 0), stat("e2", 12, 0)));
 
         List<MileageDto> result = service.all().collectList().block();
 
-        assertThat(result).extracting(MileageDto::elevatorName).containsExactly("e4", "e1");
-        assertThat(result).extracting(MileageDto::floorsTravelled).containsExactly(65L, 59L);
+        assertThat(result).extracting(MileageDto::elevatorName).containsExactly("e4", "e1", "e2");
+        assertThat(result).extracting(MileageDto::floorsTravelled).containsExactly(65L, 59L, 12L);
     }
 
     @Test
     void byElevatorMapsToDto() {
-        MileageEntity e1 = entity("e1", 59);
-        when(repository.findById("e1")).thenReturn(Mono.just(e1));
+        when(reader.all()).thenReturn(Flux.just(stat("e1", 59, 3)));
 
         MileageDto result = service.byElevator("e1").block();
 
@@ -50,7 +44,7 @@ class MileageServiceTest {
 
     @Test
     void byElevatorEmptyWhenMissing() {
-        when(repository.findById("nope")).thenReturn(Mono.empty());
+        when(reader.all()).thenReturn(Flux.just(stat("e1", 59, 3)));
 
         assertThat(service.byElevator("nope").block()).isNull();
     }

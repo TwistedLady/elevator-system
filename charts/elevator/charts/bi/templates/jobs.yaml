@@ -10,17 +10,13 @@ metadata:
 data:
   ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
   ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
-  ELEVATOR_BI_STARTING_OFFSETS: "earliest"
-  ELEVATOR_BI_CHECKPOINT: "file:///checkpoint"
-  ELEVATOR_BI_TRIGGER: "10 seconds"
-  ELEVATOR_BI_STATS_JDBC_URL: "jdbc:postgresql://{{ .Values.global.stats.host }}:5432/{{ .Values.global.stats.database }}"
   ELEVATOR_BI_SOURCE_JDBC_URL: "jdbc:postgresql://{{ .Values.global.postgres.host }}:5432/{{ .Values.global.postgres.database }}"
   ELEVATOR_PG_USER: {{ .Values.global.postgres.user | quote }}
   ELEVATOR_PG_PASSWORD: {{ .Values.global.postgres.password | quote }}
-  ELEVATOR_BI_TABLE: "elevator_mileage"
   ELEVATOR_BI_ORDER_STATUS_TABLE: "order_status"
-  ELEVATOR_BI_SERVED_TABLE: "elevator_orders_served"
-  ELEVATOR_BI_SERVED_INTERVAL: "30"
+  ELEVATOR_BI_PARQUET_PATH: "file:///data/elevators.parquet"
+  # One pass per CronJob run; the k8s schedule owns the cadence (no in-process loop).
+  ELEVATOR_BI_RUN_ONCE: "true"
 ---
 # RBAC for Spark-on-Kubernetes: the driver creates/watches/deletes its executor pods.
 apiVersion: v1
@@ -48,8 +44,11 @@ rules:
     resources: ["pods/log", "pods/status"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["services", "configmaps"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    # deletecollection: Spark cleans up executor services/configmaps/PVCs by label on driver
+    # shutdown (exercised now that each run-once driver exits — the always-on Deployment never did).
+    # PVCs are listed even though we use hostPath: Spark's cleanup issues the call unconditionally.
+    resources: ["services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -67,233 +66,130 @@ roleRef:
   name: elevator-bi-spark
   apiGroup: rbac.authorization.k8s.io
 ---
-# The Spark mileage job (streaming) — this Deployment pod IS the Spark driver (client mode); it
-# spark-submits against the in-cluster API server, spawning executor pods.
-apiVersion: apps/v1
-kind: Deployment
+# The Spark stats job as a CronJob: on each schedule tick a Job pod IS the Spark driver (client
+# mode), spark-submits, spawns executor pods, does ONE pass (re-scan Kafka + order_status -> join ->
+# overwrite the Parquet on the shared `data` hostPath), then exits. Executors are torn down with it,
+# so nothing holds CPU between runs. The api reads the Parquet via DuckDB.
+apiVersion: batch/v1
+kind: CronJob
 metadata:
-  name: elevator-mileage
+  name: elevator-stats
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: elevator
     app: elevator-bi
 spec:
-  replicas: 1
-  strategy:
-    type: Recreate            # one driver at a time — must not race the old for the checkpoint
-  selector:
-    matchLabels: { app: elevator-bi, role: driver }
-  template:
-    metadata:
-      labels: { app: elevator-bi, role: driver, part-of: elevator }
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: Forbid        # never overlap runs — one Parquet swap at a time
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
     spec:
-      serviceAccountName: elevator-bi-spark
-      terminationGracePeriodSeconds: 30
-      initContainers:
-        - name: init-dirs
-          image: {{ .Values.global.images.bi }}
-          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
-          command: ["sh", "-c", "mkdir -p /checkpoint/spark-events /opt/elevator-bi/logs && chmod -R 0777 /checkpoint /opt/elevator-bi/logs"]
-          securityContext:
-            runAsUser: 0
-          volumeMounts:
-            - { name: checkpoint, mountPath: /checkpoint }
-            - { name: logs, mountPath: /opt/elevator-bi/logs }
-      containers:
-        - name: driver
-          image: {{ .Values.global.images.bi }}
-          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
-          envFrom:
-            - configMapRef: { name: elevator-bi-config }
-          env:
-            - name: POD_IP
-              valueFrom: { fieldRef: { fieldPath: status.podIP } }
-            - name: POD_NAME
-              valueFrom: { fieldRef: { fieldPath: metadata.name } }
-            - { name: HOME, value: "/tmp" }
-            - { name: SPARK_LOCAL_DIRS, value: "/tmp" }
-          command: ["/opt/spark/bin/spark-submit"]
-          args:
-            - "--master"
-            - "k8s://https://kubernetes.default.svc:443"
-            - "--deploy-mode"
-            - "client"
-            - "--name"
-            - "elevator-mileage"
-            - "--class"
-            - "pl.feelcodes.elevator.bi.MileageJob"
-            - "--conf"
-            - "spark.kubernetes.namespace=default"
-            - "--conf"
-            - "spark.kubernetes.container.image={{ .Values.global.images.bi }}"
-            - "--conf"
-            - "spark.kubernetes.container.image.pullPolicy={{ .Values.global.images.pullPolicy }}"
-            - "--conf"
-            - "spark.kubernetes.authenticate.driver.serviceAccountName=elevator-bi-spark"
-            - "--conf"
-            - "spark.kubernetes.driver.pod.name=$(POD_NAME)"
-            - "--conf"
-            - "spark.executor.instances=2"
-            - "--conf"
-            - "spark.executor.cores=1"
-            - "--conf"
-            - "spark.executor.memory=512m"
-            - "--conf"
-            - "spark.driver.memory=512m"
-            - "--conf"
-            - "spark.sql.shuffle.partitions=4"
-            - "--conf"
-            - "spark.eventLog.enabled=true"
-            - "--conf"
-            - "spark.eventLog.dir=file:///checkpoint/spark-events"
-            - "--conf"
-            - "spark.driver.host=$(POD_IP)"
-            - "--conf"
-            - "spark.driver.bindAddress=0.0.0.0"
-            - "--conf"
-            - "spark.driver.port=7078"
-            - "--conf"
-            - "spark.blockManager.port=7079"
-            - "--conf"
-            - "spark.kubernetes.executor.label.app=elevator-bi"
-            - "--conf"
-            - "spark.kubernetes.executor.label.part-of=elevator"
-            - "--conf"
-            - "spark.kubernetes.executor.label.role=executor"
-            - "--conf"
-            - "spark.kubernetes.executor.volumes.hostPath.checkpoint.mount.path=/checkpoint"
-            - "--conf"
-            - "spark.kubernetes.executor.volumes.hostPath.checkpoint.options.path={{ .Values.checkpointHostPath }}"
-            - "--conf"
-            - "spark.kubernetes.executor.volumes.hostPath.logs.mount.path=/opt/elevator-bi/logs"
-            - "--conf"
-            - "spark.kubernetes.executor.volumes.hostPath.logs.options.path={{ .Values.logsHostPath }}"
-            - "local:///opt/spark/jobs/elevator-bi.jar"
-          ports:
-            - { name: driver-rpc, containerPort: 7078 }
-            - { name: blockmanager, containerPort: 7079 }
-          resources:
-            requests: { cpu: "250m", memory: "1Gi" }
-            limits:   { cpu: "1",    memory: "1Gi" }
-          volumeMounts:
-            - { name: checkpoint, mountPath: /checkpoint }
-            - { name: logs, mountPath: /opt/elevator-bi/logs }
-      volumes:
-        - name: checkpoint
-          hostPath:
-            path: {{ .Values.checkpointHostPath | quote }}
-            type: DirectoryOrCreate
-        - name: logs
-          hostPath:
-            path: {{ .Values.logsHostPath | quote }}
-            type: DirectoryOrCreate
----
-# The Spark "orders served" job (batch) — driver pod; no streaming checkpoint, only the log volume.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: elevator-orders-served
-  labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/part-of: elevator
-    app: elevator-bi
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels: { app: elevator-bi, role: orders-served-driver }
-  template:
-    metadata:
-      labels: { app: elevator-bi, role: orders-served-driver, part-of: elevator }
-    spec:
-      serviceAccountName: elevator-bi-spark
-      terminationGracePeriodSeconds: 30
-      initContainers:
-        - name: init-dirs
-          image: {{ .Values.global.images.bi }}
-          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
-          command: ["sh", "-c", "mkdir -p /opt/elevator-bi/logs/spark-events && chmod -R 0777 /opt/elevator-bi/logs"]
-          securityContext:
-            runAsUser: 0
-          volumeMounts:
-            - { name: logs, mountPath: /opt/elevator-bi/logs }
-      containers:
-        - name: driver
-          image: {{ .Values.global.images.bi }}
-          imagePullPolicy: {{ .Values.global.images.pullPolicy }}
-          envFrom:
-            - configMapRef: { name: elevator-bi-config }
-          env:
-            - name: POD_IP
-              valueFrom: { fieldRef: { fieldPath: status.podIP } }
-            - name: POD_NAME
-              valueFrom: { fieldRef: { fieldPath: metadata.name } }
-            - { name: HOME, value: "/tmp" }
-            - { name: SPARK_LOCAL_DIRS, value: "/tmp" }
-          command: ["/opt/spark/bin/spark-submit"]
-          args:
-            - "--master"
-            - "k8s://https://kubernetes.default.svc:443"
-            - "--deploy-mode"
-            - "client"
-            - "--name"
-            - "elevator-orders-served"
-            - "--class"
-            - "pl.feelcodes.elevator.bi.OrdersServedJob"
-            - "--conf"
-            - "spark.kubernetes.namespace=default"
-            - "--conf"
-            - "spark.kubernetes.container.image={{ .Values.global.images.bi }}"
-            - "--conf"
-            - "spark.kubernetes.container.image.pullPolicy={{ .Values.global.images.pullPolicy }}"
-            - "--conf"
-            - "spark.kubernetes.authenticate.driver.serviceAccountName=elevator-bi-spark"
-            - "--conf"
-            - "spark.kubernetes.driver.pod.name=$(POD_NAME)"
-            - "--conf"
-            - "spark.executor.instances=2"
-            - "--conf"
-            - "spark.executor.cores=1"
-            - "--conf"
-            - "spark.executor.memory=512m"
-            - "--conf"
-            - "spark.driver.memory=512m"
-            - "--conf"
-            - "spark.sql.shuffle.partitions=4"
-            - "--conf"
-            - "spark.eventLog.enabled=true"
-            - "--conf"
-            - "spark.eventLog.dir=file:///opt/elevator-bi/logs/spark-events"
-            - "--conf"
-            - "spark.driver.host=$(POD_IP)"
-            - "--conf"
-            - "spark.driver.bindAddress=0.0.0.0"
-            - "--conf"
-            - "spark.driver.port=7080"
-            - "--conf"
-            - "spark.blockManager.port=7081"
-            - "--conf"
-            - "spark.kubernetes.executor.label.app=elevator-bi"
-            - "--conf"
-            - "spark.kubernetes.executor.label.part-of=elevator"
-            - "--conf"
-            - "spark.kubernetes.executor.label.role=executor"
-            - "--conf"
-            - "spark.kubernetes.executor.volumes.hostPath.logs.mount.path=/opt/elevator-bi/logs"
-            - "--conf"
-            - "spark.kubernetes.executor.volumes.hostPath.logs.options.path={{ .Values.logsHostPath }}"
-            - "local:///opt/spark/jobs/elevator-bi.jar"
-          ports:
-            - { name: driver-rpc, containerPort: 7080 }
-            - { name: blockmanager, containerPort: 7081 }
-          resources:
-            requests: { cpu: "250m", memory: "1Gi" }
-            limits:   { cpu: "1",    memory: "1Gi" }
-          volumeMounts:
-            - { name: logs, mountPath: /opt/elevator-bi/logs }
-      volumes:
-        - name: logs
-          hostPath:
-            path: {{ .Values.logsHostPath | quote }}
-            type: DirectoryOrCreate
+      backoffLimit: 1
+      activeDeadlineSeconds: 600    # a stuck run can't outlive the next tick
+      template:
+        metadata:
+          labels: { app: elevator-bi, role: driver, part-of: elevator }
+        spec:
+          serviceAccountName: elevator-bi-spark
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          initContainers:
+            - name: init-dirs
+              image: {{ .Values.global.images.bi }}
+              imagePullPolicy: {{ .Values.global.images.pullPolicy }}
+              command: ["sh", "-c", "mkdir -p /opt/elevator-bi/logs/spark-events /data && chmod -R 0777 /opt/elevator-bi/logs /data"]
+              securityContext:
+                runAsUser: 0
+              volumeMounts:
+                - { name: logs, mountPath: /opt/elevator-bi/logs }
+                - { name: data, mountPath: /data }
+          containers:
+            - name: driver
+              image: {{ .Values.global.images.bi }}
+              imagePullPolicy: {{ .Values.global.images.pullPolicy }}
+              envFrom:
+                - configMapRef: { name: elevator-bi-config }
+              env:
+                - name: POD_IP
+                  valueFrom: { fieldRef: { fieldPath: status.podIP } }
+                - name: POD_NAME
+                  valueFrom: { fieldRef: { fieldPath: metadata.name } }
+                - { name: HOME, value: "/tmp" }
+                - { name: SPARK_LOCAL_DIRS, value: "/tmp" }
+              command: ["/opt/spark/bin/spark-submit"]
+              args:
+                - "--master"
+                - "k8s://https://kubernetes.default.svc:443"
+                - "--deploy-mode"
+                - "client"
+                - "--name"
+                - "elevator-stats"
+                - "--class"
+                - "pl.feelcodes.elevator.bi.ElevatorStatsJob"
+                - "--conf"
+                - "spark.kubernetes.namespace=default"
+                - "--conf"
+                - "spark.kubernetes.container.image={{ .Values.global.images.bi }}"
+                - "--conf"
+                - "spark.kubernetes.container.image.pullPolicy={{ .Values.global.images.pullPolicy }}"
+                - "--conf"
+                - "spark.kubernetes.authenticate.driver.serviceAccountName=elevator-bi-spark"
+                - "--conf"
+                - "spark.kubernetes.driver.pod.name=$(POD_NAME)"
+                - "--conf"
+                - "spark.executor.instances=2"
+                - "--conf"
+                - "spark.executor.cores=1"
+                - "--conf"
+                - "spark.executor.memory=512m"
+                - "--conf"
+                - "spark.driver.memory=512m"
+                - "--conf"
+                - "spark.sql.shuffle.partitions=4"
+                - "--conf"
+                - "spark.eventLog.enabled=true"
+                - "--conf"
+                - "spark.eventLog.dir=file:///opt/elevator-bi/logs/spark-events"
+                - "--conf"
+                - "spark.driver.host=$(POD_IP)"
+                - "--conf"
+                - "spark.driver.bindAddress=0.0.0.0"
+                - "--conf"
+                - "spark.driver.port=7078"
+                - "--conf"
+                - "spark.blockManager.port=7079"
+                - "--conf"
+                - "spark.kubernetes.executor.label.app=elevator-bi"
+                - "--conf"
+                - "spark.kubernetes.executor.label.part-of=elevator"
+                - "--conf"
+                - "spark.kubernetes.executor.label.role=executor"
+                - "--conf"
+                - "spark.kubernetes.executor.volumes.hostPath.data.mount.path=/data"
+                - "--conf"
+                - "spark.kubernetes.executor.volumes.hostPath.data.options.path={{ .Values.parquetHostPath }}"
+                - "--conf"
+                - "spark.kubernetes.executor.volumes.hostPath.logs.mount.path=/opt/elevator-bi/logs"
+                - "--conf"
+                - "spark.kubernetes.executor.volumes.hostPath.logs.options.path={{ .Values.logsHostPath }}"
+                - "local:///opt/spark/jobs/elevator-bi.jar"
+              ports:
+                - { name: driver-rpc, containerPort: 7078 }
+                - { name: blockmanager, containerPort: 7079 }
+              resources:
+                requests: { cpu: "250m", memory: "1Gi" }
+                limits:   { cpu: "1",    memory: "1Gi" }
+              volumeMounts:
+                - { name: logs, mountPath: /opt/elevator-bi/logs }
+                - { name: data, mountPath: /data }
+          volumes:
+            - name: logs
+              hostPath:
+                path: {{ .Values.logsHostPath | quote }}
+                type: DirectoryOrCreate
+            - name: data
+              hostPath:
+                path: {{ .Values.parquetHostPath | quote }}
+                type: DirectoryOrCreate

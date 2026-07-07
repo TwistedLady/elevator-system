@@ -86,7 +86,8 @@ hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5
 - **BI on / off** — `ELEVATOR_BI_ENABLED` toggles the Spark analytics layer (read at api startup via
   `@ConditionalOnProperty`). On kind, toggle it with Helm — `skaffold run -p bi`, or
   `helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false` ([cluster.md](cluster.md)):
-  Helm flips the flag and applies/deletes `postgres-stats` + the Spark drivers in one step. When off,
+  Helm flips the flag and applies/deletes the Spark stats driver (which writes the Parquet read-model
+  the api reads via DuckDB) in one step. When off,
   `GET /api/mileage` & `/api/served` are **not created (404)**, `/actuator/health` shows the `bi`
   component **DISABLED** (overall stays **UP**), and both consoles hide the **Stats** tab.
 

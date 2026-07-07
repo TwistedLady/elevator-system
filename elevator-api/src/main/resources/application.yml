@@ -22,11 +22,8 @@ spring:
     consumer:
       group-id: elevator-api
 elevator:
-  stats:                  # SECONDARY datasource → separate postgres-stats DB (Spark BI read-models)
-    r2dbc:
-      url: r2dbc:postgresql://${ELEVATOR_STATS_PG_HOST:localhost}:${ELEVATOR_STATS_PG_PORT:5432}/${ELEVATOR_STATS_PG_DATABASE:elevator_stats}
-      username: ${ELEVATOR_STATS_PG_USER:elevator}
-      password: ${ELEVATOR_STATS_PG_PASSWORD:elevator}
+  stats:                  # Spark BI read-model: a single Parquet file read via DuckDB (shared volume)
+    parquet-path: ${ELEVATOR_STATS_PARQUET_PATH:/data/elevators.parquet}
   command-topic: elevator-commands
   state-topic: elevator-state
   # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
@@ -37,8 +34,8 @@ elevator:
 management:
   health:
     r2dbc:
-      enabled: false                   # main + stats DBs are covered by custom indicators (db, bi);
-                                       # the built-in one would flag the optional stats DB when BI is off
+      enabled: false                   # the main DB has a custom indicator (db); the BI read-model is
+                                       # a Parquet file, checked by the (bi) indicator, not R2DBC
   endpoints:
     web:
       exposure:
