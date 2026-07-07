@@ -1,7 +1,8 @@
 # Architecture
 
-The system is five parts around two Kafka topics: a Scala/Pekko brain, a Spring HTTP
-edge, a Rust console, plus Kafka and Postgres.
+The system is a Scala/Pekko brain, a Spring HTTP edge, a Rust console, plus Kafka and
+Postgres. Users submit **calls**; the app groups same-floor calls into **orders**
+([actors](actors.md)).
 
 ## Modules
 
@@ -11,10 +12,10 @@ edge, a Rust console, plus Kafka and Postgres.
 | `elevator-common-dto` | Scala 3 | Wire DTOs shared across modules. |
 | `elevator-app` | Pekko | The brain: event-sourced [actors](actors.md) + R2DBC journal + [read-side projections](read-model.md). |
 | `elevator-api` | Spring WebFlux | HTTP edge + Actuator health. No actors. |
-| `elevator-console-cli` | Rust (ratatui) | Terminal dashboard + order sender. |
+| `elevator-console-cli` | Rust (ratatui) | Terminal dashboard + call sender. |
 | `elevator-console-web` | Angular | Read-only browser monitor (Chart + Trend), a web sibling of the Rust console. |
 
-Infra: **Kafka** (2 topics) and **Postgres** (event journal + read-model tables).
+Infra: **Kafka** (4 topics) and **Postgres** (event journal + read-model tables).
 
 Both consoles are pure HTTP clients of `elevator-api` — neither touches Kafka.
 
@@ -25,30 +26,35 @@ flowchart LR
   console["elevator-console-cli<br/>(Rust TUI)"]
   api["elevator-api<br/>(Spring WebFlux)"]
   app["elevator-app<br/>(Pekko)"]
-  cmd[("Kafka<br/>elevator-commands")]
+  calls[("Kafka<br/>elevator-calls")]
   state[("Kafka<br/>elevator-state")]
+  ostate[("Kafka<br/>elevator-order-state<br/>elevator-call-state")]
+  bi["elevator-bi<br/>(Spark)"]
   pg[("Postgres")]
 
-  console -->|"POST /api/order · GET /api/…"| api
-  api -->|produce| cmd --> app
+  console -->|"POST /api/call · GET /api/…"| api
+  api -->|produce| calls --> app
   app -->|produce| state
+  app -->|produce| ostate --> bi
   state -->|cache| api
   state -->|live view| console
   app -->|journal + projections| pg
-  api -->|"R2DBC read order_status"| pg
+  api -->|"R2DBC read call_status"| pg
 ```
 
 ## Kafka topics
 
 | Topic | Producer | Consumer | Payload |
 |---|---|---|---|
-| `elevator-commands` | api | app (`OrderConsumer`) | `ElevatorOrderDto{tag, elevatorName, floor}` |
-| `elevator-state` | app (`StatePublisher`) | api cache, console | `ElevatorStateDto{tag, elevatorName, direction, motion, floor}` |
+| `elevator-calls` | api | app (`CallConsumer`) | `CallDto{id, elevatorName, floor}` |
+| `elevator-state` | app (`ElevatorStatePublisher`) | api cache, console, BI | `ElevatorStateDto{elevatorName, direction, motion, floor}` |
+| `elevator-order-state` | app (`OrderStatePublisher`) | BI | `OrderStateDto{orderId, elevatorName, floor, status, callIds}` |
+| `elevator-call-state` | app (`CallStatePublisher`) | BI | `CallStateDto{id, elevatorName, floor, status}` |
 
-Both keyed by `elevatorName`. Full message catalog: [protocol.md](protocol.md).
+All keyed by `elevatorName`. Full message catalog: [protocol.md](protocol.md).
 
 ## Console ↔ system
 
-The console reaches the system **only** through the HTTP API (orders via `POST /api/order`,
+The console reaches the system **only** through the HTTP API (calls via `POST /api/call`,
 live state via SSE `GET /api/elevator/stream`) or infra (`kubectl`/`git`). It does **not**
 touch Kafka.

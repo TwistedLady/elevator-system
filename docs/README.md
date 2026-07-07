@@ -11,7 +11,7 @@ One topic per file. New here? Read [architecture](architecture.md) first.
 - [crash-recovery.md](crash-recovery.md) — what replay guards, and why.
 
 ## Reference — look it up
-- [actors.md](actors.md) — the three actors and who does what.
+- [actors.md](actors.md) — the four actors (Call vs Order) and who does what.
 - [protocol.md](protocol.md) — exact messages, events, topics, end-to-end sequence.
 - [scheduling.md](scheduling.md) — the SCAN next-move policy.
 - [core.md](core.md) — `elevator-common-core`: domain + engine.

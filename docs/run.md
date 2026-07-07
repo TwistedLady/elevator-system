@@ -1,6 +1,6 @@
 # Run it
 
-A working backend (no web frontend) proving the full path: `POST /api/order` → Kafka →
+A working backend (no web frontend) proving the full path: `POST /api/call` → Kafka →
 [actors](actors.md) → Kafka state → live view. Needs Kafka **and** Postgres, both from
 `docker-compose.demo.yml`.
 
@@ -10,7 +10,7 @@ The whole backend runs in containers — no host JVMs, no shell scripts:
 
 ```bash
 docker compose -f docker-compose.demo.yml up --build          # kafka + postgres + app + api
-docker compose -f docker-compose.demo.yml --profile seed up    # …and seed a fleet of orders (one-shot Job)
+docker compose -f docker-compose.demo.yml --profile seed up    # …and seed a fleet of calls (one-shot Job)
 docker compose -f docker-compose.demo.yml down                 # stop everything (add -v to wipe data)
 docker compose -f docker-compose.demo.yml logs -f app api      # follow the JVM logs
 
@@ -24,15 +24,15 @@ Seed knobs live in the `seed` service's `command:` in `docker-compose.demo.yml`
 
 > **Why seed:** Kafka has no volume, so a restart wipes `elevator-state` (and the api cache) — the
 > chart starts blank though the Postgres journal still has the actors. The `seed` profile fires a
-> burst of orders after boot.
+> burst of calls after boot.
 
 > Schema is created from `db/init/` on first Postgres start. Recreate from scratch:
 > `docker compose -p elevator-demo -f docker-compose.demo.yml down -v`.
 
 ## Watch live
 
-The **Rust console** is the rich view — a TUI with tabs: chart · trend · order · sim · health ·
-logs · k8s. It talks to the system **only over HTTP** (orders `POST /api/order`, live state via
+The **Rust console** is the rich view — a TUI with tabs: chart · trend · call · sim · health ·
+logs · k8s. It talks to the system **only over HTTP** (calls `POST /api/call`, live state via
 SSE `GET /api/elevator/stream`).
 
 ```bash
@@ -45,11 +45,11 @@ Logs while running: `docker compose -f docker-compose.demo.yml logs -f app api`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/order` | Body `{"elevatorName":"lift-a","floor":5}` → publishes a command. `tag` optional (auto UUID). |
+| `POST` | `/api/call` | Body `{"elevatorName":"lift-a","floor":5}` → publishes a call. `id` optional (auto UUID). |
 | `GET` | `/api/elevator/{name}` | Latest state JSON, or `404`. |
 | `GET` | `/api/elevator` | Latest state of every known elevator. |
 | `GET` | `/api/elevator/stream` | **SSE** live state stream. |
-| `GET` | `/api/order/{tag}` | Order lifecycle `PROGRESS → DONE` from `order_status`, or `404`. |
+| `GET` | `/api/call/{id}` | Call lifecycle `PROGRESS → DONE` from `call_status`, or `404`. |
 | `GET` | `/actuator/health` | Health incl. Kafka readiness. Default port **8080**. |
 
 ## Test
@@ -60,8 +60,8 @@ mvn verify        # + Testcontainers IT (ElevatorStateFlowIT: Spring + Kafka + P
 
 # the console is the end-to-end harness (HTTP + kubectl log cross-check, no Kafka):
 elevator-console-cli selftest              # api health UP + state flowing → PASS/FAIL + exit code
-elevator-console-cli itest --count 20 --timeout 90   # send N orders, poll each to DONE, cross-check pod logs
-#   → logs/itest-report.{json,md}; exit 0 only if 0 lost + every tag DONE + car moved
+elevator-console-cli itest --count 20 --timeout 90   # send N calls, poll each to DONE, cross-check pod logs
+#   → logs/itest-report.{json,md}; exit 0 only if 0 lost + every call DONE + car moved
 ```
 
 **Commit gate:** a pre-commit hook runs `itest` and blocks the commit on failure. Enable once:
@@ -75,7 +75,7 @@ values `config.*`), mounted by both
 the app and the api as env vars *and* as files under `/etc/elevator-config`. Editing the ConfigMap
 hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5s in-app poll).
 
-- **Order validation** — `POST /api/order` is validated against `ELEVATOR_MAXFLOOR` (15) and
+- **Call validation** — `POST /api/call` is validated against `ELEVATOR_MAXFLOOR` (15) and
   `ELEVATOR_ELEVATORS` (e1..e10); a bad floor/unknown elevator returns **400**. The api owns these
   limits; the app never validates. `GET /api/config` exposes them, and both consoles fetch it
   (no hardcoded floors/fleet). Edit the ConfigMap and validation updates live. A missing ConfigMap

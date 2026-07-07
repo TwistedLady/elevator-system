@@ -6,20 +6,22 @@ off) the JVM:
 - **Scala 3** — the pure domain (elevator, floors, scheduling policy)
 - **Apache Pekko** — typed actors, cluster sharding, event sourcing + projections
 - **PostgreSQL / R2DBC** — durable event journal + a CQRS read-model
-- **Apache Kafka** — the command/state bus
+- **Apache Kafka** — the call / state bus
 - **Spring Boot** — the HTTP edge + health probes
 - **Rust (ratatui)** — a retro terminal console (HTTP client of the API)
 
 Built in small, deliberate commits — read the history to watch it come together.
 
+Users press buttons — **calls**; the app groups same-floor calls into **orders** (one stop).
+
 ```mermaid
 flowchart LR
   console["elevator-console-cli (Rust)"] -->|HTTP| api["elevator-api (Spring)"]
-  api -->|produce| cmd[("Kafka: elevator-commands")]
+  api -->|produce| calls[("Kafka: elevator-calls")]
   subgraph app["elevator-app (Pekko)"]
-    coord["Coordinator"] --> ctrl["Controller"] --> op["Operator"]
+    coord["Coordinator"] --> mgr["Manager<br/>(calls → orders)"] --> ctrl["Controller"] --> op["Operator"]
   end
-  cmd --> coord
+  calls --> coord
   ctrl -->|produce| state[("Kafka: elevator-state")]
   state -->|cache| api -->|live view| console
   ctrl -->|journal + projections| pg[("Postgres")]
@@ -29,7 +31,7 @@ flowchart LR
 
 ```bash
 docker compose -f docker-compose.demo.yml up --build           # kafka + postgres + app + api
-docker compose -f docker-compose.demo.yml --profile seed up     # …and seed a fleet of orders
+docker compose -f docker-compose.demo.yml --profile seed up     # …and seed a fleet of calls
 ( cd elevator-console-cli && cargo run -- monitor )             # live chart (talks to http://localhost:8080)
 docker compose -f docker-compose.demo.yml down                  # stop  (add -v to wipe data)
 ```
@@ -54,7 +56,7 @@ A sandbox for the patterns behind resilient distributed systems — the actor mo
 sourcing / CQRS, log-centric messaging, idempotency, observability — small enough to read in
 an afternoon, real enough to break on purpose and learn from.
 
-**Roadmap.** Done: durable R2DBC journal + a Pekko projection maintaining `elevator_state_view`
-(with recovery & schema-evolution tests). Next: point the api's read path at that projection so
-HTTP queries are restart-safe. Further out: multi-node cluster, a separate read database, CRDTs
+**Roadmap.** Done: durable R2DBC journal + Pekko projections maintaining `elevator_state_view`,
+`call_status`, `order_status` (with recovery & schema-evolution tests). Next: point the api's
+live read path at `elevator_state_view` so HTTP queries are restart-safe. Further out: multi-node cluster, a separate read database, CRDTs
 (`distributed-data`), chaos drills.

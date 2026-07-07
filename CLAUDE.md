@@ -7,7 +7,7 @@ If this file and the code disagree, **trust the code** and fix this file.
 
 An event-sourced elevator simulator, built as a lab for distributed programming on the JVM.
 Scala 3 domain + Apache Pekko (cluster sharding, event sourcing, projections), a Spring WebFlux
-HTTP edge, Postgres (R2DBC journal + CQRS read model), Kafka as the command/state bus, and a
+HTTP edge, Postgres (R2DBC journal + CQRS read model), Kafka as the call / state bus, and a
 Rust (ratatui) terminal console.
 
 ## Modules
@@ -17,34 +17,39 @@ Rust (ratatui) terminal console.
 | `elevator-common` | Scala | Shared library, split into small submodules (below) |
 | `elevator-app` | Scala / Pekko | The brain: sharded, event-sourced actors + Postgres projections |
 | `elevator-api` | Java / WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, health |
-| `elevator-console-cli` | Rust / ratatui | Terminal dashboard + order sender |
+| `elevator-console-cli` | Rust / ratatui | Terminal dashboard + call sender |
 | `elevator-console-web` | Angular | Read-only browser monitor (Chart + Trend tabs), talks to the api only |
 | `elevator-bi` | Scala 2.12 / Spark | **Standalone** (not in the reactor): Spark BI jobs → Postgres — streaming **mileage** from `elevator-state`, batch **orders-served** (DONE counts) from `order_status`. Build: `mvn -f elevator-bi/pom.xml package` |
 
 `elevator-common` submodules keep a clean layering:
 `core` (pure domain) → `events` → `logic` (decide/evolve, Pekko-free) → `protocol` (message ADTs, Pekko-free)
-→ `strategy`, `dto`, `serializable`. The app actors are **thin shells** that wire the pure `logic`.
+→ `strategy` (`NextFloorStrategy` movement, `GroupCallsStrategy` grouping) → `dto`, `serializable`.
+The app actors are **thin shells** that wire the pure `logic`.
 
-## How it flows (one order)
+## How it flows (one call)
 
-`POST /api/order` → api produces to Kafka `elevator-commands` → app `OrderConsumer` dedups by `tag`
-→ `Coordinator` (merge orders by floor, persist Accepted) → `Controller` (event-sourced scheduler;
-self-driven loop, no timer — pacing comes from the engine; picks next move via `NextFloorStrategy`)
-→ `Operator` (stateless, applies one move)
-→ Controller publishes new state to Kafka `elevator-state` and marks reached orders done.
+A **Call** = a user action (`id, elevatorName, floor`). The app groups same-floor calls into an
+immutable **Order** (`order id = hash(sorted call ids)`) — one stop. Four actors, one per elevator:
 
-Two Kafka topics: `elevator-commands` (api → app), `elevator-state` (app → api / console).
+`POST /api/call` → api produces to Kafka `elevator-calls` → app `CallConsumer` (batches, dedups by
+call `id`) → `Coordinator` (owns call status: persist `CallReceived`, forward) → `Manager` (owns
+call↔order: group via `GroupCallsStrategy`, persist `OrderCreated`, assign) → `Controller`
+(event-sourced scheduler; self-driven loop, no timer — engine paces it; next move via
+`NextFloorStrategy`) → `Operator` (stateless, applies one move) → Controller publishes state to
+Kafka `elevator-state` and marks reached orders done → `Manager.MarkOrderDone` → `Coordinator.MarkCallDone`.
+
+Four Kafka topics: `elevator-calls` (api → app), and three state feeds (app → api/console/BI):
+`elevator-state`, `elevator-order-state`, `elevator-call-state`. Status query: `GET /api/call/{id}`
+reads the `call_status` read table. Full detail: [docs/protocol.md](docs/protocol.md).
 
 > **The Rust console is HTTP-only.** It reaches the system **only** via the elevator-api HTTP edge
-> (`POST /api/order`, `GET /api/elevator`, `GET /api/elevator/stream` SSE) plus infra (`kubectl`/`git`).
-> It does **not** talk to Kafka. (The README's top diagram is out of date on this — trust this note.)
+> (`POST /api/call`, `GET /api/elevator`, `GET /api/elevator/stream` SSE) plus infra (`kubectl`/`git`).
+> It does **not** talk to Kafka.
 
 ## Hard rules (do not break without an explicit ask)
 
 - **Never edit `pom.xml`** (artifactId / name / version / modules) to fix IDE or naming issues.
   Fix those on the IntelliJ side. Module id must stay `pl.feelcodes.elevator:elevator`.
-- **`core` and `protocol` classes are frozen.** They carry a top `// Reviewed —` header — keep it
-  forever, and don't edit these classes without explicit permission.
 - **Don't add code comments without asking.** Approved comments stay short and meaningful; strip
   comments when refactoring.
 - **Run the test suite after every code change**, before reporting done. Don't wait to be asked.
