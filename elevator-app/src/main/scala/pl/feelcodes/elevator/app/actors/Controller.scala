@@ -4,7 +4,7 @@ import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.{PersistenceId, RecoveryCompleted}
-import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
+import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
 import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
 import pl.feelcodes.elevator.common.protocol.ControllerProtocol
@@ -81,6 +81,6 @@ object Controller:
         }.withTagger {
           case _: ElevatorStateUpdated => Set("controller-state")
           case _ => Set.empty
-        }
+        }.withRetention(RetentionCriteria.snapshotEvery(numberOfEvents = 100, keepNSnapshots = 2))
       }
     }
