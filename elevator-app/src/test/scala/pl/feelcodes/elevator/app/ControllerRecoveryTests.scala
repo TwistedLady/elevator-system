@@ -9,6 +9,8 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
 import pl.feelcodes.elevator.common.core.domain.*
 
+import scala.concurrent.duration.*
+
 object ControllerRecoveryTests {
   val config = ConfigFactory
     .parseString(
@@ -102,6 +104,53 @@ final class ControllerRecoveryTests
 
       val redelivered = operatorProbe.expectMessageType[Operator.Move]
       redelivered.command shouldBe Command.Go(Direction.Up)
+    }
+
+    "redeliver a stuck move when the watchdog keeps ticking with no progress" in {
+      val (esTestKit, operatorProbe, _) = newTestKit()
+      val order = ElevatorOrder("o-4", Floor(5))
+
+      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
+      operatorProbe.expectMessageType[Operator.Move]   // original move, then assume it (or the reply) is lost
+      esTestKit.getState().waiting shouldBe true
+
+      esTestKit.runCommand(Controller.RedeliverStuckMove)   // first tick: baseline, no resend
+      esTestKit.runCommand(Controller.RedeliverStuckMove)   // stalled == 1, still below threshold
+      operatorProbe.expectNoMessage(200.millis)
+      esTestKit.runCommand(Controller.RedeliverStuckMove)   // stalled == 2 -> redeliver
+
+      val redelivered = operatorProbe.expectMessageType[Operator.Move]
+      redelivered.command shouldBe Command.Go(Direction.Up)
+    }
+
+    "not redeliver anything when the elevator is idle (not waiting)" in {
+      val (esTestKit, operatorProbe, _) = newTestKit()
+
+      esTestKit.runCommand(Controller.RedeliverStuckMove)
+      esTestKit.runCommand(Controller.RedeliverStuckMove)
+      esTestKit.runCommand(Controller.RedeliverStuckMove)
+
+      esTestKit.getState().waiting shouldBe false
+      operatorProbe.expectNoMessage(200.millis)
+    }
+
+    "reset the stall counter when the elevator makes progress between ticks" in {
+      val (esTestKit, operatorProbe, _) = newTestKit()
+      val order = ElevatorOrder("o-6", Floor(9))
+
+      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
+      operatorProbe.expectMessageType[Operator.Move]
+
+      esTestKit.runCommand(Controller.RedeliverStuckMove)   // baseline while waiting at floor 0
+      // the move completes: floor advances and the loop chooses the next move (waiting again, new state)
+      esTestKit.runCommand(Controller.PublishState(ElevatorState(Direction.Up, Motion.Moving, Floor(4))))
+      operatorProbe.expectMessageType[Operator.Move]
+
+      // state changed since the baseline tick, so the counter is back to zero: one tick can't redeliver
+      esTestKit.runCommand(Controller.RedeliverStuckMove)
+      operatorProbe.expectNoMessage(200.millis)
     }
   }
 }
