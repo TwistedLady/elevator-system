@@ -1,18 +1,14 @@
 name: Release & Deploy
 
-# Runs only after "Build & Test" succeeds on main (never ships a red build), or
-# manually. Publishes the images to GHCR, then deploys them onto the cluster as a
-# single Helm release (charts/elevator) pinned to this commit. The cluster itself
-# (kind + Calico + the elevator-api-tls / ghcr-pull secrets) is provisioned
-# separately, once, by `terraform apply` — see docs/cluster.md.
+# TAG-ONLY: a version tag (v*.*.*) is the ONLY thing that publishes + deploys. Pushing to main just
+# runs Build & Test (ci.yml) — it does NOT deploy, so the cluster always reflects the last released
+# version. A tag publishes version-tagged images to GHCR, creates a GitHub Release, and deploys the
+# chart (charts/elevator) pinned to that version. The cluster itself (kind + Calico + the
+# elevator-api-tls / ghcr-pull secrets) is provisioned separately, once, by `terraform apply`.
 on:
   push:
-    tags: ['v*.*.*']          # a version tag cuts a proper release: images :X.Y.Z + GitHub Release + deploy
-  workflow_run:
-    workflows: ["Build & Test"]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
+    tags: ['v*.*.*']          # the version tag = the release (images :X.Y.Z + GitHub Release + deploy)
+  workflow_dispatch:          # manual escape hatch: a sha-tagged deploy of the selected branch
 
 concurrency:
   group: release-main
@@ -25,8 +21,6 @@ permissions:
 jobs:
   publish:
     name: Publish images → GHCR
-    # Skip unless the triggering build passed (workflow_dispatch has no run to check).
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       owner: ${{ steps.meta.outputs.owner }}
@@ -35,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -56,7 +50,7 @@ jobs:
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             # rolling main build: tag by commit sha
-            sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+            sha="${{ github.sha }}"
             echo "tag=sha-${sha:0:12}" >> "$GITHUB_OUTPUT"
             echo "release=false" >> "$GITHUB_OUTPUT"
           fi
@@ -149,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       # The self-hosted runner lives on the kind host, so use its OWN kubeconfig
       # (~/.kube/config) rather than a secret: kind rewrites it on every recreate, so

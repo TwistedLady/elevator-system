@@ -9,9 +9,9 @@ flowchart TB
   bt --> jvm["jvm · Maven<br/>validate → build+unit → Testcontainers IT"]
   bt --> rust["rust · Cargo<br/>fmt → clippy → test → release"]
   bt --> img["images (PR only, no push)"]
-  bt -->|success on main| rd["Release & Deploy (cd.yml)"]
-  rd --> pub["publish → GHCR<br/>tag sha-&lt;12&gt; + latest"]
-  pub --> dep["deploy → helm upgrade"] --> k8s[("kind cluster")]
+  tag["git tag v*.*.*"] --> rd["Release & Deploy (cd.yml)"]
+  rd --> pub["publish → GHCR<br/>images :version + latest · GitHub Release"]
+  pub --> dep["deploy → helm upgrade (pinned :version)"] --> k8s[("kind cluster")]
 ```
 
 ## Build & Test — `ci.yml` (push + PR to `main`)
@@ -25,15 +25,21 @@ flowchart TB
   only gate** for Rust. `fmt`/`clippy` are strict — drift fails the job (working as intended).
 - **images** (PR only): builds both images `push: false` to catch Dockerfile regressions.
 
-## Release & Deploy — `cd.yml` (`workflow_run` after Build & Test passes on `main`, or manual)
+## Release & Deploy — `cd.yml` (**tag-only**: a `v*.*.*` version tag, or manual dispatch)
 
-- **publish**: builds + pushes `ghcr.io/<owner>/elevator-{app,api}`, tagged `sha-<12>` + `latest`.
-  Uses built-in `GITHUB_TOKEN` — no secret to configure.
+**Tag-driven.** A push to `main` runs only Build & Test — it does **not** deploy, so the cluster
+always reflects the last *released* version. Cut a release with `git tag v1.0.0 && git push origin v1.0.0`.
+
+- **publish**: on a `v*` tag, builds + pushes `ghcr.io/<owner>/elevator-{app,api,console-web,bi}`
+  tagged with the **version** (`1.0.0`) + `latest`, and creates a **GitHub Release** (the tag must
+  equal the `VERSION` file). Built-in `GITHUB_TOKEN` — no secret to configure. (A manual
+  `workflow_dispatch` publishes a `sha-<12>` tag instead.)
 - **deploy** (`runs-on: self-hosted`): `helm upgrade --install elevator charts/elevator` with the
-  images pinned to this commit (`--set images.*=…:sha-<12>`), `--wait` until every rollout is Ready
-  (the app's generous startup probe tolerates Helm's apply order — it retries until Postgres/Kafka
-  are up). BI + one-shot seeding stay off in CD. The cluster + Calico + the `elevator-api-tls` /
-  `ghcr-pull` secrets are provisioned once by `terraform apply` ([cluster.md](cluster.md)), not by CD.
+  images pinned to the version (`--set global.images.*=…:1.0.0`), `--wait` until every rollout is
+  Ready (the app's generous startup probe tolerates Helm's apply order — it retries until
+  Postgres/Kafka are up). BI + one-shot seeding stay off in CD. The cluster + Calico + the
+  `elevator-api-tls` / `ghcr-pull` secrets are provisioned once by `terraform apply`
+  ([cluster.md](cluster.md)), not by CD.
 
 ## Self-hosted runner (why + recreate)
 
