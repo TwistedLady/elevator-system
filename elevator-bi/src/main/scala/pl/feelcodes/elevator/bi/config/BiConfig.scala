@@ -13,7 +13,10 @@ final case class BiConfig(
     orderStatusTable: String,
     // Analytics sink: the single Parquet directory the api reads via DuckDB (shared volume).
     parquetPath: String,
-    intervalSeconds: Int
+    // Cadence: loop every intervalSeconds (Deployment), OR one pass then exit when an external
+    // scheduler (k8s CronJob / Spark Operator) owns the cadence.
+    intervalSeconds: Int,
+    runOnce: Boolean
 )
 
 object BiConfig {
@@ -27,6 +30,7 @@ object BiConfig {
     jdbcPassword     = env("ELEVATOR_PG_PASSWORD", "elevator"),
     orderStatusTable = env("ELEVATOR_BI_ORDER_STATUS_TABLE", "order_status"),
     parquetPath      = env("ELEVATOR_BI_PARQUET_PATH", "file:///data/elevators.parquet"),
-    intervalSeconds  = env("ELEVATOR_BI_INTERVAL", "30").toInt
+    intervalSeconds  = env("ELEVATOR_BI_INTERVAL", "30").toInt,
+    runOnce          = env("ELEVATOR_BI_RUN_ONCE", "false").toBoolean
   )
 }

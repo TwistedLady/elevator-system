@@ -29,9 +29,14 @@ object ElevatorStatsJob {
   @volatile private var running = true
 
   def run(spark: SparkSession, cfg: BiConfig): Unit = {
+    if (cfg.runOnce) {
+      log.info(s"stats: single pass -> ${cfg.parquetPath} (run-once; external scheduler owns cadence)")
+      refreshOnce(spark, cfg)
+      return
+    }
+
     sys.addShutdownHook { running = false }
     log.info(s"stats: refreshing ${cfg.parquetPath} every ${cfg.intervalSeconds}s")
-
     while (running) {
       refreshOnce(spark, cfg)
       sleepInterruptibly(cfg.intervalSeconds)

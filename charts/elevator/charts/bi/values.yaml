@@ -1,6 +1,8 @@
 # Defaults; the parent's `bi:` block overrides these (and carries `enabled` for the condition).
 # Shared DB/kafka/image settings come from `.Values.global.*`.
 enabled: true
+# CronJob cadence — how often the Spark stats job re-scans and rewrites the Parquet.
+schedule: "*/15 * * * *"
 # shared hostPath dirs on the single kind node (durable logs + the Parquet read-model)
 logsHostPath: "/mnt/elevator-bi-logs"
 # the single Parquet the job writes and the api reads via DuckDB (shared, same node)

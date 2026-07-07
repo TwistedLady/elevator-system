@@ -8,9 +8,14 @@ file** (no analytics database). The api reads that file directly via **DuckDB**.
 | **floorsTravelled** (mileage) | `Σ \|floor − prevFloor\|` over the elevator's state history | `elevator-state` Kafka (batch read) |
 | **ordersServed** | how many times it **reached an ordered floor** (= completed orders) | `order_status` (JDBC), `status='DONE'` |
 
-Each cycle the job re-scans both sources, joins them into **one row per elevator**
+Each run re-scans both sources, joins them into **one row per elevator**
 (`elevatorName, floorsTravelled, ordersServed`), and **overwrites** `elevators.parquet`. The fleet is
-tiny, so a full re-scan every interval is cheap and needs no streaming checkpoint.
+tiny, so a full re-scan is cheap and needs no streaming checkpoint.
+
+**Orchestration:** a Kubernetes **CronJob** (default `*/15 * * * *`) runs the job — each tick spins up
+the driver + executors, does **one pass** (`ELEVATOR_BI_RUN_ONCE=true`), and exits, so nothing holds
+CPU between runs. The job also supports a self-scheduling loop (`ELEVATOR_BI_RUN_ONCE=false` +
+`ELEVATOR_BI_INTERVAL`) if you'd rather run it as an always-on Deployment.
 
 > Why orders-served reads a table, not Kafka: the `elevator-state` topic publishes an **empty tag**
 > (`ElevatorStateDto("", …)` in `Controller.scala`), so it carries no order info. The completion
@@ -57,7 +62,7 @@ depend on the Scala 3 `elevator-common`; it reads `elevator-state` by its JSON w
 | `kafka/ElevatorStateSchema.scala` | Explicit `StructType` for the `elevator-state` JSON |
 | `config/BiConfig.scala` | Env-driven configuration (12-factor) |
 | `sink/ParquetSink.scala` | `coalesce(1)` overwrite to Parquet via a staging dir + atomic swap |
-| `ElevatorStatsJob.scala` | The batch loop: read Kafka + `order_status` → join → write Parquet, on a fixed interval |
+| `ElevatorStatsJob.scala` | The batch job: read Kafka + `order_status` → join → write Parquet. One pass (CronJob), or a self-scheduling loop |
 
 ## Build & test
 
@@ -72,13 +77,15 @@ The uber jar bundles the Kafka source + Postgres driver; Spark itself is `provid
 The BI layer is part of the `elevator` Helm chart, gated by `bi.enabled` (see [docs/cluster.md](../docs/cluster.md)):
 
 ```bash
-skaffold run -p bi        # build jar + image, load into kind, deploy the stats driver
-kubectl logs deploy/elevator-stats -f            # driver logs (executors: kubectl logs -l role=executor)
+skaffold run -p bi        # build jar + image, load into kind, deploy the stats CronJob
+kubectl create job --from=cronjob/elevator-stats stats-now   # trigger a run immediately (don't wait for the tick)
+kubectl logs -l app=elevator-bi,role=driver -f              # driver logs (executors: -l role=executor)
 helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false   # tear the BI layer down
 ```
 
-- The `elevator-stats` **Deployment** runs the Spark **driver** in *client mode*; it spawns 2
-  **executor pods**. The Deployment restarts the driver if it dies.
+- `elevator-stats` is a **CronJob** (`bi.schedule`, default `*/15 * * * *`). Each tick a Job pod is the
+  Spark **driver** (client mode); it spawns 2 **executor pods**, does one pass, and exits —
+  `concurrencyPolicy: Forbid` so runs never overlap on the Parquet swap.
 - The **Parquet** file lives on a `hostPath` shared by driver + executors + the api — correct because
   kind is a **single node**. On a multi-node cluster, point `ELEVATOR_BI_PARQUET_PATH` at **S3
   (`s3a://`)** or **NFS** instead.
@@ -93,4 +100,5 @@ helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false   # 
 | `ELEVATOR_BI_ORDER_STATUS_TABLE` | `order_status` | source table for DONE counts |
 | `ELEVATOR_PG_USER` / `ELEVATOR_PG_PASSWORD` | `elevator` / `elevator` | DB creds (demo — use a Secret in prod) |
 | `ELEVATOR_BI_PARQUET_PATH` | `file:///data/elevators.parquet` | output Parquet (shared volume) |
-| `ELEVATOR_BI_INTERVAL` | `30` | refresh interval (seconds) |
+| `ELEVATOR_BI_RUN_ONCE` | `false` | `true` → one pass then exit (CronJob); `false` → self-scheduling loop |
+| `ELEVATOR_BI_INTERVAL` | `30` | loop interval in seconds (only when `RUN_ONCE=false`) |

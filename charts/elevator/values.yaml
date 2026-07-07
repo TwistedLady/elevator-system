@@ -54,6 +54,7 @@ console-web:
 
 bi:
   enabled: true
+  schedule: "*/15 * * * *"
   logsHostPath: "/mnt/elevator-bi-logs"
   parquetHostPath: "/mnt/elevator-bi-parquet"
 
