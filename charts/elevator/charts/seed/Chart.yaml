@@ -2,4 +2,4 @@ apiVersion: v2
 name: seed
 description: One-shot order seeding (post-install hook Job). Optional — toggled by seed.enabled in the parent.
 type: application
-version: 1.0.0
+version: 0.1.0
