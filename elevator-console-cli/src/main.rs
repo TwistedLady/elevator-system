@@ -13,10 +13,10 @@ pub type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 #[command(
     name = "elevator-console-cli",
     version = version::CONSOLE_VERSION,
-    about = "Monitor elevators and send orders — entirely through the elevator HTTP API (never Kafka)"
+    about = "Monitor elevators and send calls — entirely through the elevator HTTP API (never Kafka)"
 )]
 struct Cli {
-    /// Base URL of the elevator-api. Everything (orders, state, status, health) goes through it.
+    /// Base URL of the elevator-api. Everything (calls, state, status, health) goes through it.
     #[arg(
         long,
         env = "ELEVATOR_API",
@@ -38,14 +38,14 @@ enum Command {
         #[arg(long, default_value = "logs/api.log")]
         api_log: String,
     },
-    /// Send a single order.
-    Order {
+    /// Send a single call.
+    Call {
         #[arg(long)]
         elevator: String,
         #[arg(long)]
         floor: i32,
     },
-    /// Fire a burst of random orders (load/sim).
+    /// Fire a burst of random calls (load/sim).
     Simulate {
         #[arg(long, default_value_t = 10_000)]
         count: u64,
@@ -69,7 +69,7 @@ enum Command {
         #[arg(long, default_value = "logs/console-selftest.log")]
         log: String,
     },
-    /// Automated integration test: fire orders, poll status, cross-check kubectl logs.
+    /// Automated integration test: fire calls, poll status, cross-check kubectl logs.
     Itest {
         #[arg(long, default_value_t = 20)]
         count: u64,
@@ -93,7 +93,7 @@ fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Monitor { app_log, api_log } => monitor::run(&cli.api, &app_log, &api_log),
-        Command::Order { elevator, floor } => run_order(&cli.api, &elevator, floor),
+        Command::Call { elevator, floor } => run_call(&cli.api, &elevator, floor),
         Command::Simulate {
             count,
             threads,
@@ -128,17 +128,17 @@ fn main() {
     }
 }
 
-/// Send a single order, pre-checking it against the API's live limits (the API stays authoritative).
-fn run_order(api: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
+/// Send a single call, pre-checking it against the API's live limits (the API stays authoritative).
+fn run_call(api: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     if let Ok(cfg) = api::get_config(&api::agent(), api) {
-        cfg.validate_order(elevator, floor)?;
+        cfg.validate_call(elevator, floor)?;
     }
     sender::send_one(api, elevator, floor)?;
-    println!("sent order: elevator={elevator} floor={floor}");
+    println!("sent call: elevator={elevator} floor={floor}");
     Ok(())
 }
 
-/// Fire a burst of random orders. Fleet and max-floor default to the API's /api/config when not given.
+/// Fire a burst of random calls. Fleet and max-floor default to the API's /api/config when not given.
 fn run_simulate(
     api: &str,
     count: u64,

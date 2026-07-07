@@ -33,7 +33,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match app.view {
         View::Chart => draw_chart(frame, app, chunks[1]),
         View::Trend => draw_trend(frame, app, chunks[1]),
-        View::Order => draw_order(frame, app, chunks[1]),
+        View::Call => draw_call(frame, app, chunks[1]),
         View::Sim => draw_sim(frame, app, chunks[1]),
         View::Health => draw_health(frame, app, chunks[1]),
         View::Logs => draw_logs(frame, app, chunks[1]),
@@ -222,10 +222,10 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(chart, area);
 }
 
-fn draw_order(frame: &mut Frame, app: &App, area: Rect) {
-    let block = retro_block(" ORDER ");
+fn draw_call(frame: &mut Frame, app: &App, area: Rect) {
+    let block = retro_block(" CALL ");
     let mut lines: Vec<Line> = vec![
-        Line::from("Send one elevator to a floor.".white()),
+        Line::from("Call one elevator to a floor.".white()),
         Line::from("Type below:  <elevator> <floor>   e.g.  e3 7".dim()),
         Line::from(""),
     ];
@@ -274,7 +274,7 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
         None => {
             let p = Paragraph::new(vec![
                 Line::from("No simulation running.".dim()),
-                Line::from("Type how many orders to fire below, then press Enter.".dim()),
+                Line::from("Type how many calls to fire below, then press Enter.".dim()),
             ]);
             frame.render_widget(p, rows[0]);
         }
@@ -291,7 +291,7 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
                 Line::from(vec![Span::from("status   ").white(), status]),
                 Line::from(
                     format!(
-                        "{sent}/{} orders   {rate:.0} msg/s   {secs:.2}s   across {} elevators",
+                        "{sent}/{} calls   {rate:.0} msg/s   {secs:.2}s   across {} elevators",
                         sim.total, sim.elevators
                     )
                     .dark_gray(),
@@ -320,7 +320,7 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
             frame.render_widget(
                 Paragraph::new(
                     format!(
-                        "order status (API):  DONE {done}  ·  PROGRESS {prog}  ·  pending {pending}   / {}",
+                        "call status (API):  DONE {done}  ·  PROGRESS {prog}  ·  pending {pending}   / {}",
                         sim.checked
                     )
                     .dark_gray(),
@@ -656,10 +656,10 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::from("   Enter: clear · Tab: switch · Esc: quit").dark_gray());
             Line::from(spans)
         }
-        View::Order => {
+        View::Call => {
             let mut spans = vec![
-                Span::from("order ▸ ").green().bold(),
-                Span::from(app.order_input.clone()).white(),
+                Span::from("call ▸ ").green().bold(),
+                Span::from(app.call_input.clone()).white(),
                 Span::from("█").green(),
                 Span::from("   <elevator> <floor> · Enter: send").dark_gray(),
             ];
@@ -673,7 +673,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
                 Span::from("sim ▸ ").green().bold(),
                 Span::from(app.sim_input.clone()).white(),
                 Span::from("█").green(),
-                Span::from("   number of orders · Enter: run").dark_gray(),
+                Span::from("   number of calls · Enter: run").dark_gray(),
             ];
             if !app.message.is_empty() {
                 spans.push(Span::from(format!("   {}", app.message)).cyan());
@@ -714,7 +714,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
                 Span::from("integration test ▸ ").green().bold(),
                 Span::from("r").fg(Color::Black).bg(Color::Green).bold(),
                 Span::from(": run").dark_gray(),
-                Span::from("   (sends orders, polls api, cross-checks app+api logs)").dark_gray(),
+                Span::from("   (sends calls, polls api, cross-checks app+api logs)").dark_gray(),
             ];
             if !app.message.is_empty() {
                 spans.push(Span::from(format!("   {}", app.message)).cyan());

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 
-use crate::sender::{run_simulation, sim_tags};
+use crate::sender::{call_ids, run_simulation};
 use crate::BoxErr;
 
 const THREADS: u64 = 4;
@@ -59,10 +59,10 @@ pub fn run_itest(
     )?;
     let send_secs = send_start.elapsed().as_secs_f64();
     if !quiet {
-        eprintln!("[itest] sent {count} orders in {send_secs:.2}s (run {run_id})");
+        eprintln!("[itest] sent {count} calls in {send_secs:.2}s (run {run_id})");
     }
 
-    let mut pending: BTreeSet<String> = sim_tags(run_id, count, THREADS, count as usize)
+    let mut pending: BTreeSet<String> = call_ids(run_id, count, THREADS, count as usize)
         .into_iter()
         .collect();
     let mut latencies: Vec<u64> = Vec::new();
@@ -86,7 +86,7 @@ pub fn run_itest(
 
     let api_log = kubectl_logs("elevator-api");
     let app_log = kubectl_logs("elevator-app");
-    let done_re = Regex::new(&format!(r"\[order status\] (sim-{run_id}-\S+) -> DONE")).unwrap();
+    let done_re = Regex::new(&format!(r"\[call status\] (sim-{run_id}-\S+) -> DONE")).unwrap();
     let api_done: BTreeSet<&str> = done_re
         .captures_iter(&api_log)
         .map(|c| c.get(1).unwrap().as_str())
@@ -100,7 +100,7 @@ pub fn run_itest(
         ("console: lost == 0".into(), lost == 0),
         ("console: health UP".into(), health_ok),
         (
-            format!("api log: >= {count} tags confirmed DONE"),
+            format!("api log: >= {count} calls confirmed DONE"),
             api_done.len() as u64 >= count,
         ),
         ("app log: elevators moved".into(), app_moves > 0),
@@ -159,8 +159,8 @@ fn poll_done(
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     while !pending.is_empty() && Instant::now() < deadline {
         let mut finished: Vec<String> = Vec::new();
-        for tag in pending.iter() {
-            let url = format!("{api_base}/api/order/{tag}");
+        for id in pending.iter() {
+            let url = format!("{api_base}/api/call/{id}");
             if let Ok(resp) = agent.get(&url).call() {
                 if resp
                     .into_string()
@@ -168,7 +168,7 @@ fn poll_done(
                     .contains("\"status\":\"DONE\"")
                 {
                     latencies.push(now_ms().saturating_sub(sent_ms));
-                    finished.push(tag.clone());
+                    finished.push(id.clone());
                 }
             }
         }
