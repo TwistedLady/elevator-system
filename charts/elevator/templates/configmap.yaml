@@ -24,9 +24,11 @@ data:
   # Kafka — app-side env names
   ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
   ELEVATOR_KAFKA_GROUP_ID: {{ .Values.global.kafka.groupId | quote }}
-  ELEVATOR_KAFKA_COMMAND_TOPIC: {{ .Values.global.kafka.commandTopic | quote }}
+  ELEVATOR_KAFKA_CALL_TOPIC: {{ .Values.global.kafka.callTopic | quote }}
   ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
+  ELEVATOR_KAFKA_ORDER_STATE_TOPIC: {{ .Values.global.kafka.orderStateTopic | quote }}
+  ELEVATOR_KAFKA_CALL_STATE_TOPIC: {{ .Values.global.kafka.callStateTopic | quote }}
   # Kafka — api-side env names (same values, different keys)
   SPRING_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
-  ELEVATOR_COMMAND_TOPIC: {{ .Values.global.kafka.commandTopic | quote }}
+  ELEVATOR_CALL_TOPIC: {{ .Values.global.kafka.callTopic | quote }}
   ELEVATOR_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
