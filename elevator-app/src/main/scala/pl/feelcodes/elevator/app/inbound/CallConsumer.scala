@@ -13,20 +13,25 @@ import org.apache.pekko.kafka.{CommitterSettings, ConsumerSettings, Subscription
 import org.apache.pekko.stream.KillSwitches
 import org.apache.pekko.stream.scaladsl.{Flow, Keep}
 import pl.feelcodes.elevator.app.actors.Coordinator
-import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
-import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddOriginalStream
+import pl.feelcodes.elevator.common.dto.CallDto
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddCalls
 import pl.feelcodes.elevator.common.serializable.Json
 
+import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.DurationConverters.*
 
-object OrderConsumer {
+/** Reads calls from Kafka in batches, dedups by call id, and hands each elevator its calls. */
+object CallConsumer {
   private final case class ConsumerConf(bootstrapServers: String,
                                         groupId: String,
-                                        commandTopic: String)
+                                        callTopic: String,
+                                        batchMaxSize: Int,
+                                        batchInterval: FiniteDuration)
 
   def run(system: ActorSystem[?],
           coordinatorProvider: String => EntityRef[Coordinator.Command],
-          dedup: OrderDedup): Unit = {
+          dedup: CallDedup): Unit = {
     given ActorSystem[?] = system
     given ExecutionContext = system.executionContext
 
@@ -43,21 +48,29 @@ object OrderConsumer {
 
     val toCoordinator: Flow[CommittableMessage[String, Array[Byte]], CommittableOffset, ?] =
       Flow[CommittableMessage[String, Array[Byte]]]
-        .mapAsync(1) { msg =>
-          val dto = Json.decode(msg.record.value(), classOf[ElevatorOrderDto])
+        .groupedWithin(cfg.batchMaxSize, cfg.batchInterval)
+        .mapAsync(1) { msgs =>
+          val decoded = msgs.map(msg => Json.decode(msg.record.value(), classOf[CallDto]))
 
-          dedup.alreadyProcessed(dto.tag).flatMap {
-            case true =>
-              Future.successful(msg.committableOffset)
-            case false =>
-              coordinatorProvider(dto.elevatorName) ! AddOriginalStream(List(dto))
-              dedup.markProcessed(dto.tag).map(_ => msg.committableOffset)
-          }
+          Future
+            .traverse(decoded)(dto => dedup.alreadyProcessed(dto.id).map(seen => (dto, seen)))
+            .flatMap { checked =>
+              val fresh = checked.collect { case (dto, false) => dto }.distinctBy(_.id)
+
+              fresh.groupBy(_.elevatorName).foreach { case (elevatorName, dtos) =>
+                coordinatorProvider(elevatorName) ! AddCalls(dtos.toList)
+              }
+
+              Future
+                .traverse(fresh)(dto => dedup.markProcessed(dto.id))
+                .map(_ => msgs.map(_.committableOffset))
+            }
         }
+        .mapConcat(identity)
 
     val (killSwitch, done) =
       Consumer
-        .committableSource(consumerSettings, Subscriptions.topics(cfg.commandTopic))
+        .committableSource(consumerSettings, Subscriptions.topics(cfg.callTopic))
         .viaMat(KillSwitches.single)(Keep.right)
         .via(toCoordinator)
         .toMat(Committer.sink(committerSettings))(Keep.both)
@@ -66,12 +79,12 @@ object OrderConsumer {
     done.failed.foreach(ex => system.log.error("Kafka stream failed", ex))
 
     // Drain on graceful shutdown (SIGTERM during a rolling restart): in PhaseServiceUnbind —
-    // which runs BEFORE the cluster member leaves and shards hand off — stop pulling new orders
-    // and let in-flight ones finish processing and commit their offsets. Uncommitted orders
-    // simply redeliver to the surviving pod (at-least-once + dedup), so no order is lost.
+    // which runs BEFORE the cluster member leaves and shards hand off — stop pulling new calls
+    // and let in-flight ones finish processing and commit their offsets. Uncommitted calls
+    // simply redeliver to the surviving pod (at-least-once + dedup), so no call is lost.
     CoordinatedShutdown(system).addTask(
       CoordinatedShutdown.PhaseServiceUnbind,
-      "stop-order-consumer"
+      "stop-call-consumer"
     ) { () =>
       killSwitch.shutdown()
       done.map(_ => Done).recover { case _ => Done }
@@ -84,7 +97,9 @@ object OrderConsumer {
     ConsumerConf(
       bootstrapServers = cfg.getString("bootstrap-servers"),
       groupId = cfg.getString("group-id"),
-      commandTopic = cfg.getString("command-topic")
+      callTopic = cfg.getString("call-topic"),
+      batchMaxSize = cfg.getInt("call-batch-max-size"),
+      batchInterval = cfg.getDuration("call-batch-interval").toScala
     )
   }
 }
