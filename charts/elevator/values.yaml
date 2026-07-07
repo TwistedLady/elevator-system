@@ -29,11 +29,6 @@ global:
     # demo only — a real cluster should mount this from a Secret
     password: "elevator"
     storage: "1Gi"
-  # the SEPARATE analytics DB the api reads and the Spark BI jobs write
-  stats:
-    host: "postgres-stats"
-    database: "elevator_stats"
-    storage: "1Gi"
 
 # ── parent-only: the always-on core ──────────────────────────────────────────────────────────────
 app:
@@ -59,8 +54,8 @@ console-web:
 
 bi:
   enabled: true
-  checkpointHostPath: "/mnt/elevator-bi-checkpoint"
   logsHostPath: "/mnt/elevator-bi-logs"
+  parquetHostPath: "/mnt/elevator-bi-parquet"
 
 # Seed orders on FIRST install (post-install hook Job runs the console CLI `simulate`). post-install
 # only, so a `skaffold dev` redeploy (an upgrade) does not re-seed the empty Kafka.

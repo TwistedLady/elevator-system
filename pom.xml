@@ -38,6 +38,9 @@
              not a concrete driver, so we add it ourselves. 1.0.7 targets r2dbc-spi 1.0.0. -->
         <r2dbc.postgresql.version>1.0.7.RELEASE</r2dbc.postgresql.version>
 
+        <!-- Embedded analytics engine used by the api to read the Spark BI Parquet read-model. -->
+        <duckdb.version>1.1.3</duckdb.version>
+
         <!-- Kafka (kept in step with the broker image in docker-compose.demo.yml).
              3.8.1 is what pekko-connectors-kafka ${pekko.kafka.version} pulls; pinning
              lower downgrades it (enforcer requireUpperBoundDeps). -->

@@ -17,8 +17,8 @@ data:
 
   # ---- infra wiring (needs a restart to change) ----
   ELEVATOR_PG_HOST: {{ .Values.global.postgres.host | quote }}
-  ELEVATOR_STATS_PG_HOST: {{ .Values.global.stats.host | quote }}
-  ELEVATOR_STATS_PG_DATABASE: {{ .Values.global.stats.database | quote }}
+  # BI read-model = the Spark-produced Parquet on the shared volume, read via DuckDB.
+  ELEVATOR_STATS_PARQUET_PATH: "/data/elevators.parquet"
   SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
   SERVER_PORT: "8080"
   # Kafka — app-side env names

@@ -1,42 +1,32 @@
 package pl.feelcodes.elevator.bi.config
 
 /** All job configuration, resolved from environment variables (12-factor). Defaults match the
-  * in-cluster service names so the job runs with no config on the kind cluster.
+  * in-cluster service names / mount paths so the job runs with no config on the kind cluster.
   */
 final case class BiConfig(
     kafkaBootstrap: String,
     stateTopic: String,
-    startingOffsets: String,
-    checkpointLocation: String,
-    triggerInterval: String,
-    // Analytics sink: the SEPARATE postgres-stats DB (both jobs write their stats here).
-    statsJdbcUrl: String,
-    // Source read: the operational `elevator` DB (OrdersServedJob reads order_status here).
+    // Source read: the operational `elevator` DB (order_status = the "orders served" signal).
     sourceJdbcUrl: String,
     jdbcUser: String,
     jdbcPassword: String,
-    mileageTable: String,
     orderStatusTable: String,
-    servedTable: String,
-    servedIntervalSeconds: Int
+    // Analytics sink: the single Parquet directory the api reads via DuckDB (shared volume).
+    parquetPath: String,
+    intervalSeconds: Int
 )
 
 object BiConfig {
   private def env(key: String, default: String): String = sys.env.getOrElse(key, default)
 
   def fromEnv(): BiConfig = BiConfig(
-    kafkaBootstrap     = env("ELEVATOR_KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
-    stateTopic         = env("ELEVATOR_KAFKA_STATE_TOPIC", "elevator-state"),
-    startingOffsets    = env("ELEVATOR_BI_STARTING_OFFSETS", "earliest"),
-    checkpointLocation = env("ELEVATOR_BI_CHECKPOINT", "file:///checkpoint"),
-    triggerInterval    = env("ELEVATOR_BI_TRIGGER", "10 seconds"),
-    statsJdbcUrl       = env("ELEVATOR_BI_STATS_JDBC_URL", "jdbc:postgresql://postgres-stats:5432/elevator_stats"),
-    sourceJdbcUrl      = env("ELEVATOR_BI_SOURCE_JDBC_URL", "jdbc:postgresql://postgres:5432/elevator"),
-    jdbcUser           = env("ELEVATOR_PG_USER", "elevator"),
-    jdbcPassword       = env("ELEVATOR_PG_PASSWORD", "elevator"),
-    mileageTable       = env("ELEVATOR_BI_TABLE", "elevator_mileage"),
-    orderStatusTable   = env("ELEVATOR_BI_ORDER_STATUS_TABLE", "order_status"),
-    servedTable        = env("ELEVATOR_BI_SERVED_TABLE", "elevator_orders_served"),
-    servedIntervalSeconds = env("ELEVATOR_BI_SERVED_INTERVAL", "30").toInt
+    kafkaBootstrap   = env("ELEVATOR_KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+    stateTopic       = env("ELEVATOR_KAFKA_STATE_TOPIC", "elevator-state"),
+    sourceJdbcUrl    = env("ELEVATOR_BI_SOURCE_JDBC_URL", "jdbc:postgresql://postgres:5432/elevator"),
+    jdbcUser         = env("ELEVATOR_PG_USER", "elevator"),
+    jdbcPassword     = env("ELEVATOR_PG_PASSWORD", "elevator"),
+    orderStatusTable = env("ELEVATOR_BI_ORDER_STATUS_TABLE", "order_status"),
+    parquetPath      = env("ELEVATOR_BI_PARQUET_PATH", "file:///data/elevators.parquet"),
+    intervalSeconds  = env("ELEVATOR_BI_INTERVAL", "30").toInt
   )
 }

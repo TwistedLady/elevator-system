@@ -47,6 +47,10 @@ spec:
           volumeMounts:
             - { name: tls, mountPath: /etc/tls, readOnly: true }
             - { name: elevator-config, mountPath: /etc/elevator-config, readOnly: true }
+            {{- if .Values.bi.enabled }}
+            # The Spark BI Parquet read-model, read-only (same node, shared hostPath). Read via DuckDB.
+            - { name: data, mountPath: /data, readOnly: true }
+            {{- end }}
           readinessProbe:                      # HTTPS
             httpGet: { path: /api/elevator, port: 8080, scheme: HTTPS }
             initialDelaySeconds: 10
@@ -63,6 +67,12 @@ spec:
         - name: elevator-config
           configMap:
             name: elevator-config
+        {{- if .Values.bi.enabled }}
+        - name: data
+          hostPath:
+            path: {{ .Values.bi.parquetHostPath | quote }}
+            type: DirectoryOrCreate
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -32,7 +32,7 @@ skaffold run                 # one-shot   ·   or:  skaffold dev  (rebuild+redep
 ## Toggles (no scripts)
 
 ```bash
-skaffold run -p bi                              # Spark BI on (postgres-stats + drivers)
+skaffold run -p bi                              # Spark BI on (one batch driver → Parquet read-model)
 skaffold run -p full                            # production shape: api:2, BI on (needs >1 node of CPU)
 helm upgrade elevator charts/elevator --reuse-values --set config.engine=slow   # hot-swap the engine
 helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false     # BI off (was bi.sh off)

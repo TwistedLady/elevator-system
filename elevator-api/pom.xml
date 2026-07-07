@@ -60,6 +60,14 @@
             <version>${r2dbc.postgresql.version}</version>
         </dependency>
 
+        <!-- Read the Spark BI Parquet read-model directly (embedded, in-process analytics engine).
+             Blocking JDBC -> queried on a bounded-elastic scheduler, off the reactive event loop. -->
+        <dependency>
+            <groupId>org.duckdb</groupId>
+            <artifactId>duckdb_jdbc</artifactId>
+            <version>${duckdb.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>io.projectreactor.kafka</groupId>
             <artifactId>reactor-kafka</artifactId>

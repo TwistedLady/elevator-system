@@ -65,7 +65,7 @@ portForward:
 # ── profiles ─────────────────────────────────────────────────────────────────────────────────────
 profiles:
   # Turn the Spark BI layer on: build the (out-of-reactor, Scala 2.12) bi image via a custom builder
-  # that packages the jar first, then flip bi.enabled so the chart renders postgres-stats + drivers.
+  # that packages the jar first, then flip bi.enabled so the chart renders the stats driver (Parquet).
   #   skaffold run -p bi
   - name: bi
     patches:

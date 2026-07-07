@@ -2,8 +2,9 @@ package pl.feelcodes.elevator.api.stats.served;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import pl.feelcodes.elevator.api.stats.ElevatorStat;
+import pl.feelcodes.elevator.api.stats.ParquetStatsReader;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -13,33 +14,26 @@ import static org.mockito.Mockito.when;
 
 class ServedServiceTest {
 
-    private final ServedRepository repository = Mockito.mock(ServedRepository.class);
-    private final ServedService service = new ServedService(repository);
+    private final ParquetStatsReader reader = Mockito.mock(ParquetStatsReader.class);
+    private final ServedService service = new ServedService(reader);
 
-    private static ServedEntity entity(String name, long served) {
-        ServedEntity e = Mockito.mock(ServedEntity.class);
-        when(e.getElevatorName()).thenReturn(name);
-        when(e.getOrdersServed()).thenReturn(served);
-        when(e.getUpdatedAt()).thenReturn(OffsetDateTime.now());
-        return e;
+    private static ElevatorStat stat(String name, long served) {
+        return new ElevatorStat(name, 0L, served, OffsetDateTime.now());
     }
 
     @Test
-    void allMapsEntitiesToDtosPreservingRepositoryOrder() {
-        ServedEntity e4 = entity("e4", 15);
-        ServedEntity e10 = entity("e10", 13);
-        when(repository.findAllByOrderByOrdersServedDesc()).thenReturn(Flux.just(e4, e10));
+    void allSortsByOrdersServedDescRegardlessOfReaderOrder() {
+        when(reader.all()).thenReturn(Flux.just(stat("e10", 13), stat("e4", 15), stat("e9", 11)));
 
         List<ServedDto> result = service.all().collectList().block();
 
-        assertThat(result).extracting(ServedDto::elevatorName).containsExactly("e4", "e10");
-        assertThat(result).extracting(ServedDto::ordersServed).containsExactly(15L, 13L);
+        assertThat(result).extracting(ServedDto::elevatorName).containsExactly("e4", "e10", "e9");
+        assertThat(result).extracting(ServedDto::ordersServed).containsExactly(15L, 13L, 11L);
     }
 
     @Test
     void byElevatorMapsToDto() {
-        ServedEntity e9 = entity("e9", 11);
-        when(repository.findById("e9")).thenReturn(Mono.just(e9));
+        when(reader.all()).thenReturn(Flux.just(stat("e9", 11)));
 
         ServedDto result = service.byElevator("e9").block();
 
@@ -50,7 +44,7 @@ class ServedServiceTest {
 
     @Test
     void byElevatorEmptyWhenMissing() {
-        when(repository.findById("nope")).thenReturn(Mono.empty());
+        when(reader.all()).thenReturn(Flux.just(stat("e9", 11)));
 
         assertThat(service.byElevator("nope").block()).isNull();
     }

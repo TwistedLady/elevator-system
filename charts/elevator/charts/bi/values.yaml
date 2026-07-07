@@ -1,6 +1,7 @@
 # Defaults; the parent's `bi:` block overrides these (and carries `enabled` for the condition).
 # Shared DB/kafka/image settings come from `.Values.global.*`.
 enabled: true
-# shared hostPath dirs on the single kind node (checkpoint + durable logs)
-checkpointHostPath: "/mnt/elevator-bi-checkpoint"
+# shared hostPath dirs on the single kind node (durable logs + the Parquet read-model)
 logsHostPath: "/mnt/elevator-bi-logs"
+# the single Parquet the job writes and the api reads via DuckDB (shared, same node)
+parquetHostPath: "/mnt/elevator-bi-parquet"
