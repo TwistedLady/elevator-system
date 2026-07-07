@@ -3,7 +3,7 @@ name: Console Release
 # Publishes the Rust console on a console-scoped tag (this is a polyglot monorepo, so the console
 # has its own tag namespace):
 #
-#   git tag elevator-console-cli-v0.1.0 && git push origin elevator-console-cli-v0.1.0
+#   git tag elevator-console-cli-v1.0.0 && git push origin elevator-console-cli-v1.0.0
 #
 # Produces:
 #   - a GitHub *Release* with:
