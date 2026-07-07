@@ -14,7 +14,7 @@ object ManagerLogic:
   def combine(calls: List[Call]): Set[Order] =
     GroupCallsStrategy.default.group(calls)
 
-  def created(state: State, orders: Set[Order]): List[Event] =
+  def created(state: State, orders: Set[Order]): List[OrderCreated] =
     orders.toList.filterNot(o => state.orders.contains(o.id)).map(o => OrderCreated(o.id, o.floor.num, o.callIds))
 
   def evolve(state: State, event: Event): State =

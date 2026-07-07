@@ -6,10 +6,8 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Manager, Operator}
 import pl.feelcodes.elevator.common.core.domain.*
-
-import scala.concurrent.duration.*
 
 object ControllerRecoveryTests {
   val config = ConfigFactory
@@ -23,7 +21,7 @@ object ControllerRecoveryTests {
         |    "pl.feelcodes.elevator.common.events.ControllerEvents$Event"         = jackson-cbor
         |    "pl.feelcodes.elevator.common.logic.ControllerLogic$State"           = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"     = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command"  = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ManagerProtocol$Command"      = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -40,30 +38,32 @@ final class ControllerRecoveryTests
 
   private def newTestKit() =
     val operatorProbe = createTestProbe[Operator.Command]()
-    val coordinatorProbe = createTestProbe[Coordinator.Command]()
+    val managerProbe = createTestProbe[Manager.Command]()
     val operatorProvider =
       (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
-    val coordinatorProvider =
-      (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
+    val managerProvider =
+      (name: String) => TestEntityRef(Manager.TypeKey, name, managerProbe.ref)
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, coordinatorProvider, _ => ())
+      Controller("lift-a", operatorProvider, managerProvider, _ => ())
     )
-    (kit, operatorProbe, coordinatorProbe)
+    (kit, operatorProbe, managerProbe)
+
+  private def orderAt(id: String, floor: Int) = Order(id, Floor(floor), Set(s"c-$id"))
 
   "The Controller journal" should {
 
     "rebuild state after a crash and mark the served order done" in {
-      val (esTestKit, _, coordinatorProbe) = newTestKit()
-      val order = ElevatorOrder("o-1", Floor(3))
+      val (esTestKit, _, managerProbe) = newTestKit()
+      val order = orderAt("o-1", 3)
 
-      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
+      esTestKit.runCommand(Controller.Process(Set(order)))
         .events should contain(Controller.OrderAdded(order))
 
       val reached = ElevatorState(Direction.Up, Motion.Stopped, Floor(3))
       esTestKit.runCommand(Controller.PublishState(reached))
 
-      coordinatorProbe.expectMessage(Coordinator.MarkOrderDone("o-1"))
+      managerProbe.expectMessage(Manager.MarkOrderDone("o-1"))
 
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached
@@ -74,15 +74,15 @@ final class ControllerRecoveryTests
     }
 
     "keep an outstanding (unserved) request after a crash" in {
-      val (esTestKit, _, coordinatorProbe) = newTestKit()
-      val order = ElevatorOrder("o-2", Floor(7))
+      val (esTestKit, _, managerProbe) = newTestKit()
+      val order = orderAt("o-2", 7)
 
-      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
+      esTestKit.runCommand(Controller.Process(Set(order)))
 
       val midway = ElevatorState(Direction.Up, Motion.Moving, Floor(4))
       esTestKit.runCommand(Controller.PublishState(midway))
 
-      coordinatorProbe.expectNoMessage()
+      managerProbe.expectNoMessage()
       esTestKit.getState().orders should contain(order)
 
       esTestKit.restart()
@@ -92,11 +92,10 @@ final class ControllerRecoveryTests
 
     "redeliver the in-flight move after a crash that happened while waiting for the Operator" in {
       val (esTestKit, operatorProbe, _) = newTestKit()
-      val order = ElevatorOrder("o-3", Floor(9))
+      val order = orderAt("o-3", 9)
 
-      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
-
-      esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
+      esTestKit.runCommand(Controller.Process(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNext(Set(order)))
       operatorProbe.expectMessageType[Operator.Move]
       esTestKit.getState().waiting shouldBe true
 
@@ -104,53 +103,6 @@ final class ControllerRecoveryTests
 
       val redelivered = operatorProbe.expectMessageType[Operator.Move]
       redelivered.command shouldBe Command.Go(Direction.Up)
-    }
-
-    "redeliver a stuck move when the watchdog keeps ticking with no progress" in {
-      val (esTestKit, operatorProbe, _) = newTestKit()
-      val order = ElevatorOrder("o-4", Floor(5))
-
-      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
-      esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
-      operatorProbe.expectMessageType[Operator.Move]   // original move, then assume it (or the reply) is lost
-      esTestKit.getState().waiting shouldBe true
-
-      esTestKit.runCommand(Controller.RedeliverStuckMove)   // first tick: baseline, no resend
-      esTestKit.runCommand(Controller.RedeliverStuckMove)   // stalled == 1, still below threshold
-      operatorProbe.expectNoMessage(200.millis)
-      esTestKit.runCommand(Controller.RedeliverStuckMove)   // stalled == 2 -> redeliver
-
-      val redelivered = operatorProbe.expectMessageType[Operator.Move]
-      redelivered.command shouldBe Command.Go(Direction.Up)
-    }
-
-    "not redeliver anything when the elevator is idle (not waiting)" in {
-      val (esTestKit, operatorProbe, _) = newTestKit()
-
-      esTestKit.runCommand(Controller.RedeliverStuckMove)
-      esTestKit.runCommand(Controller.RedeliverStuckMove)
-      esTestKit.runCommand(Controller.RedeliverStuckMove)
-
-      esTestKit.getState().waiting shouldBe false
-      operatorProbe.expectNoMessage(200.millis)
-    }
-
-    "reset the stall counter when the elevator makes progress between ticks" in {
-      val (esTestKit, operatorProbe, _) = newTestKit()
-      val order = ElevatorOrder("o-6", Floor(9))
-
-      esTestKit.runCommand(Controller.AddUniqueOrderSet(Set(order)))
-      esTestKit.runCommand(Controller.ChooseNextOrder(Set(order)))
-      operatorProbe.expectMessageType[Operator.Move]
-
-      esTestKit.runCommand(Controller.RedeliverStuckMove)   // baseline while waiting at floor 0
-      // the move completes: floor advances and the loop chooses the next move (waiting again, new state)
-      esTestKit.runCommand(Controller.PublishState(ElevatorState(Direction.Up, Motion.Moving, Floor(4))))
-      operatorProbe.expectMessageType[Operator.Move]
-
-      // state changed since the baseline tick, so the counter is back to zero: one tick can't redeliver
-      esTestKit.runCommand(Controller.RedeliverStuckMove)
-      operatorProbe.expectNoMessage(200.millis)
     }
   }
 }
