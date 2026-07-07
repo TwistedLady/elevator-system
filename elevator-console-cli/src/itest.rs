@@ -23,6 +23,7 @@ pub fn run_itest(
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
         .timeout_read(Duration::from_secs(3))
+        .tls_config(crate::api::tls_config())
         .build();
     let health_url = crate::api::health_url(api_base);
 
