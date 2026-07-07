@@ -114,21 +114,35 @@ data:
     );
   03-order-status.sql: |
     -- Order-status read-model (CQRS read-side) maintained by OrderStatusProjection.
-    -- One row per order tag = its lifecycle, derived from the Coordinator's events.
+    -- One row per order = its lifecycle, derived from the Manager's events.
 
     CREATE TABLE IF NOT EXISTS order_status (
-      tag           VARCHAR(255) PRIMARY KEY,
+      order_id      VARCHAR(255) PRIMARY KEY,
       elevator_name VARCHAR(255) NOT NULL,
       floor         INT          NOT NULL,
       status        VARCHAR(16)  NOT NULL,        -- PROGRESS | DONE
       created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
       done_at       TIMESTAMPTZ
     );
-  04-processed-orders.sql: |
-    -- Durable, unbounded order dedup. The Kafka->Coordinator ingestion stream claims each order's
-    -- tag here before forwarding it; the primary key rejects duplicates.
+  04-processed-calls.sql: |
+    -- Durable, unbounded call dedup. The Kafka->Coordinator ingestion stream marks each call's
+    -- id here after forwarding it; the primary key rejects duplicates. Used by CallDedup.
 
-    CREATE TABLE IF NOT EXISTS processed_orders (
-      tag     VARCHAR(255) PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS processed_calls (
+      call_id VARCHAR(255) PRIMARY KEY,
       seen_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+    );
+  05-call-status.sql: |
+    -- Call-status read-model (CQRS read-side) maintained by CallStatusProjection.
+    -- One row per call = its lifecycle, derived from the Coordinator's events; lets the API
+    -- answer "what's this call's status?" by id.
+
+    CREATE TABLE IF NOT EXISTS call_status (
+      call_id       VARCHAR(255) PRIMARY KEY,
+      elevator_name VARCHAR(255) NOT NULL,
+      floor         INT          NOT NULL,
+      order_id      VARCHAR(255),
+      status        VARCHAR(16)  NOT NULL,        -- PROGRESS | DONE
+      created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+      done_at       TIMESTAMPTZ
     );
