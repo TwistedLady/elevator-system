@@ -3,7 +3,7 @@ package pl.feelcodes.elevator.app.actors
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.PersistenceId
-import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
+import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
 import pl.feelcodes.elevator.common.core.domain.{ElevatorOrder, Floor}
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
@@ -33,4 +33,4 @@ object Coordinator:
             Effect.persist(OrderDone(tag))
       ,
       eventHandler = (state, _) => state
-    )
+    ).withRetention(RetentionCriteria.snapshotEvery(numberOfEvents = 100, keepNSnapshots = 2))
