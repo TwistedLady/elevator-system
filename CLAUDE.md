@@ -74,12 +74,23 @@ reads the `call_status` read table. Full detail: [docs/protocol.md](docs/protoco
 
 ## Workflow
 
+Think of every session as an isolated **developer**: **one session = one branch = one dir**.
+
 - `main` is the trunk — **never developed on directly.**
-- Every task = its own **git worktree + branch**, a sibling of `elevator-system/`:
-  `git worktree add ../elevator-<task> -b <task> main`. Commit freely on task branches.
-- Base-dir `../kanban.md` tracks the branches (each branch = a "dev"); update it once per cycle.
-- Durable workspace knowledge and IntelliJ module-rename skills live in the base dir
-  (`../.knowledge/`, `../.skill/`) — outside the git repo, shared across worktrees.
+- Each task = its own **git worktree + branch**, a sibling of `elevator-system/`:
+  `git worktree add ../elevator-<task> -b <task> main`. **One topic per session**; if it would grow
+  past two topics, split into separate sessions.
+- A session works **only in its own dir** — it never reads another session's dir, only the shared
+  `main`. Commit **freely and in small commits**.
+- **Definition of done (every task):** push → open PR → merge → **delete the branch** → **update the
+  docs**. Nothing is left behind: the dir ends clean, back on `main`.
+- **Kanban** (`../kanban.md`) has three parts: **Current** (one table per active session, newest on
+  top — caption = task, columns = subtasks, cells = 🟩/🟨/⬜), **To-do** (bugs, ideas), and
+  **Changelog** (one entry per commit, entry # = commit #, plain words, newest first).
+- **Knowledge split:** domain/project facts live in `docs/` (update after each PR). The base-dir
+  `../.knowledge/` is a symlink to the agent's own memory (what it knows across sessions).
+- **IntelliJ / Maven module naming:** the user marks the Maven project himself in one IntelliJ
+  window — do not automate renaming, and never edit `pom.xml`.
 
 ## Known gotchas / open issues
 
