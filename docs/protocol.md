@@ -25,7 +25,7 @@ Move(elevatorName, state: ElevatorState, command: Command)
 // CoordinatorEvents
 CallReceived(callId, floor);  CallAssigned(callId, orderId);  CallDone(callId)
 // ManagerEvents
-OrderCreated(orderId, floor, callIds: Set[String]);  OrderDone(orderId)
+OrderCreated(orderId, floor, callIds: Set[String]);  OrderExtended(orderId, callIds: Set[String]);  OrderDone(orderId)
 // ControllerEvents
 OrderAdded(order);  WaitingSet(waiting: Boolean);  ElevatorStateUpdated(state)
 
@@ -64,7 +64,7 @@ sequenceDiagram
         CC->>Co: AddCalls([call])
         Note over Co: persist CallReceived → call_status=PROGRESS
         Co->>Mg: Combine([call])
-        Note over Mg: group by floor → Order(hash(callIds))<br/>persist OrderCreated → order_status=PROGRESS
+        Note over Mg: group by floor → Order(f(elevator, floor))<br/>new floor → OrderCreated, known floor → OrderExtended → order_status=PROGRESS
         Mg->>Co: AssignOrder(callId, orderId)
         Mg->>Ct: Process(orders)
         CC->>DB: mark id processed (after forward)
@@ -96,8 +96,8 @@ there at once. Why claim-after-forward: [crash-recovery.md](crash-recovery.md).
 | Keyed by | call **id** | **floor** |
 | Purpose | drop a Kafka message redelivered after a crash | one order (stop) serves every call at that floor |
 
-> A late call at an already-served floor gets a **new** order (its id is a fresh hash of a
-> different call-id set) — orders are immutable snapshots.
+> A call at a floor with a live order **attaches** to it (`OrderExtended`); a call at an
+> already-served floor re-creates the order under the same id (`f(elevator, floor)`).
 
 ## Source map
 

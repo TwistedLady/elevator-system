@@ -28,8 +28,9 @@ The app actors are **thin shells** that wire the pure `logic`.
 
 ## How it flows (one call)
 
-A **Call** = a user action (`id, elevatorName, floor`). The app groups same-floor calls into an
-immutable **Order** (`order id = hash(sorted call ids)`) — one stop. Four actors, one per elevator:
+A **Call** = a user action (`id, elevatorName, floor`). The app groups same-floor calls into one
+living **Order** (`order id = f(elevator, floor)`; later same-floor calls attach until it is done)
+— one stop. Four actors, one per elevator:
 
 `POST /api/call` → api produces to Kafka `elevator-calls` → app `CallConsumer` (batches, dedups by
 call `id`) → `Coordinator` (owns call status: persist `CallReceived`, forward) → `Manager` (owns

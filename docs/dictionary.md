@@ -5,12 +5,12 @@ The words this system uses. Call and Order are **not** the same thing.
 | Term | Meaning |
 |---|---|
 | **Call** | A user action: a button press to visit a floor. `id, elevatorName, floor`. |
-| **Order** | App-made. Same-floor calls grouped into one stop. `id = hash(sorted call ids)` → immutable. |
+| **Order** | App-made. One living stop per floor. `id = f(elevator, floor)`; later same-floor calls attach until it is done. |
 | **Coordinator** | Actor, owns **call** status. Receives calls, forwards them to the Manager, tracks each to done. |
 | **Manager** | Actor, owns the **call↔order** relation. Groups calls into orders, assigns them, marks orders done. |
 | **Controller** | Actor, owns **movement**. Picks the next stop (`NextFloorStrategy`), tells the Operator to move. |
 | **Operator** | Actor, stateless. Applies one move on the engine. |
-| **GroupCallsStrategy** | Groups calls by floor into orders; sets the order id. |
+| **GroupCallsStrategy** | Groups calls by floor into orders; the order id is per (elevator, floor). |
 | **NextFloorStrategy** | Picks the next floor to serve from the pending orders. |
 | **call_status** | Read table: one row per call (`GET /api/call/{id}`). |
 | **order_status** | Read table: one row per order. |

@@ -1,14 +1,14 @@
 # The four actors
 
 A **Call** is one user action (press a button: `id, elevatorName, floor`). The app groups
-calls that share a floor into an immutable **Order** (`order id = hash(sorted call ids)`), a
-single stop. Four actors, one per elevator; the first three are cluster-sharded and
+calls that share a floor into one living **Order** (`order id = f(elevator, floor)`), a single
+stop that later same-floor calls attach to. Four actors, one per elevator; the first three are cluster-sharded and
 event-sourced, the **Operator** is a stateless worker.
 
 | Actor | Owns | Job | Event-sourced |
 |---|---|---|---|
 | **Coordinator** | call status | Persist `CallReceived`, forward calls to the Manager, record `CallAssigned` / `CallDone`. | yes |
-| **Manager** | call ↔ order relation | Group calls into orders (`GroupCallsStrategy`), persist `OrderCreated`, tell the Coordinator each call's order, hand orders to the Controller; on done persist `OrderDone` + tell the Coordinator each call is done. | yes |
+| **Manager** | call ↔ order relation | Group calls by floor (`GroupCallsStrategy`), persist `OrderCreated` (new floor) or `OrderExtended` (attach to a live one), tell the Coordinator each call's order, hand orders to the Controller; on done persist `OrderDone` + tell the Coordinator each call is done. | yes |
 | **Controller** | movement | Pick the next stop (`NextFloorStrategy`), tell the Operator to `Move`, publish state, mark reached orders done via the Manager. | yes |
 | **Operator** | nothing | Run one move on the car, report the new state. Decides nothing. | no |
 
