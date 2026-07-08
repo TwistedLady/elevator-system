@@ -22,11 +22,11 @@ class CallService {
         this.objectMapper = objectMapper;
     }
 
-    Mono<Void> call(String id, String elevatorName, Integer floor) {
+    Mono<Void> call(String id, String elevatorName, Integer floor, String passengerId) {
         return Mono.<Void>create(sink -> {
             String json;
             try {
-                json = objectMapper.writeValueAsString(new CallDto(id, elevatorName, floor));
+                json = objectMapper.writeValueAsString(new CallDto(id, elevatorName, floor, passengerId));
             } catch (Exception e) {
                 sink.error(e);
                 return;
