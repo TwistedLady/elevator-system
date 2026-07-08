@@ -13,8 +13,9 @@ import org.apache.pekko.kafka.{CommitterSettings, ConsumerSettings, Subscription
 import org.apache.pekko.stream.KillSwitches
 import org.apache.pekko.stream.scaladsl.{Flow, Keep}
 import pl.feelcodes.elevator.app.actors.Coordinator
+import pl.feelcodes.elevator.common.core.domain.{Call, Floor}
 import pl.feelcodes.elevator.common.dto.CallDto
-import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.AddCalls
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.Handle
 import pl.feelcodes.elevator.common.serializable.Json
 
 import scala.concurrent.duration.FiniteDuration
@@ -58,7 +59,7 @@ object CallConsumer {
               val fresh = checked.collect { case (dto, false) => dto }.distinctBy(_.id)
 
               fresh.groupBy(_.elevatorName).foreach { case (elevatorName, dtos) =>
-                coordinatorProvider(elevatorName) ! AddCalls(dtos.toList)
+                coordinatorProvider(elevatorName) ! Handle(dtos.map(d => Call(d.id, Floor(d.floor))).toList)
               }
 
               Future

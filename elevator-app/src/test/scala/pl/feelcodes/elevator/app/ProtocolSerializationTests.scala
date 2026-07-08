@@ -7,9 +7,8 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Manager, Operator}
 import pl.feelcodes.elevator.common.core.domain.*
-import pl.feelcodes.elevator.common.dto.CallDto
-import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.{AddCalls, AssignOrder, MarkCallDone}
-import pl.feelcodes.elevator.common.protocol.ManagerProtocol.{Combine, MarkOrderDone}
+import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.{Handle, AssignOrder}
+import pl.feelcodes.elevator.common.protocol.ManagerProtocol.Combine
 
 final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
@@ -47,8 +46,8 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val msg = Controller.Process(Set(order))
     assert(roundTrip(msg) == msg)
 
-  test("Controller.PublishState round-trips (data only — no Elevator/Engine)"):
-    val msg = Controller.PublishState(state)
+  test("Controller.MarkExecuted round-trips (data only — no Elevator/Engine)"):
+    val msg = Controller.MarkExecuted(state)
     assert(roundTrip(msg) == msg)
 
   test("Controller.ChooseNext round-trips"):
@@ -63,19 +62,19 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val msg = Operator.Move("lift-a", state, Command.Stop())
     assert(roundTrip(msg) == msg)
 
-  test("Coordinator.AddCalls round-trips (original Kafka calls)"):
-    val msg = AddCalls(List(CallDto("c1", "lift-a", 3)))
+  test("Coordinator.Handle round-trips (original Kafka calls)"):
+    val msg = Handle(List(Call("c1", Floor(3))))
     assert(roundTrip(msg) == msg)
 
   test("Coordinator.AssignOrder round-trips"):
     assert(roundTrip(AssignOrder("c1", "o-1")) == AssignOrder("c1", "o-1"))
 
-  test("Coordinator.MarkCallDone round-trips"):
-    assert(roundTrip(MarkCallDone("c1")) == MarkCallDone("c1"))
+  test("Coordinator.MarkDone round-trips"):
+    assert(roundTrip(Coordinator.MarkDone("c1")) == Coordinator.MarkDone("c1"))
 
   test("Manager.Combine round-trips"):
     val msg = Combine(List(Call("c1", Floor(3))))
     assert(roundTrip(msg) == msg)
 
-  test("Manager.MarkOrderDone round-trips"):
-    assert(roundTrip(MarkOrderDone("o-1")) == MarkOrderDone("o-1"))
+  test("Manager.MarkDone round-trips"):
+    assert(roundTrip(Manager.MarkDone("o-1")) == Manager.MarkDone("o-1"))

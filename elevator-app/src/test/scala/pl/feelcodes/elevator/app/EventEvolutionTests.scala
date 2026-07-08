@@ -35,8 +35,8 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
     val manifest = Serializers.manifestFor(serializer, msg)
     serialization.deserialize(bytes, serializer.identifier, manifest).get.asInstanceOf[T]
 
-  test("ControllerEvents.OrderAdded round-trips"):
-    val e = ControllerEvents.OrderAdded(Order("o-1", Floor(3), Set("c1")))
+  test("ControllerEvents.OrderAccepted round-trips"):
+    val e = ControllerEvents.OrderAccepted(Order("o-1", Floor(3), Set("c1")))
     assert(roundTrip[ControllerEvents.Event](e) == e)
 
   test("ControllerEvents.WaitingSet round-trips"):

@@ -17,14 +17,14 @@ object ControllerLogic:
       State(false, elevatorName, ElevatorState(Direction.Up, Motion.Stopped, Floor(0)), Set.empty)
 
   def addUniqueOrders(state: State, orders: Set[Order]): List[Event] =
-    orders.toList.filterNot(o => state.orders.exists(_.id == o.id)).map(OrderAdded.apply)
+    orders.toList.filterNot(o => state.orders.exists(_.id == o.id)).map(OrderAccepted.apply)
 
   def publishState(newState: ElevatorState): List[Event] =
     List(WaitingSet(false), ElevatorStateUpdated(newState))
 
   def evolve(state: State, event: Event): State =
     event match
-      case OrderAdded(order)        => state.copy(orders = state.orders + order)
+      case OrderAccepted(order)        => state.copy(orders = state.orders + order)
       case WaitingSet(waiting)      => state.copy(waiting = waiting)
       case ElevatorStateUpdated(ns) => state.copy(elevatorState = ns, orders = state.orders.filterNot(_.floor == ns.floor))
 

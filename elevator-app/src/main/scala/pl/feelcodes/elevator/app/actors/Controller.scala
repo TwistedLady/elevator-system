@@ -40,12 +40,12 @@ object Controller:
               Effect.persist(ControllerLogic.addUniqueOrders(state, orders))
                 .thenRun(s => context.self ! ChooseNext(s.orders))
 
-            case PublishState(newState) =>
+            case MarkExecuted(newState) =>
               val served = state.orders.filter(_.floor == newState.floor)
               Effect.persist(ControllerLogic.publishState(newState)).thenRun { s =>
                 publish(ElevatorStateDto(s.elevatorName,
                   newState.direction.toString, newState.motion.toString, newState.floor.num))
-                served.foreach(o => managerProvider(s.elevatorName) ! Manager.MarkOrderDone(o.id))
+                served.foreach(o => managerProvider(s.elevatorName) ! Manager.MarkDone(o.id))
                 context.self ! ChooseNext(s.orders)
               }
 

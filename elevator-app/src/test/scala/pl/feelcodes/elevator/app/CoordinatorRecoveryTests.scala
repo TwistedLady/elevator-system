@@ -8,7 +8,6 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import pl.feelcodes.elevator.app.actors.{Coordinator, Manager}
 import pl.feelcodes.elevator.common.core.domain.{Call, Floor}
-import pl.feelcodes.elevator.common.dto.CallDto
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
 
 object CoordinatorRecoveryTests {
@@ -53,10 +52,10 @@ final class CoordinatorRecoveryTests
       val esTestKit = newTestKit()
 
       val r = esTestKit.runCommand(
-        Coordinator.AddCalls(List(
-          CallDto("c1", "lift-a", 3),
-          CallDto("c2", "lift-a", 3),
-          CallDto("c3", "lift-a", 5))))
+        Coordinator.Handle(List(
+          Call("c1", Floor(3)),
+          Call("c2", Floor(3)),
+          Call("c3", Floor(5)))))
 
       r.events should contain allOf (
         CoordinatorEvents.CallReceived("c1", 3),
@@ -75,7 +74,7 @@ final class CoordinatorRecoveryTests
 
     "record a call as done" in {
       val esTestKit = newTestKit()
-      esTestKit.runCommand(Coordinator.MarkCallDone("c1")).event shouldBe CoordinatorEvents.CallDone("c1")
+      esTestKit.runCommand(Coordinator.MarkDone("c1")).event shouldBe CoordinatorEvents.CallDone("c1")
     }
   }
 }

@@ -58,12 +58,12 @@ final class ControllerRecoveryTests
       val order = orderAt("o-1", 3)
 
       esTestKit.runCommand(Controller.Process(Set(order)))
-        .events should contain(Controller.OrderAdded(order))
+        .events should contain(Controller.OrderAccepted(order))
 
       val reached = ElevatorState(Direction.Up, Motion.Stopped, Floor(3))
-      esTestKit.runCommand(Controller.PublishState(reached))
+      esTestKit.runCommand(Controller.MarkExecuted(reached))
 
-      managerProbe.expectMessage(Manager.MarkOrderDone("o-1"))
+      managerProbe.expectMessage(Manager.MarkDone("o-1"))
 
       val before = esTestKit.getState()
       before.elevatorState shouldBe reached
@@ -80,7 +80,7 @@ final class ControllerRecoveryTests
       esTestKit.runCommand(Controller.Process(Set(order)))
 
       val midway = ElevatorState(Direction.Up, Motion.Moving, Floor(4))
-      esTestKit.runCommand(Controller.PublishState(midway))
+      esTestKit.runCommand(Controller.MarkExecuted(midway))
 
       managerProbe.expectNoMessage()
       esTestKit.getState().orders should contain(order)

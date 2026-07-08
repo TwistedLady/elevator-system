@@ -7,4 +7,4 @@ object ControllerProtocol:
   sealed trait Command
   final case class Process(orders: Set[Order]) extends Command
   final case class ChooseNext(orders: Set[Order]) extends Command
-  final case class PublishState(state: ElevatorState) extends Command
+  final case class MarkExecuted(state: ElevatorState) extends Command

@@ -4,7 +4,6 @@ import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.PersistenceId
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
-import pl.feelcodes.elevator.common.core.domain.{Call, Floor}
 import pl.feelcodes.elevator.common.dto.CallStateDto
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
@@ -27,16 +26,16 @@ object Coordinator:
       emptyState = CoordinatorLogic.State.empty,
       commandHandler = (state, msg) =>
         msg match
-          case AddCalls(calls) =>
-            Effect.persist(calls.map(c => CallReceived(c.id, c.floor))).thenRun { _ =>
-              calls.foreach(c => publish(CallStateDto(c.id, elevatorName, c.floor, "PROGRESS")))
-              managerProvider(elevatorName) ! Manager.Combine(calls.map(c => Call(c.id, Floor(c.floor))))
+          case Handle(calls) =>
+            Effect.persist(calls.map(c => CallReceived(c.id, c.floor.num))).thenRun { _ =>
+              calls.foreach(c => publish(CallStateDto(c.id, elevatorName, c.floor.num, "PROGRESS")))
+              managerProvider(elevatorName) ! Manager.Combine(calls)
             }
 
           case AssignOrder(callId, orderId) =>
             Effect.persist(CallAssigned(callId, orderId))
 
-          case MarkCallDone(callId) =>
+          case MarkDone(callId) =>
             Effect.persist(CallDone(callId)).thenRun { _ =>
               publish(CallStateDto(callId, elevatorName, state.calls.getOrElse(callId, -1), "DONE"))
             }
