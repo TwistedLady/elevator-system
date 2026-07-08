@@ -8,16 +8,16 @@ The exact messages each [actor](actors.md) speaks, and a call's end-to-end path.
 ```scala
 // Commands — in-memory, actor → actor
 // CoordinatorProtocol
-AddCalls(calls: List[CallDto])                 // from CallConsumer
-AssignOrder(callId: String, orderId: String)  // from Manager: call belongs to this order
-MarkCallDone(callId: String)                   // from Manager: call served
+Handle(calls: List[Call])                    // from CallConsumer (maps CallDto → Call)
+AssignOrder(callId: CallId, orderId: OrderId)// from Manager: call belongs to this order
+MarkDone(callId: CallId)                      // from Manager: call served
 // ManagerProtocol
 Combine(calls: List[Call])                      // from Coordinator: group into orders
-MarkOrderDone(orderId: String)                  // from Controller: floor reached
+MarkDone(orderId: OrderId)                    // from Controller: floor reached
 // ControllerProtocol
 Process(orders: Set[Order])                     // from Manager
 ChooseNext(orders: Set[Order])                  // self-message: decide next move
-PublishState(state: ElevatorState)              // from Operator: move finished
+MarkExecuted(state: ElevatorState)              // from Operator: move finished
 // OperatorProtocol
 Move(elevatorName, state: ElevatorState, command: Command)
 
@@ -27,7 +27,7 @@ CallReceived(callId, floor);  CallAssigned(callId, orderId);  CallDone(callId)
 // ManagerEvents
 OrderCreated(orderId, floor, callIds: Set[String]);  OrderExtended(orderId, callIds: Set[String]);  OrderDone(orderId)
 // ControllerEvents
-OrderAdded(order);  WaitingSet(waiting: Boolean);  ElevatorStateUpdated(state)
+OrderAccepted(order);  WaitingSet(waiting: Boolean);  ElevatorStateUpdated(state)
 
 // Wire DTOs — JSON over Kafka
 CallDto(id, elevatorName, floor)                              // topic: elevator-calls
@@ -61,7 +61,7 @@ sequenceDiagram
     alt seen before
         CC-->>KC: skip + commit
     else new
-        CC->>Co: AddCalls([call])
+        CC->>Co: Handle([call])
         Note over Co: persist CallReceived → call_status=PROGRESS
         Co->>Mg: Combine([call])
         Note over Mg: group by floor → Order(f(elevator, floor))<br/>new floor → OrderCreated, known floor → OrderExtended → order_status=PROGRESS
@@ -74,12 +74,12 @@ sequenceDiagram
         Ct->>Ct: ChooseNext
         Note over Ct: persist WaitingSet(true)
         Ct->>Op: Move(state, command)
-        Op->>Ct: PublishState(newState)
+        Op->>Ct: MarkExecuted(newState)
         Note over Ct: persist WaitingSet(false) + ElevatorStateUpdated<br/>drop orders at newState.floor
         Ct->>KS: publish ElevatorStateDto
-        Ct->>Mg: MarkOrderDone(orderId) for floors reached
+        Ct->>Mg: MarkDone(orderId) for floors reached
         Note over Mg: persist OrderDone → order_status=DONE
-        Mg->>Co: MarkCallDone(callId) per call
+        Mg->>Co: MarkDone(callId) per call
         Note over Co: persist CallDone → call_status=DONE
     end
     C->>API: GET /api/call/{id} → DONE
