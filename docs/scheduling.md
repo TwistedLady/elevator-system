@@ -24,5 +24,5 @@ stateDiagram-v2
 ```
 
 Source: `elevator-common-strategy/.../NextFloorStrategy.scala`. Its sibling
-`GroupCallsStrategy` groups same-floor calls into orders (`order id = hash(sorted call ids)`)
-— see [protocol.md](protocol.md).
+`GroupCallsStrategy` groups same-floor calls into orders (`order id = f(elevator, floor)`, so
+later same-floor calls attach to the same order) — see [protocol.md](protocol.md).

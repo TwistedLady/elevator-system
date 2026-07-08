@@ -26,7 +26,10 @@ object OrderStatusProjection {
       |VALUES ($1, $2, $3, 'PROGRESS', now())
       |ON CONFLICT (order_id) DO UPDATE SET
       |  elevator_name = $2,
-      |  floor         = $3""".stripMargin
+      |  floor         = $3,
+      |  status        = 'PROGRESS',
+      |  created_at    = now(),
+      |  done_at       = NULL""".stripMargin
 
   private val MarkDoneSql =
     "UPDATE order_status SET status = 'DONE', done_at = now() WHERE order_id = $1"
@@ -73,6 +76,9 @@ object OrderStatusProjection {
             .bind(1, entityId(envelope.persistenceId))
             .bind(2, floor)
           session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
+
+        case ManagerEvents.OrderExtended(_, _) =>
+          Future.successful(Done)
 
         case ManagerEvents.OrderDone(orderId) =>
           val statement = session.createStatement(MarkDoneSql).bind(0, orderId)

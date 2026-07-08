@@ -4,14 +4,13 @@ import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.PersistenceId
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
-import pl.feelcodes.elevator.common.core.domain.{Floor, Order}
 import pl.feelcodes.elevator.common.dto.OrderStateDto
 import pl.feelcodes.elevator.common.protocol.ManagerProtocol
 import pl.feelcodes.elevator.common.events.ManagerEvents
-import pl.feelcodes.elevator.common.events.ManagerEvents.{OrderCreated, OrderDone}
+import pl.feelcodes.elevator.common.events.ManagerEvents.{OrderCreated, OrderExtended, OrderDone}
 import pl.feelcodes.elevator.common.logic.ManagerLogic
 
-/** Owns the call↔order relation: groups calls into orders, assigns them, marks orders done. */
+/** Owns the call↔order relation: attaches calls to one order per floor, assigns them, marks orders done. */
 object Manager:
   export ManagerProtocol.*
 
@@ -29,14 +28,23 @@ object Manager:
       commandHandler = (state, msg) =>
         msg match
           case Combine(calls) =>
-            val created = ManagerLogic.created(state, ManagerLogic.combine(calls))
-            val orders = created.map(e => Order(e.orderId, Floor(e.floor), e.callIds)).toSet
-            Effect.persist(created).thenRun { _ =>
-              orders.foreach { o =>
-                publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds))
-                o.callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.AssignOrder(callId, o.id))
+            val events = ManagerLogic.plan(state, ManagerLogic.combine(elevatorName, calls))
+            Effect.persist(events).thenRun { newState =>
+              events.foreach {
+                case OrderCreated(id, _, callIds) =>
+                  newState.orders.get(id).foreach { o =>
+                    publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds))
+                    callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.AssignOrder(callId, id))
+                    controllerProvider(elevatorName) ! Controller.Process(Set(o))
+                  }
+                case OrderExtended(id, callIds) =>
+                  newState.orders.get(id).foreach { o =>
+                    publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds))
+                    callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.AssignOrder(callId, id))
+                    controllerProvider(elevatorName) ! Controller.Process(Set(o))
+                  }
+                case OrderDone(_) => ()
               }
-              if orders.nonEmpty then controllerProvider(elevatorName) ! Controller.Process(orders)
             }
 
           case MarkOrderDone(orderId) =>

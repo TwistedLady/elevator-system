@@ -79,5 +79,25 @@ final class ManagerRecoveryTests
       esTestKit.runCommand(Manager.MarkOrderDone(orderId)).event shouldBe ManagerEvents.OrderDone(orderId)
       coordinatorProbe.expectMessage(Coordinator.MarkCallDone("c1"))
     }
+
+    "attach a later call to the existing floor order and mark both calls done" in {
+      val (esTestKit, coordinatorProbe, controllerProbe) = newTestKit()
+      esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)))))
+      coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
+      controllerProbe.expectMessageType[Controller.Process]
+      val orderId = esTestKit.getState().orders.keys.head
+
+      val r = esTestKit.runCommand(Manager.Combine(List(Call("c2", Floor(3)))))
+      r.event shouldBe ManagerEvents.OrderExtended(orderId, Set("c2"))
+      esTestKit.getState().orders(orderId).callIds shouldBe Set("c1", "c2")
+      coordinatorProbe.expectMessage(Coordinator.AssignOrder("c2", orderId))
+      controllerProbe.expectMessageType[Controller.Process].orders.map(_.id) shouldBe Set(orderId)
+
+      esTestKit.runCommand(Manager.MarkOrderDone(orderId))
+      Set(
+        coordinatorProbe.expectMessageType[Coordinator.MarkCallDone],
+        coordinatorProbe.expectMessageType[Coordinator.MarkCallDone]
+      ).map(_.callId) shouldBe Set("c1", "c2")
+    }
   }
 }
