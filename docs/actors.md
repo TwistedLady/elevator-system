@@ -16,7 +16,7 @@ event-sourced, the **Operator** is a stateless worker.
 
 ```mermaid
 flowchart TD
-  call(["CallDto<br/>from Kafka elevator-calls"]) -->|first-seen only| coord
+  call(["CallDto<br/>from Kafka elevator-calls"]) -->|CallConsumer: first-seen, maps → Call| coord
 
   coord["<b>Coordinator</b><br/>persist CallReceived ·<br/>forward calls"]
   coord -->|Combine calls| mgr
@@ -28,11 +28,11 @@ flowchart TD
   ctrl["<b>Controller</b><br/>hold orders · pick next move ·<br/>publish state · drop served floors"]
   ctrl -->|Move / Stop| op
   ctrl -->|publish| out[("Kafka elevator-state")]
-  ctrl -.->|MarkOrderDone| mgr
-  mgr -.->|MarkCallDone| coord
+  ctrl -.->|MarkDone| mgr
+  mgr -.->|MarkDone| coord
 
   op["<b>Operator</b><br/>compute new floor/dir/motion"]
-  op -.->|PublishState| ctrl
+  op -.->|MarkExecuted| ctrl
 ```
 
 - The Controller **drives its own loop**: after each move it self-sends `ChooseNext`.

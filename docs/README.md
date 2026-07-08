@@ -13,6 +13,7 @@ One topic per file. New here? Read [architecture](architecture.md) first.
 ## Reference — look it up
 - [dictionary.md](dictionary.md) — the words (Call vs Order, the four actors, tables, topics).
 - [actors.md](actors.md) — the four actors (Call vs Order) and who does what.
+- [actor-contract.md](actor-contract.md) — each actor's state, commands, events, publishes (the schema).
 - [protocol.md](protocol.md) — exact messages, events, topics, end-to-end sequence.
 - [scheduling.md](scheduling.md) — the SCAN next-move policy.
 - [core.md](core.md) — `elevator-common-core`: domain + engine.

@@ -37,7 +37,7 @@ call `id`) → `Coordinator` (owns call status: persist `CallReceived`, forward)
 call↔order: group via `GroupCallsStrategy`, persist `OrderCreated`, assign) → `Controller`
 (event-sourced scheduler; self-driven loop, no timer — engine paces it; next move via
 `NextFloorStrategy`) → `Operator` (stateless, applies one move) → Controller publishes state to
-Kafka `elevator-state` and marks reached orders done → `Manager.MarkOrderDone` → `Coordinator.MarkCallDone`.
+Kafka `elevator-state` and marks reached orders done → `Manager.MarkDone` → `Coordinator.MarkDone`.
 
 Four Kafka topics: `elevator-calls` (api → app), and three state feeds (app → api/console/BI):
 `elevator-state`, `elevator-order-state`, `elevator-call-state`. Status query: `GET /api/call/{id}`

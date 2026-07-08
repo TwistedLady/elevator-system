@@ -56,7 +56,7 @@ object ElevatorApp extends App {
 
         sharding.init(Entity(Operator.TypeKey) { _ =>
           val publishMove: Operator.PublishMove =
-            (name, state) => controllerProvider(name) ! Controller.PublishState(state)
+            (name, state) => controllerProvider(name) ! Controller.MarkExecuted(state)
           Operator(publishMove, buildElevator)
         }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
         sharding.init(Entity(Controller.TypeKey) { e =>

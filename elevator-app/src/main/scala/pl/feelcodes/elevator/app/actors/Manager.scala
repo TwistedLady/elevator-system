@@ -47,12 +47,12 @@ object Manager:
               }
             }
 
-          case MarkOrderDone(orderId) =>
+          case MarkDone(orderId) =>
             state.orders.get(orderId) match
               case Some(order) =>
                 Effect.persist(OrderDone(orderId)).thenRun { _ =>
                   publish(OrderStateDto(order.id, elevatorName, order.floor.num, "DONE", order.callIds))
-                  order.callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.MarkCallDone(callId))
+                  order.callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.MarkDone(callId))
                 }
               case None => Effect.none
       ,
