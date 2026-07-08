@@ -19,8 +19,9 @@ object ControllerLogic:
   def addUniqueOrders(state: State, orders: Set[Order]): List[Event] =
     orders.toList.filterNot(o => state.orders.exists(_.id == o.id)).map(OrderAccepted.apply)
 
-  def publishState(newState: ElevatorState): List[Event] =
-    List(WaitingSet(false), ElevatorStateUpdated(newState))
+  def arrival(newState: ElevatorState, doorCycle: Boolean): List[Event] =
+    if doorCycle then List(ElevatorStateUpdated(newState))
+    else List(WaitingSet(false), ElevatorStateUpdated(newState))
 
   def evolve(state: State, event: Event): State =
     event match

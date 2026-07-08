@@ -26,6 +26,7 @@ elevator:
     parquet-path: ${ELEVATOR_STATS_PARQUET_PATH:/data/elevators.parquet}
   call-topic: elevator-calls
   state-topic: elevator-state
+  door-state-topic: elevator-door-state
   # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
   # hot-reloaded by ElevatorLimits. No defaults here — a missing ConfigMap fails the pod fast.
   # Test values live in application-test.yml.

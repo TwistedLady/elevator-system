@@ -9,7 +9,8 @@ import java.util.Properties
 /** The three Kafka state publishers, sharing one producer built from `elevator.kafka` config. */
 final case class Publishers(elevator: ElevatorStatePublisher,
                             order: OrderStatePublisher,
-                            call: CallStatePublisher)
+                            call: CallStatePublisher,
+                            door: DoorStatePublisher)
 
 object Publishers:
   def apply(system: ActorSystem[?]): Publishers =
@@ -26,4 +27,5 @@ object Publishers:
     Publishers(
       new ElevatorStatePublisher(producer, cfg.getString("state-topic")),
       new OrderStatePublisher(producer, cfg.getString("order-state-topic")),
-      new CallStatePublisher(producer, cfg.getString("call-state-topic")))
+      new CallStatePublisher(producer, cfg.getString("call-state-topic")),
+      new DoorStatePublisher(producer, cfg.getString("door-state-topic")))

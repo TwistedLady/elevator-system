@@ -18,7 +18,7 @@ use ratatui::crossterm::event::{self, Event};
 
 use crate::api;
 use crate::BoxErr;
-use app::{App, ElevatorState, HealthSnapshot, LogSource, StatsRow};
+use app::{App, DoorState, ElevatorState, HealthSnapshot, LogSource, StatsRow};
 use k8s::K8sSnapshot;
 
 pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
@@ -35,6 +35,9 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
 
     let (state_tx, state_rx) = mpsc::channel::<ElevatorState>();
     sources::spawn_state_source(api_base.to_string(), state_tx);
+
+    let (door_tx, door_rx) = mpsc::channel::<DoorState>();
+    sources::spawn_door_source(api_base.to_string(), door_tx);
 
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(api::health_url(api_base), Arc::clone(&health));
@@ -57,6 +60,7 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
         &mut terminal,
         &mut app,
         &state_rx,
+        &door_rx,
         &log_rx,
         &Shared {
             health: &health,
@@ -81,12 +85,16 @@ fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
     state_rx: &mpsc::Receiver<ElevatorState>,
+    door_rx: &mpsc::Receiver<DoorState>,
     log_rx: &mpsc::Receiver<(LogSource, String)>,
     shared: &Shared,
 ) -> Result<(), BoxErr> {
     loop {
         while let Ok(state) = state_rx.try_recv() {
             app.record_state(state);
+        }
+        while let Ok(door) = door_rx.try_recv() {
+            app.record_door(door);
         }
         while let Ok((source, line)) = log_rx.try_recv() {
             app.push_log(source, line);
