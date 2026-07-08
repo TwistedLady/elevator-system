@@ -7,7 +7,7 @@ import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity
 import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import pl.feelcodes.elevator.app.actors.*
-import pl.feelcodes.elevator.common.core.engine.Elevator
+import pl.feelcodes.elevator.common.core.domain.Elevator
 import pl.feelcodes.elevator.app.inbound.{CallConsumer, CallDedup}
 import pl.feelcodes.elevator.app.outbound.Publishers
 import pl.feelcodes.elevator.app.readside.{CallStatusProjection, ElevatorStateProjection, OrderStatusProjection}
