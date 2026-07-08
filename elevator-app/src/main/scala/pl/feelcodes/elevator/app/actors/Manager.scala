@@ -43,7 +43,6 @@ object Manager:
                     callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.AssignOrder(callId, id))
                     controllerProvider(elevatorName) ! Controller.Process(Set(o))
                   }
-                case OrderDone(_) => ()
               }
             }
 

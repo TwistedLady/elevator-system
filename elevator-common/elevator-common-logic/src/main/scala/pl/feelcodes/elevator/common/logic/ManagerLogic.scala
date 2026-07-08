@@ -14,7 +14,7 @@ object ManagerLogic:
   def combine(elevatorName: ElevatorName, calls: List[Call]): Set[Order] =
     GroupCallsStrategy.default.group(elevatorName, calls)
 
-  def plan(state: State, orders: Set[Order]): List[Event] =
+  def plan(state: State, orders: Set[Order]): List[OrderCreated | OrderExtended] =
     orders.toList.flatMap { o =>
       state.orders.get(o.id) match
         case None => Some(OrderCreated(o.id, o.floor.num, o.callIds))
