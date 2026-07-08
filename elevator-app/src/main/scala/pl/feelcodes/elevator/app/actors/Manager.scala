@@ -31,15 +31,15 @@ object Manager:
             val events = ManagerLogic.plan(state, ManagerLogic.combine(elevatorName, calls))
             Effect.persist(events).thenRun { newState =>
               events.foreach {
-                case OrderCreated(id, _, callIds) =>
+                case OrderCreated(id, _, callIds, _, _) =>
                   newState.orders.get(id).foreach { o =>
-                    publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds))
+                    publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds, o.passengerCount, o.anonymousCount))
                     callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.AssignOrder(callId, id))
                     controllerProvider(elevatorName) ! Controller.Process(Set(o))
                   }
-                case OrderExtended(id, callIds) =>
+                case OrderExtended(id, callIds, _, _) =>
                   newState.orders.get(id).foreach { o =>
-                    publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds))
+                    publish(OrderStateDto(o.id, elevatorName, o.floor.num, "PROGRESS", o.callIds, o.passengerCount, o.anonymousCount))
                     callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.AssignOrder(callId, id))
                     controllerProvider(elevatorName) ! Controller.Process(Set(o))
                   }
@@ -50,7 +50,7 @@ object Manager:
             state.orders.get(orderId) match
               case Some(order) =>
                 Effect.persist(OrderDone(orderId)).thenRun { _ =>
-                  publish(OrderStateDto(order.id, elevatorName, order.floor.num, "DONE", order.callIds))
+                  publish(OrderStateDto(order.id, elevatorName, order.floor.num, "DONE", order.callIds, order.passengerCount, order.anonymousCount))
                   order.callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.MarkDone(callId))
                 }
               case None => Effect.none

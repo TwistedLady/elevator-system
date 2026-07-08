@@ -13,10 +13,10 @@ final class ManagerLogicTests extends AnyFunSuite:
 
   test("plan | new floor -> OrderCreated, known floor with fresh calls -> OrderExtended"):
     val first = combine("lift-a", List(Call("c1", Floor(3))))
-    assert(plan(State.empty, first) == List(OrderCreated(first.head.id, 3, Set("c1"))))
+    assert(plan(State.empty, first) == List(OrderCreated(first.head.id, 3, Set("c1"), Set.empty, Set("c1"))))
     val after = plan(State.empty, first).foldLeft(State.empty)(evolve)
     val second = combine("lift-a", List(Call("c1", Floor(3)), Call("c2", Floor(3))))
-    assert(plan(after, second) == List(OrderExtended(first.head.id, Set("c2"))))
+    assert(plan(after, second) == List(OrderExtended(first.head.id, Set("c2"), Set.empty, Set("c2"))))
 
   test("plan | no fresh calls -> no event"):
     val orders = combine("lift-a", List(Call("c1", Floor(3))))
@@ -29,3 +29,24 @@ final class ManagerLogicTests extends AnyFunSuite:
     val extended = evolve(created, OrderExtended(o.id, Set("c2")))
     assert(extended.orders(o.id).callIds == Set("c1", "c2"))
     assert(evolve(extended, OrderDone(o.id)).orders.isEmpty)
+
+  test("counts | passengers dedup while the order lives; anonymous counted apart"):
+    val first = combine("lift-a", List(Call("c1", Floor(3), Some("alice")), Call("c2", Floor(3))))
+    val s1 = plan(State.empty, first).foldLeft(State.empty)(evolve)
+    val order1 = s1.orders.values.head
+    assert(order1.passengerCount == 1)
+    assert(order1.anonymousCount == 1)
+
+    // alice presses again (new call, same person) plus a new anonymous press
+    val second = combine("lift-a", List(
+      Call("c1", Floor(3), Some("alice")),
+      Call("c2", Floor(3)),
+      Call("c3", Floor(3), Some("alice")),
+      Call("c4", Floor(3))
+    ))
+    val events = plan(s1, second)
+    assert(events == List(OrderExtended(order1.id, Set("c3", "c4"), Set.empty, Set("c4"))))
+    val order2 = events.foldLeft(s1)(evolve).orders.values.head
+    assert(order2.callIds == Set("c1", "c2", "c3", "c4"))
+    assert(order2.passengerCount == 1)
+    assert(order2.anonymousCount == 2)

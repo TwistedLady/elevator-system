@@ -7,7 +7,8 @@ sealed trait KeyedDto:
 
 final case class CallDto(@JsonProperty("id") id: String,
                          @JsonProperty("elevatorName") elevatorName: String,
-                         @JsonProperty("floor") floor: Int) extends KeyedDto
+                         @JsonProperty("floor") floor: Int,
+                         @JsonProperty("passengerId") passengerId: String = null) extends KeyedDto
 
 final case class ElevatorStateDto(@JsonProperty("elevatorName") elevatorName: String,
                                   @JsonProperty("direction") direction: String,
@@ -22,7 +23,9 @@ final case class OrderStateDto(@JsonProperty("orderId") orderId: String,
                                @JsonProperty("elevatorName") elevatorName: String,
                                @JsonProperty("floor") floor: Int,
                                @JsonProperty("status") status: String,
-                               @JsonProperty("callIds") callIds: Set[String]) extends KeyedDto
+                               @JsonProperty("callIds") callIds: Set[String],
+                               @JsonProperty("passengers") passengers: Int,
+                               @JsonProperty("anonymous") anonymous: Int) extends KeyedDto
 
 final case class CallStateDto(@JsonProperty("id") id: String,
                               @JsonProperty("elevatorName") elevatorName: String,

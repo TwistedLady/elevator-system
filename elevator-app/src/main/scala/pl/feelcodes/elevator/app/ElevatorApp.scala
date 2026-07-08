@@ -4,6 +4,7 @@ import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
 import org.apache.pekko.actor.typed.{ActorSystem, DispatcherSelector}
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
+import org.apache.pekko.cluster.typed.{ClusterSingleton, SingletonActor}
 import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import pl.feelcodes.elevator.app.actors.*
@@ -46,6 +47,9 @@ object ElevatorApp extends App {
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
         val doormanProvider = sharding.entityRefFor(Doorman.TypeKey, _)
 
+        val suspendManager = ClusterSingleton(ctx.system)
+          .init(SingletonActor(SuspendManager(), "SuspendManager"))
+
         val engineMode = new EngineMode(ctx.system.settings.config.getString("elevator.engine"))
         val enginePath = Path.of(ctx.system.settings.config.getString("elevator.engine-file"))
         ctx.system.scheduler.scheduleWithFixedDelay(0.seconds, 5.seconds) { () =>
@@ -72,7 +76,7 @@ object ElevatorApp extends App {
           Doorman(publishDoor, DoorEngine(doorDwell))
         }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider, managerProvider, doormanProvider, publishers.elevator.publish)
+          Controller(e.entityId, operatorProvider, managerProvider, suspendManager, doormanProvider, publishers.elevator.publish)
         })
         sharding.init(Entity(Manager.TypeKey) { e =>
           Manager(e.entityId, coordinatorProvider, controllerProvider, publishers.order.publish)

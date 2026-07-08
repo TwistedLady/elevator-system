@@ -25,7 +25,8 @@ object ControllerLogic:
 
   def evolve(state: State, event: Event): State =
     event match
-      case OrderAccepted(order)        => state.copy(orders = state.orders + order)
+      case OrderAccepted(order)     => state.copy(orders = state.orders + order)
+      case OrderAdded(order)        => state.copy(orders = state.orders + order)
       case WaitingSet(waiting)      => state.copy(waiting = waiting)
       case ElevatorStateUpdated(ns) => state.copy(elevatorState = ns, orders = state.orders.filterNot(_.floor == ns.floor))
 

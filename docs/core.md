@@ -25,8 +25,8 @@ separate, in `elevator-common-strategy` — see [scheduling.md](scheduling.md).
 | File | Contents |
 |---|---|
 | `core/domain/Floor.scala` | `Floor`, `FloorNum`, `HasFloorNum` |
-| `core/domain/Call.scala` | `Call`, `CallId`, `HasCallId` (a user action) |
-| `core/domain/Order.scala` | `Order`, `OrderId`, `HasOrderId` (same-floor calls grouped into one stop) |
+| `core/domain/Call.scala` | `Call`, `CallId`, `PassengerId`, `HasCallId` (a user action, with optional passenger) |
+| `core/domain/Order.scala` | `Order`, `OrderId`, `HasOrderId` (same-floor calls grouped into one stop; counts riders vs. anonymous) |
 | `core/domain/ElevatorState.scala` | `ElevatorState`, `ElevatorName`, `Direction`, `Motion`, `Command` |
 | `core/engine/Engine.scala` | `Engine`, `SlowEngine`, `FastEngine`, `Elevator` |
 
