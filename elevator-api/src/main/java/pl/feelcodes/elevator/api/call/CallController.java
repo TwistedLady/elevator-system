@@ -30,7 +30,7 @@ class CallController {
         CallRequestDto call = dto.withIdIfAbsent();
         log.info("[call place ] {} -> floor {} (id {})",
                 call.elevatorName(), call.floor(), call.id());
-        return callService.call(call.id(), call.elevatorName(), call.floor())
+        return callService.call(call.id(), call.elevatorName(), call.floor(), call.passengerId())
                 .thenReturn(call);
     }
 

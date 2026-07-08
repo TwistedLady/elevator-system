@@ -69,7 +69,7 @@ object OrderStatusProjection {
   private final class Handler extends R2dbcHandler[EventEnvelope[ManagerEvents.Event]] {
     override def process(session: R2dbcSession, envelope: EventEnvelope[ManagerEvents.Event]): Future[Done] =
       envelope.event match {
-        case ManagerEvents.OrderCreated(orderId, floor, _) =>
+        case ManagerEvents.OrderCreated(orderId, floor, _, _, _) =>
           val statement = session
             .createStatement(UpsertCreatedSql)
             .bind(0, orderId)
@@ -77,7 +77,7 @@ object OrderStatusProjection {
             .bind(2, floor)
           session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
 
-        case ManagerEvents.OrderExtended(_, _) =>
+        case ManagerEvents.OrderExtended(_, _, _, _) =>
           Future.successful(Done)
 
         case ManagerEvents.OrderDone(orderId) =>
