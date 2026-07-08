@@ -23,6 +23,8 @@ stateDiagram-v2
     Stopping --> Moving: orders remain
 ```
 
+Each chosen move is then gated by the [suspender](suspender.md) before the Controller issues it.
+
 Source: `elevator-common-strategy/.../NextFloorStrategy.scala`. Its sibling
 `GroupCallsStrategy` groups same-floor calls into orders (`order id = f(elevator, floor)`, so
 later same-floor calls attach to the same order) — see [protocol.md](protocol.md).
