@@ -94,6 +94,8 @@ struct CallPayload<'a> {
     #[serde(rename = "elevatorName")]
     elevator_name: &'a str,
     floor: i32,
+    #[serde(rename = "passengerId", skip_serializing_if = "Option::is_none")]
+    passenger_id: Option<&'a str>,
 }
 
 /// A short-timeout agent for request/response calls (orders, status, health).
@@ -132,12 +134,14 @@ pub fn post_call(
     elevator: &str,
     floor: i32,
     id: &str,
+    passenger: Option<&str>,
 ) -> Result<(), BoxErr> {
     let url = format!("{api_base}/api/call");
     let body = serde_json::to_string(&CallPayload {
         id,
         elevator_name: elevator,
         floor,
+        passenger_id: passenger,
     })?;
     match agent
         .post(&url)
@@ -157,10 +161,11 @@ pub fn post_call_retry(
     elevator: &str,
     floor: i32,
     id: &str,
+    passenger: Option<&str>,
 ) -> Result<(), BoxErr> {
     let mut last = None;
     for attempt in 0..3 {
-        match post_call(agent, api_base, elevator, floor, id) {
+        match post_call(agent, api_base, elevator, floor, id, passenger) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last = Some(e);
