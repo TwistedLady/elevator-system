@@ -9,26 +9,27 @@ import reactor.core.publisher.Mono
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.FutureConverters.*
 
-final class OrderDedup(connectionFactory: ConnectionFactory) {
+/** Kafka-side dedup: skips calls whose id has already been seen (table `processed_calls`). */
+final class CallDedup(connectionFactory: ConnectionFactory) {
 
-  def alreadyProcessed(tag: String): Future[Boolean] =
+  def alreadyProcessed(callId: String): Future[Boolean] =
     withConnection { conn =>
       Mono
         .from(
           conn
-            .createStatement("SELECT EXISTS(SELECT 1 FROM processed_orders WHERE tag = $1)")
-            .bind(0, tag)
+            .createStatement("SELECT EXISTS(SELECT 1 FROM processed_calls WHERE call_id = $1)")
+            .bind(0, callId)
             .execute())
         .flatMap(result => Mono.from(result.map((row, _) => row.get(0, classOf[java.lang.Boolean]))))
     }.toFuture.asScala.map(_.booleanValue())(ExecutionContext.parasitic)
 
-  def markProcessed(tag: String): Future[Unit] =
+  def markProcessed(callId: String): Future[Unit] =
     withConnection { conn =>
       Mono
         .from(
           conn
-            .createStatement("INSERT INTO processed_orders (tag) VALUES ($1) ON CONFLICT DO NOTHING")
-            .bind(0, tag)
+            .createStatement("INSERT INTO processed_calls (call_id) VALUES ($1) ON CONFLICT DO NOTHING")
+            .bind(0, callId)
             .execute())
         .flatMap(result => Mono.from(result.getRowsUpdated))
     }.toFuture.asScala.map(_ => ())(ExecutionContext.parasitic)
@@ -40,9 +41,9 @@ final class OrderDedup(connectionFactory: ConnectionFactory) {
       conn => Mono.from(conn.close()))
 }
 
-object OrderDedup {
+object CallDedup {
 
-  def apply(config: Config): OrderDedup = {
+  def apply(config: Config): CallDedup = {
     val cf = config.getConfig("pekko.persistence.r2dbc.connection-factory")
     val options = ConnectionFactoryOptions
       .builder()
@@ -55,6 +56,6 @@ object OrderDedup {
       .build()
     val pool = new ConnectionPool(
       ConnectionPoolConfiguration.builder(ConnectionFactories.get(options)).maxSize(8).build())
-    new OrderDedup(pool)
+    new CallDedup(pool)
   }
 }

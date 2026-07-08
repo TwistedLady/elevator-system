@@ -8,7 +8,7 @@
     <parent>
         <groupId>pl.feelcodes.elevator</groupId>
         <artifactId>elevator</artifactId>
-        <version>1.0.0</version>
+        <version>0.1.0</version>
     </parent>
 
     <!-- Not a Java module: it drives the Angular npm build from Maven. frontend-maven-plugin

@@ -11,24 +11,25 @@ import org.apache.pekko.projection.eventsourced.scaladsl.EventSourcedProvider
 import org.apache.pekko.projection.r2dbc.scaladsl.{R2dbcHandler, R2dbcProjection, R2dbcSession}
 import org.apache.pekko.projection.scaladsl.SourceProvider
 import org.apache.pekko.projection.{ProjectionBehavior, ProjectionId}
-import pl.feelcodes.elevator.app.actors.Coordinator
-import pl.feelcodes.elevator.common.events.CoordinatorEvents
+import pl.feelcodes.elevator.app.actors.Manager
+import pl.feelcodes.elevator.common.events.ManagerEvents
 
 import scala.concurrent.{ExecutionContext, Future}
 
+/** Builds the `order_status` read table from Manager order events, for status queries. */
 object OrderStatusProjection {
 
   private val NumberOfInstances = 4
 
-  private val UpsertAcceptedSql =
-    """INSERT INTO order_status (tag, elevator_name, floor, status, created_at)
+  private val UpsertCreatedSql =
+    """INSERT INTO order_status (order_id, elevator_name, floor, status, created_at)
       |VALUES ($1, $2, $3, 'PROGRESS', now())
-      |ON CONFLICT (tag) DO UPDATE SET
+      |ON CONFLICT (order_id) DO UPDATE SET
       |  elevator_name = $2,
       |  floor         = $3""".stripMargin
 
   private val MarkDoneSql =
-    "UPDATE order_status SET status = 'DONE', done_at = now() WHERE tag = $1"
+    "UPDATE order_status SET status = 'DONE', done_at = now() WHERE order_id = $1"
 
   def init(system: ActorSystem[?]): Unit = {
     val ranges = EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, NumberOfInstances)
@@ -45,11 +46,11 @@ object OrderStatusProjection {
   private def projection(system: ActorSystem[?], minSlice: Int, maxSlice: Int) = {
     given ActorSystem[?] = system
 
-    val sourceProvider: SourceProvider[Offset, EventEnvelope[CoordinatorEvents.Event]] =
-      EventSourcedProvider.eventsBySlices[CoordinatorEvents.Event](
+    val sourceProvider: SourceProvider[Offset, EventEnvelope[ManagerEvents.Event]] =
+      EventSourcedProvider.eventsBySlices[ManagerEvents.Event](
         system,
         readJournalPluginId = R2dbcReadJournal.Identifier,
-        entityType = Coordinator.TypeKey.name,
+        entityType = Manager.TypeKey.name,
         minSlice = minSlice,
         maxSlice = maxSlice
       )
@@ -62,20 +63,26 @@ object OrderStatusProjection {
     )
   }
 
-  private final class Handler extends R2dbcHandler[EventEnvelope[CoordinatorEvents.Event]] {
-    override def process(session: R2dbcSession, envelope: EventEnvelope[CoordinatorEvents.Event]): Future[Done] =
+  private final class Handler extends R2dbcHandler[EventEnvelope[ManagerEvents.Event]] {
+    override def process(session: R2dbcSession, envelope: EventEnvelope[ManagerEvents.Event]): Future[Done] =
       envelope.event match {
-        case CoordinatorEvents.OrderAccepted(tag, elevatorName, floor) =>
+        case ManagerEvents.OrderCreated(orderId, floor, _) =>
           val statement = session
-            .createStatement(UpsertAcceptedSql)
-            .bind(0, tag)
-            .bind(1, elevatorName)
+            .createStatement(UpsertCreatedSql)
+            .bind(0, orderId)
+            .bind(1, entityId(envelope.persistenceId))
             .bind(2, floor)
           session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
 
-        case CoordinatorEvents.OrderDone(tag) =>
-          val statement = session.createStatement(MarkDoneSql).bind(0, tag)
+        case ManagerEvents.OrderDone(orderId) =>
+          val statement = session.createStatement(MarkDoneSql).bind(0, orderId)
           session.updateOne(statement).map(_ => Done)(ExecutionContext.parasitic)
       }
   }
+
+  private def entityId(persistenceId: String): String =
+    persistenceId.split("\\|", 2) match {
+      case Array(_, id) => id
+      case _            => persistenceId
+    }
 }

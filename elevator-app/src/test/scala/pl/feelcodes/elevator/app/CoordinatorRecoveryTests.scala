@@ -6,9 +6,9 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator}
-import pl.feelcodes.elevator.common.core.domain.{ElevatorOrder, Floor}
-import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
+import pl.feelcodes.elevator.app.actors.{Coordinator, Manager}
+import pl.feelcodes.elevator.common.core.domain.{Call, Floor}
+import pl.feelcodes.elevator.common.dto.CallDto
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
 
 object CoordinatorRecoveryTests {
@@ -21,8 +21,8 @@ object CoordinatorRecoveryTests {
         |  serialization-bindings {
         |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
         |    "pl.feelcodes.elevator.common.events.CoordinatorEvents$Event"       = jackson-cbor
-        |    "pl.feelcodes.elevator.common.logic.CoordinatorLogic$State"        = jackson-cbor
-        |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"  = jackson-cbor
+        |    "pl.feelcodes.elevator.common.logic.CoordinatorLogic$State"         = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.ManagerProtocol$Command"     = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -37,39 +37,45 @@ final class CoordinatorRecoveryTests
     with AnyWordSpecLike
     with Matchers {
 
-  private val controllerProbe = createTestProbe[Controller.Command]()
-  private val controllerProvider =
-    (name: String) => TestEntityRef(Controller.TypeKey, name, controllerProbe.ref)
+  private val managerProbe = createTestProbe[Manager.Command]()
+  private val managerProvider =
+    (name: String) => TestEntityRef(Manager.TypeKey, name, managerProbe.ref)
 
   private def newTestKit() =
     EventSourcedBehaviorTestKit[Coordinator.Command, CoordinatorEvents.Event, Coordinator.State](
       system,
-      Coordinator("lift-a", controllerProvider)
+      Coordinator("lift-a", managerProvider, _ => ())
     )
 
   "The Coordinator" should {
 
-    "persist one event per original order and forward the floor-merged set to the Controller" in {
+    "persist one event per received call and forward the calls to the Manager" in {
       val esTestKit = newTestKit()
 
       val r = esTestKit.runCommand(
-        Coordinator.AddOriginalStream(List(
-          ElevatorOrderDto("t1", "lift-a", 3),
-          ElevatorOrderDto("t2", "lift-a", 3),
-          ElevatorOrderDto("t3", "lift-a", 5))))
+        Coordinator.AddCalls(List(
+          CallDto("c1", "lift-a", 3),
+          CallDto("c2", "lift-a", 3),
+          CallDto("c3", "lift-a", 5))))
 
       r.events should contain allOf (
-        CoordinatorEvents.OrderAccepted("t1", "lift-a", 3),
-        CoordinatorEvents.OrderAccepted("t2", "lift-a", 3),
-        CoordinatorEvents.OrderAccepted("t3", "lift-a", 5))
+        CoordinatorEvents.CallReceived("c1", 3),
+        CoordinatorEvents.CallReceived("c2", 3),
+        CoordinatorEvents.CallReceived("c3", 5))
 
-      val forwarded = controllerProbe.expectMessageType[Controller.AddUniqueOrderSet]
-      forwarded.orders shouldBe Set(ElevatorOrder("t1", Floor(3)), ElevatorOrder("t3", Floor(5)))
+      val forwarded = managerProbe.expectMessageType[Manager.Combine]
+      forwarded.calls shouldBe List(Call("c1", Floor(3)), Call("c2", Floor(3)), Call("c3", Floor(5)))
     }
 
-    "record an order as done" in {
+    "record a call's order assignment" in {
       val esTestKit = newTestKit()
-      esTestKit.runCommand(Coordinator.MarkOrderDone("t1")).event shouldBe CoordinatorEvents.OrderDone("t1")
+      esTestKit.runCommand(Coordinator.AssignOrder("c1", "o-1")).event shouldBe
+        CoordinatorEvents.CallAssigned("c1", "o-1")
+    }
+
+    "record a call as done" in {
+      val esTestKit = newTestKit()
+      esTestKit.runCommand(Coordinator.MarkCallDone("c1")).event shouldBe CoordinatorEvents.CallDone("c1")
     }
   }
 }

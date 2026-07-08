@@ -2,14 +2,11 @@ package pl.feelcodes.elevator.app
 
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
-import org.apache.pekko.serialization.SerializationExtension
+import org.apache.pekko.serialization.{SerializationExtension, Serializers}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.app.actors.Controller
-import pl.feelcodes.elevator.common.events.CoordinatorEvents
 import pl.feelcodes.elevator.common.core.domain.*
-
-import java.util.Base64
+import pl.feelcodes.elevator.common.events.{ControllerEvents, CoordinatorEvents, ManagerEvents}
 
 final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
 
@@ -21,6 +18,7 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
       |  serialization-bindings {
       |    "pl.feelcodes.elevator.common.events.ControllerEvents$Event"  = jackson-cbor
       |    "pl.feelcodes.elevator.common.events.CoordinatorEvents$Event" = jackson-cbor
+      |    "pl.feelcodes.elevator.common.events.ManagerEvents$Event"     = jackson-cbor
       |  }
       |}
       |""".stripMargin
@@ -31,36 +29,34 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
 
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
-  private val JacksonCborId = 33
+  private def roundTrip[T <: AnyRef](msg: T): T =
+    val serializer = serialization.findSerializerFor(msg)
+    val bytes = serializer.toBinary(msg)
+    val manifest = Serializers.manifestFor(serializer, msg)
+    serialization.deserialize(bytes, serializer.identifier, manifest).get.asInstanceOf[T]
 
-  private def fromGolden[T](manifest: String, base64: String): T =
-    val bytes = Base64.getDecoder.decode(base64)
-    serialization.deserialize(bytes, JacksonCborId, manifest).get.asInstanceOf[T]
+  test("ControllerEvents.OrderAdded round-trips"):
+    val e = ControllerEvents.OrderAdded(Order("o-1", Floor(3), Set("c1")))
+    assert(roundTrip[ControllerEvents.Event](e) == e)
 
-  test("Controller.OrderAdded (v1) still recovers"):
-    val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.events.ControllerEvents$OrderAdded",
-      "v2VvcmRlcr9jdGFnY28tMWVmbG9vcr9jbnVtA////w=="
-    )
-    assert(recovered == Controller.OrderAdded(ElevatorOrder("o-1", Floor(3))))
+  test("ControllerEvents.WaitingSet round-trips"):
+    val e = ControllerEvents.WaitingSet(true)
+    assert(roundTrip[ControllerEvents.Event](e) == e)
 
-  test("Controller.WaitingSet (v1) still recovers"):
-    val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.events.ControllerEvents$WaitingSet",
-      "v2d3YWl0aW5n9f8="
-    )
-    assert(recovered == Controller.WaitingSet(true))
+  test("ControllerEvents.ElevatorStateUpdated round-trips"):
+    val e = ControllerEvents.ElevatorStateUpdated(ElevatorState(Direction.Up, Motion.Moving, Floor(3)))
+    assert(roundTrip[ControllerEvents.Event](e) == e)
 
-  test("Controller.ElevatorStateUpdated (v1) still recovers"):
-    val recovered = fromGolden[Controller.Event](
-      "pl.feelcodes.elevator.common.events.ControllerEvents$ElevatorStateUpdated",
-      "v2VzdGF0Zb9pZGlyZWN0aW9uYlVwZm1vdGlvbmZNb3ZpbmdlZmxvb3K/Y251bQP///8="
-    )
-    assert(recovered == Controller.ElevatorStateUpdated(ElevatorState(Direction.Up, Motion.Moving, Floor(3))))
+  test("CoordinatorEvents (call lifecycle) round-trip"):
+    val received = CoordinatorEvents.CallReceived("c1", 3)
+    val assigned = CoordinatorEvents.CallAssigned("c1", "o-1")
+    val done = CoordinatorEvents.CallDone("c1")
+    assert(roundTrip[CoordinatorEvents.Event](received) == received)
+    assert(roundTrip[CoordinatorEvents.Event](assigned) == assigned)
+    assert(roundTrip[CoordinatorEvents.Event](done) == done)
 
-  test("Coordinator.OrderAccepted (v1) still recovers"):
-    val recovered = fromGolden[CoordinatorEvents.Event](
-      "pl.feelcodes.elevator.common.events.CoordinatorEvents$OrderAccepted",
-      "v2N0YWdldGFnLTFsZWxldmF0b3JOYW1lZmxpZnQtYWVmbG9vcgP/"
-    )
-    assert(recovered == CoordinatorEvents.OrderAccepted("tag-1", "lift-a", 3))
+  test("ManagerEvents (order lifecycle) round-trip"):
+    val created = ManagerEvents.OrderCreated("o-1", 3, Set("c1", "c2"))
+    val done = ManagerEvents.OrderDone("o-1")
+    assert(roundTrip[ManagerEvents.Event](created) == created)
+    assert(roundTrip[ManagerEvents.Event](done) == done)

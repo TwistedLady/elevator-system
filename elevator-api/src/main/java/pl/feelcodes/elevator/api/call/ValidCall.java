@@ -1,4 +1,4 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.call;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.Payload;
@@ -9,11 +9,11 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 @Documented
-@Constraint(validatedBy = OrderValidator.class)
+@Constraint(validatedBy = CallValidator.class)
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface ValidOrder {
-    String message() default "invalid order";
+public @interface ValidCall {
+    String message() default "invalid call";
 
     Class<?>[] groups() default {};
 

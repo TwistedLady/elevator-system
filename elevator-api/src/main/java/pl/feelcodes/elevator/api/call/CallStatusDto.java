@@ -1,11 +1,12 @@
-package pl.feelcodes.elevator.api.order;
+package pl.feelcodes.elevator.api.call;
 
 import java.time.OffsetDateTime;
 
-public record OrderStatusDto(
-        String tag,
+public record CallStatusDto(
+        String id,
         String elevatorId,
         Integer floor,
+        String orderId,
         OffsetDateTime createDateTime,
         OffsetDateTime doneDateTime,
         String status) {

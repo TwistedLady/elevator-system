@@ -5,7 +5,7 @@ seam: **data vs. behaviour over time**.
 
 | Package | Holds | Nature |
 |---|---|---|
-| `core.domain` | `Floor`, `ElevatorOrder`, `ElevatorState`, `Direction`, `Motion`, `Command` | immutable values, no side effects |
+| `core.domain` | `Floor`, `Call`, `Order`, `ElevatorState`, `Direction`, `Motion`, `Command` | immutable values, no side effects |
 | `core.engine` | `Engine` / `SlowEngine` / `FastEngine`, `Elevator` | the motor that moves a car |
 
 `engine` depends on `domain`; `domain` depends on nothing. Only the app layer (`Operator`,
@@ -25,7 +25,8 @@ separate, in `elevator-common-strategy` — see [scheduling.md](scheduling.md).
 | File | Contents |
 |---|---|
 | `core/domain/Floor.scala` | `Floor`, `FloorNum`, `HasFloorNum` |
-| `core/domain/ElevatorOrder.scala` | `ElevatorOrder`, `OrderTag`, `HasOrderTag` |
+| `core/domain/Call.scala` | `Call`, `CallId`, `HasCallId` (a user action) |
+| `core/domain/Order.scala` | `Order`, `OrderId`, `HasOrderId` (same-floor calls grouped into one stop) |
 | `core/domain/ElevatorState.scala` | `ElevatorState`, `ElevatorName`, `Direction`, `Motion`, `Command` |
 | `core/engine/Engine.scala` | `Engine`, `SlowEngine`, `FastEngine`, `Elevator` |
 

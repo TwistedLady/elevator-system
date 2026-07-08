@@ -171,7 +171,7 @@ impl LogSource {
 pub enum View {
     Chart,
     Trend,
-    Order,
+    Call,
     Sim,
     Health,
     Logs,
@@ -184,7 +184,7 @@ impl View {
     pub const ALL: [View; 9] = [
         View::Chart,
         View::Trend,
-        View::Order,
+        View::Call,
         View::Sim,
         View::Health,
         View::Logs,
@@ -197,7 +197,7 @@ impl View {
         match self {
             View::Chart => "① CHART",
             View::Trend => "② TREND",
-            View::Order => "③ ORDER",
+            View::Call => "③ CALL",
             View::Sim => "④ SIM",
             View::Health => "⑤ HEALTH",
             View::Logs => "⑥ LOGS",
@@ -232,7 +232,7 @@ pub struct App {
     pub elevator_re: Option<Regex>,
     pub elevator_re_err: bool,
     pub sim_input: String,
-    pub order_input: String,
+    pub call_input: String,
     pub sim: Option<SimRun>,
     pub stats: Vec<StatsRow>,
     pub message: String,
@@ -271,7 +271,7 @@ impl App {
             elevator_re: None,
             elevator_re_err: false,
             sim_input: String::new(),
-            order_input: String::new(),
+            call_input: String::new(),
             sim: None,
             stats: Vec::new(),
             message: String::new(),
@@ -418,7 +418,7 @@ impl App {
         }
         match self.view {
             View::Chart | View::Trend | View::Stats => self.on_key_elevator_filter(key),
-            View::Order => self.on_key_order(key),
+            View::Call => self.on_key_call(key),
             View::Sim => self.on_key_sim(key),
             View::Logs => self.on_key_logs(key),
             View::K8s => self.on_key_k8s(key),
@@ -479,16 +479,16 @@ impl App {
         });
     }
 
-    fn on_key_order(&mut self, key: KeyEvent) {
+    fn on_key_call(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
-                let line = std::mem::take(&mut self.order_input);
-                self.message = self.run_order(line.trim());
+                let line = std::mem::take(&mut self.call_input);
+                self.message = self.run_call(line.trim());
             }
             KeyCode::Backspace => {
-                self.order_input.pop();
+                self.call_input.pop();
             }
-            KeyCode::Char(c) => self.order_input.push(c),
+            KeyCode::Char(c) => self.call_input.push(c),
             _ => {}
         }
     }
@@ -528,7 +528,7 @@ impl App {
             done_t.store(true, Ordering::Relaxed);
         });
 
-        let tags = crate::sender::sim_tags(run_id, count, threads, count as usize);
+        let tags = crate::sender::call_ids(run_id, count, threads, count as usize);
         let checked = tags.len() as u64;
         let status_done = Arc::new(AtomicU64::new(0));
         let status_progress = Arc::new(AtomicU64::new(0));
@@ -647,24 +647,24 @@ impl App {
                     return "waiting for /api/config… (limits not loaded yet)".to_string();
                 }
                 self.start_sim(count);
-                format!("running {count} orders")
+                format!("running {count} calls")
             }
             Err(msg) => msg.to_string(),
         }
     }
 
-    fn run_order(&mut self, line: &str) -> String {
-        match parse_order(line) {
+    fn run_call(&mut self, line: &str) -> String {
+        match parse_call(line) {
             Ok(None) => String::new(),
             Ok(Some((elevator, floor))) => {
-                if let Err(msg) = self.config.validate_order(&elevator, floor) {
+                if let Err(msg) = self.config.validate_call(&elevator, floor) {
                     return msg;
                 }
                 let (api_base, name) = (self.api_base.clone(), elevator.clone());
                 std::thread::spawn(move || {
                     let _ = crate::sender::send_one(&api_base, &name, floor);
                 });
-                format!("ordered {elevator} → floor {floor}")
+                format!("called {elevator} → floor {floor}")
             }
             Err(msg) => msg.to_string(),
         }
@@ -686,12 +686,12 @@ fn parse_sim_count(line: &str) -> Result<Option<u64>, &'static str> {
     match rest.parse::<u64>() {
         Ok(count) if count > 0 => Ok(Some(count)),
         Ok(_) => Err("count must be greater than 0"),
-        Err(_) => Err("type a number of orders, e.g. 300"),
+        Err(_) => Err("type a number of calls, e.g. 300"),
     }
 }
 
-/// Parse the Order input line into `(elevator, floor)`. `Ok(None)` = blank; `Err(msg)` = a hint.
-fn parse_order(line: &str) -> Result<Option<(String, i32)>, &'static str> {
+/// Parse the Call input line into `(elevator, floor)`. `Ok(None)` = blank; `Err(msg)` = a hint.
+fn parse_call(line: &str) -> Result<Option<(String, i32)>, &'static str> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     match parts.as_slice() {
         [] => Ok(None),
@@ -723,8 +723,8 @@ fn poll_statuses(api_base: &str, tags: Vec<String>, done: &AtomicU64, in_progres
     let start = Instant::now();
     while !pending.is_empty() && start.elapsed() < Duration::from_secs(600) {
         let mut progress = 0u64;
-        pending.retain(|tag| {
-            let url = format!("{api_base}/api/order/{tag}");
+        pending.retain(|id| {
+            let url = format!("{api_base}/api/call/{id}");
             match agent.get(&url).call() {
                 Ok(resp) => {
                     let body = resp.into_string().unwrap_or_default();
@@ -753,17 +753,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_order_accepts_elevator_and_floor() {
-        assert_eq!(parse_order("e3 7"), Ok(Some(("e3".to_string(), 7))));
-        assert_eq!(parse_order("  e3   7 "), Ok(Some(("e3".to_string(), 7))));
-        assert_eq!(parse_order("e3 -1"), Ok(Some(("e3".to_string(), -1))));
+    fn parse_call_accepts_elevator_and_floor() {
+        assert_eq!(parse_call("e3 7"), Ok(Some(("e3".to_string(), 7))));
+        assert_eq!(parse_call("  e3   7 "), Ok(Some(("e3".to_string(), 7))));
+        assert_eq!(parse_call("e3 -1"), Ok(Some(("e3".to_string(), -1))));
     }
 
     #[test]
-    fn parse_order_rejects_bad_input() {
-        assert_eq!(parse_order(""), Ok(None));
-        assert!(parse_order("e3 up").is_err());
-        assert!(parse_order("e3 7 extra").is_err());
+    fn parse_call_rejects_bad_input() {
+        assert_eq!(parse_call(""), Ok(None));
+        assert!(parse_call("e3 up").is_err());
+        assert!(parse_call("e3 7 extra").is_err());
     }
 
     #[test]

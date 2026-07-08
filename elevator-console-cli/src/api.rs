@@ -1,5 +1,5 @@
 //! Thin blocking HTTP client for the elevator API. The console reaches the system ONLY through
-//! this API (never Kafka directly): orders are POSTed, state is polled/streamed, order status and
+//! this API (never Kafka directly): calls are POSTed, state is polled/streamed, call status and
 //! health are GETed. No TLS, no async — just `ureq`.
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,7 +42,7 @@ impl ElevatorConfig {
 
     /// Friendly client-side pre-check against the fetched limits. The API stays authoritative;
     /// when the config is unknown (API unreachable) this passes and lets the API decide.
-    pub fn validate_order(&self, elevator: &str, floor: i32) -> Result<(), String> {
+    pub fn validate_call(&self, elevator: &str, floor: i32) -> Result<(), String> {
         if !self.is_known() {
             return Ok(());
         }
@@ -89,8 +89,8 @@ pub fn tls_config() -> Arc<rustls::ClientConfig> {
 }
 
 #[derive(Serialize)]
-struct OrderPayload<'a> {
-    tag: &'a str,
+struct CallPayload<'a> {
+    id: &'a str,
     #[serde(rename = "elevatorName")]
     elevator_name: &'a str,
     floor: i32,
@@ -124,18 +124,18 @@ pub fn get_version(agent: &ureq::Agent, api_base: &str) -> Result<String, BoxErr
     Ok(resp.version)
 }
 
-/// POST an order. The API validates it and publishes it to the system; we don't wait for the car.
+/// POST a call. The API validates it and publishes it to the system; we don't wait for the car.
 /// Fire-and-forget from the caller's view (success = the API accepted it).
-pub fn post_order(
+pub fn post_call(
     agent: &ureq::Agent,
     api_base: &str,
     elevator: &str,
     floor: i32,
-    tag: &str,
+    id: &str,
 ) -> Result<(), BoxErr> {
-    let url = format!("{api_base}/api/order");
-    let body = serde_json::to_string(&OrderPayload {
-        tag,
+    let url = format!("{api_base}/api/call");
+    let body = serde_json::to_string(&CallPayload {
+        id,
         elevator_name: elevator,
         floor,
     })?;
@@ -145,22 +145,22 @@ pub fn post_order(
         .send_string(&body)
     {
         Ok(_) => Ok(()),
-        Err(ureq::Error::Status(code, _)) => Err(format!("POST /api/order → HTTP {code}").into()),
+        Err(ureq::Error::Status(code, _)) => Err(format!("POST /api/call → HTTP {code}").into()),
         Err(e) => Err(e.into()),
     }
 }
 
-/// POST with a few retries, for the bulk simulator where transient blips shouldn't drop an order.
-pub fn post_order_retry(
+/// POST with a few retries, for the bulk simulator where transient blips shouldn't drop a call.
+pub fn post_call_retry(
     agent: &ureq::Agent,
     api_base: &str,
     elevator: &str,
     floor: i32,
-    tag: &str,
+    id: &str,
 ) -> Result<(), BoxErr> {
     let mut last = None;
     for attempt in 0..3 {
-        match post_order(agent, api_base, elevator, floor, tag) {
+        match post_call(agent, api_base, elevator, floor, id) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last = Some(e);
@@ -168,5 +168,5 @@ pub fn post_order_retry(
             }
         }
     }
-    Err(last.unwrap_or_else(|| "post_order failed".into()))
+    Err(last.unwrap_or_else(|| "post_call failed".into()))
 }

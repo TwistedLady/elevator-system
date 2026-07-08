@@ -1,9 +1,10 @@
 package pl.feelcodes.elevator.common.protocol
 
-// Reviewed — data-only commands for the Coordinator: AddOriginalStream (original Kafka orders), MarkOrderDone.
-import pl.feelcodes.elevator.common.dto.ElevatorOrderDto
+import pl.feelcodes.elevator.common.dto.CallDto
 
+/** Data-only commands for the Coordinator: add calls, assign a call to an order, mark a call done. */
 object CoordinatorProtocol:
   sealed trait Command
-  final case class AddOriginalStream(orders: List[ElevatorOrderDto]) extends Command
-  final case class MarkOrderDone(tag: String) extends Command
+  final case class AddCalls(calls: List[CallDto]) extends Command
+  final case class AssignOrder(callId: String, orderId: String) extends Command
+  final case class MarkCallDone(callId: String) extends Command

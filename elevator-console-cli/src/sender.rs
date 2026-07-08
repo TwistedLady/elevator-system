@@ -1,5 +1,5 @@
-//! Order submission via the HTTP API (previously a Kafka producer). Single orders and the bulk
-//! simulator both POST to `/api/order`; the API publishes them to the system.
+//! Call submission via the HTTP API (previously a Kafka producer). Single calls and the bulk
+//! simulator both POST to `/api/call`; the API publishes them to the system.
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -9,29 +9,29 @@ use crate::BoxErr;
 
 pub fn send_one(api_base: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     let agent = api::agent();
-    let tag = format!("cli-{}", std::process::id());
-    api::post_order(&agent, api_base, elevator, floor, &tag)
+    let id = format!("cli-{}", std::process::id());
+    api::post_call(&agent, api_base, elevator, floor, &id)
 }
 
-pub fn sim_tag(run_id: u64, tid: u64, i: u64) -> String {
+pub fn call_id(run_id: u64, tid: u64, i: u64) -> String {
     format!("sim-{run_id}-{tid}-{i}")
 }
 
-pub fn sim_tags(run_id: u64, count: u64, threads: u64, limit: usize) -> Vec<String> {
+pub fn call_ids(run_id: u64, count: u64, threads: u64, limit: usize) -> Vec<String> {
     let threads = threads.max(1);
     let per = count / threads;
     let rem = count % threads;
-    let mut tags = Vec::new();
+    let mut ids = Vec::new();
     for tid in 0..threads {
         let n = per + if tid < rem { 1 } else { 0 };
         for i in 0..n {
-            if tags.len() >= limit {
-                return tags;
+            if ids.len() >= limit {
+                return ids;
             }
-            tags.push(sim_tag(run_id, tid, i));
+            ids.push(call_id(run_id, tid, i));
         }
     }
-    tags
+    ids
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -76,7 +76,7 @@ pub fn simulate(
 ) -> Result<(), BoxErr> {
     let sent = AtomicU64::new(0);
     println!(
-        "simulating {count} orders across {} elevator(s) on {} thread(s) → {api_base}…",
+        "simulating {count} calls across {} elevator(s) on {} thread(s) → {api_base}…",
         elevators.len(),
         threads.max(1)
     );
@@ -89,7 +89,7 @@ pub fn simulate(
     let secs = start.elapsed().as_secs_f64();
     let total = sent.load(Ordering::Relaxed);
     let rate = if secs > 0.0 { total as f64 / secs } else { 0.0 };
-    println!("done: {total} orders in {secs:.2}s ({rate:.0} order/s)");
+    println!("done: {total} calls in {secs:.2}s ({rate:.0} call/s)");
     Ok(())
 }
 
@@ -113,8 +113,8 @@ fn worker(
     for i in 0..n {
         let elevator = &elevators[rng.below(elevators.len())];
         let floor = rng.floor(max_floor);
-        let tag = sim_tag(run_id, tid, i);
-        if api::post_order_retry(&agent, api_base, elevator, floor, &tag).is_ok() {
+        let id = call_id(run_id, tid, i);
+        if api::post_call_retry(&agent, api_base, elevator, floor, &id).is_ok() {
             sent.fetch_add(1, Ordering::Relaxed);
         }
         if let Some(d) = delay {
@@ -130,25 +130,25 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn tag_format_is_stable() {
-        assert_eq!(sim_tag(7, 2, 5), "sim-7-2-5");
+    fn id_format_is_stable() {
+        assert_eq!(call_id(7, 2, 5), "sim-7-2-5");
     }
 
     #[test]
-    fn tags_cover_the_full_count_and_are_unique() {
-        let tags = sim_tags(1, 100, 4, usize::MAX);
-        assert_eq!(tags.len(), 100);
+    fn ids_cover_the_full_count_and_are_unique() {
+        let ids = call_ids(1, 100, 4, usize::MAX);
+        assert_eq!(ids.len(), 100);
         assert_eq!(
-            tags.iter().collect::<HashSet<_>>().len(),
+            ids.iter().collect::<HashSet<_>>().len(),
             100,
             "no duplicates"
         );
     }
 
     #[test]
-    fn tags_split_evenly_with_remainder_on_low_threads() {
-        // 10 orders over 3 threads → 4,3,3. Thread 0 carries the remainder.
-        let t0 = sim_tags(1, 10, 3, usize::MAX)
+    fn ids_split_evenly_with_remainder_on_low_threads() {
+        // 10 calls over 3 threads → 4,3,3. Thread 0 carries the remainder.
+        let t0 = call_ids(1, 10, 3, usize::MAX)
             .into_iter()
             .filter(|t| t.starts_with("sim-1-0-"))
             .count();
@@ -156,12 +156,12 @@ mod tests {
     }
 
     #[test]
-    fn limit_caps_the_number_of_tags() {
-        assert_eq!(sim_tags(1, 100, 4, 12).len(), 12);
+    fn limit_caps_the_number_of_ids() {
+        assert_eq!(call_ids(1, 100, 4, 12).len(), 12);
     }
 
     #[test]
     fn zero_threads_is_treated_as_one() {
-        assert_eq!(sim_tags(1, 5, 0, usize::MAX).len(), 5);
+        assert_eq!(call_ids(1, 5, 0, usize::MAX).len(), 5);
     }
 }

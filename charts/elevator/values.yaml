@@ -19,8 +19,10 @@ global:
   nodeCidr: "172.20.0.0/16"
   kafka:
     bootstrap: "kafka:9092"
-    commandTopic: "elevator-commands"
+    callTopic: "elevator-calls"
     stateTopic: "elevator-state"
+    orderStateTopic: "elevator-order-state"
+    callStateTopic: "elevator-call-state"
     groupId: "elevator-app"
   postgres:
     host: "postgres"

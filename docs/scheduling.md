@@ -23,4 +23,6 @@ stateDiagram-v2
     Stopping --> Moving: orders remain
 ```
 
-Source: `elevator-common-strategy/.../NextFloorStrategy.scala`.
+Source: `elevator-common-strategy/.../NextFloorStrategy.scala`. Its sibling
+`GroupCallsStrategy` groups same-floor calls into orders (`order id = hash(sorted call ids)`)
+— see [protocol.md](protocol.md).

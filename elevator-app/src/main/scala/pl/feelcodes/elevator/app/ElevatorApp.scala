@@ -8,9 +8,9 @@ import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import pl.feelcodes.elevator.app.actors.*
 import pl.feelcodes.elevator.common.core.engine.Elevator
-import pl.feelcodes.elevator.app.inbound.{OrderConsumer, OrderDedup}
-import pl.feelcodes.elevator.app.outbound.StatePublisher
-import pl.feelcodes.elevator.app.readside.{ElevatorStateProjection, OrderStatusProjection}
+import pl.feelcodes.elevator.app.inbound.{CallConsumer, CallDedup}
+import pl.feelcodes.elevator.app.outbound.Publishers
+import pl.feelcodes.elevator.app.readside.{CallStatusProjection, ElevatorStateProjection, OrderStatusProjection}
 
 import java.nio.file.Path
 import scala.concurrent.duration.*
@@ -34,11 +34,12 @@ object ElevatorApp extends App {
           PekkoManagement(ctx.system).start()
           ClusterBootstrap(ctx.system).start()
 
-        val statePublisher = StatePublisher(ctx.system)
+        val publishers = Publishers(ctx.system)
 
         val sharding = ClusterSharding(ctx.system)
         val operatorProvider = sharding.entityRefFor(Operator.TypeKey, _)
         val controllerProvider = sharding.entityRefFor(Controller.TypeKey, _)
+        val managerProvider = sharding.entityRefFor(Manager.TypeKey, _)
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
 
         val engineMode = new EngineMode(ctx.system.settings.config.getString("elevator.engine"))
@@ -59,17 +60,21 @@ object ElevatorApp extends App {
           Operator(publishMove, buildElevator)
         }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider, coordinatorProvider, statePublisher.publish)
+          Controller(e.entityId, operatorProvider, managerProvider, publishers.elevator.publish)
+        })
+        sharding.init(Entity(Manager.TypeKey) { e =>
+          Manager(e.entityId, coordinatorProvider, controllerProvider, publishers.order.publish)
         })
         sharding.init(Entity(Coordinator.TypeKey) { e =>
-          Coordinator(e.entityId, controllerProvider)
+          Coordinator(e.entityId, managerProvider, publishers.call.publish)
         })
 
-        val dedup = OrderDedup(ctx.system.settings.config)
-        OrderConsumer.run(ctx.system, coordinatorProvider, dedup)
+        val dedup = CallDedup(ctx.system.settings.config)
+        CallConsumer.run(ctx.system, coordinatorProvider, dedup)
 
         ElevatorStateProjection.init(ctx.system)
         OrderStatusProjection.init(ctx.system)
+        CallStatusProjection.init(ctx.system)
 
         Behaviors.empty
       },
