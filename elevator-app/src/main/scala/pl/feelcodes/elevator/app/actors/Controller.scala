@@ -36,7 +36,7 @@ object Controller:
       def requestMove(s: State): Unit =
         context.ask(suspendManager, SuspendManager.MayMove(s.elevatorState, _)) {
           case Success(SuspendManager.Decision(allowed)) => MoveDecision(allowed)
-          case Failure(_)                                => MoveDecision(false)
+          case Failure(_)                                => MoveRetry
         }
 
       def issueMove(s: State): Unit =
@@ -70,6 +70,9 @@ object Controller:
             case MoveDecision(allowed) =>
               if allowed then Effect.none.thenRun(s => issueMove(s))
               else Effect.persist(WaitingSet(false))
+
+            case MoveRetry =>
+              Effect.persist(WaitingSet(false)).thenRun(s => context.self ! ChooseNext(s.orders))
         ,
         eventHandler = ControllerLogic.evolve
       ).receiveSignal {

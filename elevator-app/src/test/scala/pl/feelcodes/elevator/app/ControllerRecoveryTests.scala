@@ -108,5 +108,16 @@ final class ControllerRecoveryTests
       val redelivered = operatorProbe.expectMessageType[Operator.Move]
       redelivered.command shouldBe Command.Go(Direction.Up)
     }
+
+    "release the waiting flag on MoveRetry so a failed ask does not strand the car" in {
+      val (esTestKit, _, _) = newTestKit()
+      val order = orderAt("o-4", 6)
+
+      esTestKit.runCommand(Controller.Process(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNext(Set(order)))
+      esTestKit.getState().waiting shouldBe true
+
+      esTestKit.runCommand(Controller.MoveRetry).events should contain(Controller.WaitingSet(false))
+    }
   }
 }
