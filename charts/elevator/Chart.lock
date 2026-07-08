@@ -1,0 +1,12 @@
+dependencies:
+- name: console-web
+  repository: ""
+  version: 0.1.0
+- name: bi
+  repository: ""
+  version: 0.1.0
+- name: seed
+  repository: ""
+  version: 0.1.0
+digest: sha256:fc4c74037ab3d46a0e9a3dfddff3f2c6f9c99a017a0de8d313782925bb81fae3
+generated: "2026-07-07T21:10:40.459590748+02:00"
