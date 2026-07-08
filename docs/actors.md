@@ -12,6 +12,23 @@ event-sourced, the **Operator** is a stateless worker.
 | **Controller** | movement | Pick the next stop (`NextFloorStrategy`), tell the Operator to `Move`, publish state, mark reached orders done via the Manager. | yes |
 | **Operator** | nothing | Run one move on the car, report the new state. Decides nothing. | no |
 
+## Contract — state, commands, events
+
+Each actor is the simplest thing that does its job: the first three are **event-sourced** (state is
+rebuilt from a persisted event log), the Operator is **stateless** (remembers nothing).
+
+| Actor | State (in memory) | Commands (in) | Events (stored) | Publishes |
+|---|---|---|---|---|
+| **Coordinator** | `Map[callId → floor]` | `AddCalls` · `AssignOrder` · `MarkCallDone` | `CallReceived` · `CallAssigned` · `CallDone` | `call-state` |
+| **Manager** | `Map[orderId → Order]` | `Combine` · `MarkOrderDone` | `OrderCreated` · `OrderExtended` · `OrderDone` | `order-state` |
+| **Controller** | `orders · position · waiting` | `Process` · `ChooseNext` · `PublishState` | `OrderAdded` · `WaitingSet` · `ElevatorStateUpdated` | `elevator-state` |
+| **Operator** | — (stateless) | `Move` | — | — |
+
+**Command** = a message you send an actor (may be rejected). **Event** = a fact it persisted (replayed
+on restart to rebuild state). **Publish** = sent to Kafka for read tables / console / BI, not stored.
+`ChooseNext` and `WaitingSet` exist only to express the move loop as messages — so a crash mid-move
+re-issues the move on recovery.
+
 ## Flow
 
 ```mermaid
