@@ -8,3 +8,6 @@ object ControllerEvents:
   final case class OrderAccepted(order: Order) extends Event
   final case class WaitingSet(waiting: Boolean) extends Event
   final case class ElevatorStateUpdated(state: ElevatorState) extends Event
+
+  /** Legacy name of OrderAccepted, kept so pre-rename journal events still recover. */
+  final case class OrderAdded(order: Order) extends Event

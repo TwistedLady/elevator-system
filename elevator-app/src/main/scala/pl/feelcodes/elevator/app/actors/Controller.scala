@@ -1,15 +1,19 @@
 package pl.feelcodes.elevator.app.actors
 
-import org.apache.pekko.actor.typed.Behavior
+import org.apache.pekko.actor.typed.{ActorRef, Behavior}
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{EntityRef, EntityTypeKey}
 import org.apache.pekko.persistence.typed.{PersistenceId, RecoveryCompleted}
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
+import org.apache.pekko.util.Timeout
 import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.dto.ElevatorStateDto
 import pl.feelcodes.elevator.common.protocol.ControllerProtocol
 import pl.feelcodes.elevator.common.events.ControllerEvents
 import pl.feelcodes.elevator.common.logic.ControllerLogic
+
+import scala.concurrent.duration.*
+import scala.util.{Failure, Success}
 
 /** Owns movement: turns orders into moves via NextFloorStrategy and marks reached orders done. */
 object Controller:
@@ -23,8 +27,17 @@ object Controller:
   def apply(elevatorName: String,
             operatorProvider: String => EntityRef[Operator.Command],
             managerProvider: String => EntityRef[Manager.Command],
+            suspendManager: ActorRef[SuspendManager.Command],
             publish: ElevatorStateDto => Unit): Behavior[Command] =
     Behaviors.setup { context =>
+
+      given Timeout = 3.seconds
+
+      def requestMove(s: State): Unit =
+        context.ask(suspendManager, SuspendManager.MayMove(s.elevatorState, _)) {
+          case Success(SuspendManager.Decision(allowed)) => MoveDecision(allowed)
+          case Failure(_)                                => MoveRetry
+        }
 
       def issueMove(s: State): Unit =
         ControllerLogic.nextCommand(s, s.orders).foreach { command =>
@@ -51,13 +64,20 @@ object Controller:
 
             case ChooseNext(orders) =>
               if ControllerLogic.shouldAct(state, orders) then
-                Effect.persist(WaitingSet(true)).thenRun(s => issueMove(s))
+                Effect.persist(WaitingSet(true)).thenRun(s => requestMove(s))
               else Effect.none
+
+            case MoveDecision(allowed) =>
+              if allowed then Effect.none.thenRun(s => issueMove(s))
+              else Effect.persist(WaitingSet(false))
+
+            case MoveRetry =>
+              Effect.persist(WaitingSet(false)).thenRun(s => context.self ! ChooseNext(s.orders))
         ,
         eventHandler = ControllerLogic.evolve
       ).receiveSignal {
         case (state, RecoveryCompleted) if state.waiting =>
-          issueMove(state)
+          requestMove(state)
         case (state, RecoveryCompleted) if state.orders.nonEmpty || state.elevatorState.motion == Motion.Moving =>
           context.self ! ChooseNext(state.orders)
       }.withTagger {

@@ -2,6 +2,10 @@
 # once, so trim to api:1 and BI off. Turn BI on with `skaffold run -p bi`.
 api:
   replicas: 1
+  # Expose the api on the node so the host console/curl reach it at localhost:8080
+  # (kind maps hostPort 8080 -> nodePort 30080). `skaffold run` doesn't port-forward.
+  serviceType: NodePort
+  nodePort: 30080
 
 app:
   replicas: 2   # keep 2 so the Pekko cluster still forms (min-members = 2)

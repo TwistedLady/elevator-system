@@ -82,8 +82,12 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: elevator
 spec:
+  type: {{ .Values.api.serviceType | default "ClusterIP" }}
   selector:
     app: elevator-api
   ports:
     - port: 8080
       targetPort: 8080
+      {{- if and (eq (.Values.api.serviceType | default "ClusterIP") "NodePort") .Values.api.nodePort }}
+      nodePort: {{ .Values.api.nodePort }}
+      {{- end }}

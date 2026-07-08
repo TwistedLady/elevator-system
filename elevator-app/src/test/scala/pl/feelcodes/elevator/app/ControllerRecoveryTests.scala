@@ -6,7 +6,7 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Manager, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Manager, Operator, SuspendManager}
 import pl.feelcodes.elevator.common.core.domain.*
 
 object ControllerRecoveryTests {
@@ -43,9 +43,10 @@ final class ControllerRecoveryTests
       (name: String) => TestEntityRef(Operator.TypeKey, name, operatorProbe.ref)
     val managerProvider =
       (name: String) => TestEntityRef(Manager.TypeKey, name, managerProbe.ref)
+    val suspendManager = spawn(SuspendManager())
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, managerProvider, _ => ())
+      Controller("lift-a", operatorProvider, managerProvider, suspendManager, _ => ())
     )
     (kit, operatorProbe, managerProbe)
 
@@ -96,13 +97,27 @@ final class ControllerRecoveryTests
 
       esTestKit.runCommand(Controller.Process(Set(order)))
       esTestKit.runCommand(Controller.ChooseNext(Set(order)))
-      operatorProbe.expectMessageType[Operator.Move]
       esTestKit.getState().waiting shouldBe true
+
+      esTestKit.runCommand(Controller.MoveDecision(true))
+      operatorProbe.expectMessageType[Operator.Move]
 
       esTestKit.restart()
 
+      esTestKit.runCommand(Controller.MoveDecision(true))
       val redelivered = operatorProbe.expectMessageType[Operator.Move]
       redelivered.command shouldBe Command.Go(Direction.Up)
+    }
+
+    "release the waiting flag on MoveRetry so a failed ask does not strand the car" in {
+      val (esTestKit, _, _) = newTestKit()
+      val order = orderAt("o-4", 6)
+
+      esTestKit.runCommand(Controller.Process(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNext(Set(order)))
+      esTestKit.getState().waiting shouldBe true
+
+      esTestKit.runCommand(Controller.MoveRetry).events should contain(Controller.WaitingSet(false))
     }
   }
 }
