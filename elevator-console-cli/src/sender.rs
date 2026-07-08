@@ -10,7 +10,22 @@ use crate::BoxErr;
 pub fn send_one(api_base: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     let agent = api::agent();
     let id = format!("cli-{}", std::process::id());
-    api::post_call(&agent, api_base, elevator, floor, &id)
+    api::post_call(&agent, api_base, elevator, floor, &id, None)
+}
+
+/// How many recurring riders the simulator draws from. A small pool means the same rider presses
+/// many times, so the Manager's distinct-passenger count stays below the raw call count.
+pub const PASSENGER_POOL: usize = 8;
+
+/// Decide the passenger for a simulated call from a raw draw in `0..2 * PASSENGER_POOL`. The low
+/// half is anonymous (`None`); the high half maps to one of `PASSENGER_POOL` recurring riders, so
+/// roughly half the calls carry a passenger id and identified riders repeat.
+pub fn passenger_for(draw: usize) -> Option<String> {
+    if draw < PASSENGER_POOL {
+        None
+    } else {
+        Some(format!("rider-{}", draw - PASSENGER_POOL))
+    }
 }
 
 pub fn call_id(run_id: u64, tid: u64, i: u64) -> String {
@@ -114,7 +129,10 @@ fn worker(
         let elevator = &elevators[rng.below(elevators.len())];
         let floor = rng.floor(max_floor);
         let id = call_id(run_id, tid, i);
-        if api::post_call_retry(&agent, api_base, elevator, floor, &id).is_ok() {
+        let passenger = passenger_for(rng.below(PASSENGER_POOL * 2));
+        if api::post_call_retry(&agent, api_base, elevator, floor, &id, passenger.as_deref())
+            .is_ok()
+        {
             sent.fetch_add(1, Ordering::Relaxed);
         }
         if let Some(d) = delay {
@@ -163,5 +181,24 @@ mod tests {
     #[test]
     fn zero_threads_is_treated_as_one() {
         assert_eq!(call_ids(1, 5, 0, usize::MAX).len(), 5);
+    }
+
+    #[test]
+    fn passenger_low_half_is_anonymous_high_half_is_a_rider() {
+        assert_eq!(passenger_for(0), None);
+        assert_eq!(passenger_for(PASSENGER_POOL - 1), None);
+        assert_eq!(passenger_for(PASSENGER_POOL), Some("rider-0".to_string()));
+        assert_eq!(
+            passenger_for(2 * PASSENGER_POOL - 1),
+            Some(format!("rider-{}", PASSENGER_POOL - 1))
+        );
+    }
+
+    #[test]
+    fn passenger_pool_size_bounds_distinct_riders() {
+        let riders: HashSet<String> = (PASSENGER_POOL..2 * PASSENGER_POOL)
+            .filter_map(passenger_for)
+            .collect();
+        assert_eq!(riders.len(), PASSENGER_POOL);
     }
 }

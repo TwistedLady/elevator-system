@@ -11,7 +11,13 @@ trait GroupCallsStrategy:
 object GroupCallsStrategy:
   val default: GroupCallsStrategy = (elevatorName, calls) =>
     calls.groupBy(_.floor).map { (floor, sameFloor) =>
-      Order(orderId(elevatorName, floor), floor, sameFloor.map(_.id).toSet)
+      Order(
+        orderId(elevatorName, floor),
+        floor,
+        sameFloor.map(_.id).toSet,
+        sameFloor.flatMap(_.passengerId).toSet,
+        sameFloor.filter(_.passengerId.isEmpty).map(_.id).toSet
+      )
     }.toSet
 
   private def orderId(elevatorName: ElevatorName, floor: Floor): OrderId =

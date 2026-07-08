@@ -25,14 +25,14 @@ Move(elevatorName, state: ElevatorState, command: Command)
 // CoordinatorEvents
 CallReceived(callId, floor);  CallAssigned(callId, orderId);  CallDone(callId)
 // ManagerEvents
-OrderCreated(orderId, floor, callIds: Set[String]);  OrderExtended(orderId, callIds: Set[String]);  OrderDone(orderId)
+OrderCreated(orderId, floor, callIds, passengers, anonymousCallIds: Set[String]);  OrderExtended(orderId, callIds, passengers, anonymousCallIds: Set[String]);  OrderDone(orderId)
 // ControllerEvents
 OrderAccepted(order);  WaitingSet(waiting: Boolean);  ElevatorStateUpdated(state)
 
 // Wire DTOs — JSON over Kafka
-CallDto(id, elevatorName, floor)                              // topic: elevator-calls
+CallDto(id, elevatorName, floor, passengerId?)                // topic: elevator-calls
 ElevatorStateDto(elevatorName, direction, motion, floor)      // topic: elevator-state
-OrderStateDto(orderId, elevatorName, floor, status, callIds)  // topic: elevator-order-state
+OrderStateDto(orderId, elevatorName, floor, status, callIds, passengers, anonymous)  // topic: elevator-order-state
 CallStateDto(id, elevatorName, floor, status)                // topic: elevator-call-state
 ```
 
@@ -98,6 +98,15 @@ there at once. Why claim-after-forward: [crash-recovery.md](crash-recovery.md).
 
 > A call at a floor with a live order **attaches** to it (`OrderExtended`); a call at an
 > already-served floor re-creates the order under the same id (`f(elevator, floor)`).
+
+## Passenger identification
+
+A `Call` may carry an optional `passengerId` (the API caller supplies it; a plain press stays
+anonymous). The `Manager` keeps two per-order tallies, both as sets so they dedup as the order
+grows: `passengers` (distinct identified riders) and `anonymousCallIds` (presses with no id).
+The same rider pressing twice counts **once**; the counts (`passengers`, `anonymous`) ride on
+`OrderStateDto`. This is a *third* grouping, distinct from the two dedups above — grouping by
+**person**, not by id or floor.
 
 ## Source map
 

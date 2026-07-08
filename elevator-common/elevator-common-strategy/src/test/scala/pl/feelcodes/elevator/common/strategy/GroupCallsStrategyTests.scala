@@ -25,5 +25,18 @@ final class GroupCallsStrategyTests extends AnyFunSuite:
     val b = GroupCallsStrategy.default.group("lift-b", List(Call("c1", Floor(3))))
     assert(a.head.id != b.head.id)
 
+  test("group | splits identified passengers from anonymous calls, deduping people"):
+    val order = GroupCallsStrategy.default.group("lift-a", List(
+      Call("c1", Floor(3), Some("alice")),
+      Call("c2", Floor(3), Some("alice")),
+      Call("c3", Floor(3), Some("bob")),
+      Call("c4", Floor(3))
+    )).head
+    assert(order.callIds == Set("c1", "c2", "c3", "c4"))
+    assert(order.passengers == Set("alice", "bob"))
+    assert(order.passengerCount == 2)
+    assert(order.anonymousCallIds == Set("c4"))
+    assert(order.anonymousCount == 1)
+
   test("group | empty -> empty"):
     assert(GroupCallsStrategy.default.group("lift-a", Nil) == Set.empty)
