@@ -4,18 +4,16 @@ import pl.feelcodes.elevator.common.core.domain.*
 
 import java.security.MessageDigest
 
-/** Groups calls that share a floor into one order; the order id is the hash of its sorted call ids. */
+/** Groups calls that share a floor into one order; the order id is per (elevator, floor). */
 trait GroupCallsStrategy:
-  def group(calls: List[Call]): Set[Order]
+  def group(elevatorName: ElevatorName, calls: List[Call]): Set[Order]
 
 object GroupCallsStrategy:
-  val default: GroupCallsStrategy = calls =>
+  val default: GroupCallsStrategy = (elevatorName, calls) =>
     calls.groupBy(_.floor).map { (floor, sameFloor) =>
-      val ids = sameFloor.map(_.id).toSet
-      Order(orderId(ids), floor, ids)
+      Order(orderId(elevatorName, floor), floor, sameFloor.map(_.id).toSet)
     }.toSet
 
-  private def orderId(callIds: Set[CallId]): OrderId =
-    val joined = callIds.toList.sorted.mkString("|")
-    val bytes = MessageDigest.getInstance("SHA-1").digest(joined.getBytes("UTF-8"))
+  private def orderId(elevatorName: ElevatorName, floor: Floor): OrderId =
+    val bytes = MessageDigest.getInstance("SHA-1").digest(s"$elevatorName|${floor.num}".getBytes("UTF-8"))
     bytes.take(8).map("%02x".format(_)).mkString
