@@ -57,6 +57,8 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("ManagerEvents (order lifecycle) round-trip"):
     val created = ManagerEvents.OrderCreated("o-1", 3, Set("c1", "c2"))
+    val extended = ManagerEvents.OrderExtended("o-1", Set("c3"))
     val done = ManagerEvents.OrderDone("o-1")
     assert(roundTrip[ManagerEvents.Event](created) == created)
+    assert(roundTrip[ManagerEvents.Event](extended) == extended)
     assert(roundTrip[ManagerEvents.Event](done) == done)
