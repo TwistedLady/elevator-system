@@ -2,4 +2,4 @@ apiVersion: v2
 name: bi
 description: The Spark BI layer (stats DB + mileage/orders-served drivers). Optional — toggled by bi.enabled in the parent.
 type: application
-version: 0.1.0
+version: 0.0.1

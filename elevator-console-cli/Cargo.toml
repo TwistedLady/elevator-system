@@ -1,6 +1,6 @@
 [package]
 name = "elevator-console-cli"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 rust-version = "1.74"
 description = "Terminal dashboard and order sender for the elevator system, talking only to the elevator-api HTTP edge"
