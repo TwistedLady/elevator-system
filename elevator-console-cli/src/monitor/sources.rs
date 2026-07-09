@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::app::{
-    merge_stats, ElevatorState, HealthComp, HealthSnapshot, LogSource, MileageRow, ServedRow,
-    StatsRow, MAX_LOG_LINES,
+    merge_stats, DoorState, ElevatorState, HealthComp, HealthSnapshot, LogSource, MileageRow,
+    ServedRow, StatsRow, MAX_LOG_LINES,
 };
 
 #[derive(PartialEq)]
@@ -76,6 +76,71 @@ fn stream_states(api_base: &str, tx: &Sender<ElevatorState>) -> Loop {
                 continue;
             }
             if let Ok(state) = serde_json::from_str::<ElevatorState>(data) {
+                if tx.send(state).is_err() {
+                    return Loop::Stop;
+                }
+            }
+        }
+    }
+    Loop::Continue
+}
+
+/// Live door state over HTTP, mirroring `spawn_state_source`: prefers the SSE stream
+/// (`GET /api/door/stream`) and falls back to polling `GET /api/door`. Feeds `DoorState`s into `tx`.
+pub fn spawn_door_source(api_base: String, tx: Sender<DoorState>) {
+    std::thread::spawn(move || loop {
+        if stream_doors(&api_base, &tx) == Loop::Stop {
+            return;
+        }
+        if poll_doors(&api_base, &tx, Duration::from_secs(10)) == Loop::Stop {
+            return;
+        }
+    });
+}
+
+fn poll_doors(api_base: &str, tx: &Sender<DoorState>, window: Duration) -> Loop {
+    let agent = crate::api::agent();
+    let url = format!("{api_base}/api/door");
+    let deadline = Instant::now() + window;
+    while Instant::now() < deadline {
+        if let Ok(resp) = agent.get(&url).call() {
+            if let Ok(body) = resp.into_string() {
+                if let Ok(states) = serde_json::from_str::<Vec<DoorState>>(&body) {
+                    for s in states {
+                        if tx.send(s).is_err() {
+                            return Loop::Stop;
+                        }
+                    }
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Loop::Continue
+}
+
+fn stream_doors(api_base: &str, tx: &Sender<DoorState>) -> Loop {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(2))
+        .timeout_read(Duration::from_secs(30))
+        .tls_config(crate::api::tls_config())
+        .build();
+    let url = format!("{api_base}/api/door/stream");
+    let resp = match agent.get(&url).set("Accept", "text/event-stream").call() {
+        Ok(r) => r,
+        Err(_) => return Loop::Continue,
+    };
+    let reader = BufReader::new(resp.into_reader());
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            return Loop::Continue;
+        };
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim();
+            if data.is_empty() {
+                continue;
+            }
+            if let Ok(state) = serde_json::from_str::<DoorState>(data) {
                 if tx.send(state).is_err() {
                     return Loop::Stop;
                 }

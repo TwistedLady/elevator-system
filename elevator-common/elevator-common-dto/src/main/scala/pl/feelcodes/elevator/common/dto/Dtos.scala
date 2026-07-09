@@ -15,6 +15,10 @@ final case class ElevatorStateDto(@JsonProperty("elevatorName") elevatorName: St
                                   @JsonProperty("motion") motion: String,
                                   @JsonProperty("floor") floor: Int) extends KeyedDto
 
+final case class DoorStateDto(@JsonProperty("elevatorName") elevatorName: String,
+                              @JsonProperty("floor") floor: Int,
+                              @JsonProperty("doorState") doorState: String) extends KeyedDto
+
 final case class OrderStateDto(@JsonProperty("orderId") orderId: String,
                                @JsonProperty("elevatorName") elevatorName: String,
                                @JsonProperty("floor") floor: Int,

@@ -17,6 +17,7 @@ One topic per file. New here? Read [architecture](architecture.md) first.
 - [protocol.md](protocol.md) — exact messages, events, topics, end-to-end sequence.
 - [auth.md](auth.md) — optional HTTP Basic on `POST /api/call`; the username is the passenger.
 - [scheduling.md](scheduling.md) — the SCAN next-move policy.
+- [suspender.md](suspender.md) — the move gate: the Controller asks the SuspendManager first.
 - [core.md](core.md) — `elevator-common-core`: domain + engine.
 - [cicd.md](cicd.md) — CI build/test gate and CD deploy.
 - [versioning.md](versioning.md) — one `VERSION` file; how the API and both consoles check it.

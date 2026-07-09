@@ -17,9 +17,10 @@ flowchart TD
 ## Controller — re-dispatch the in-flight move
 `WaitingSet(true)` is durable, but the `Move` it waits on went to the stateless Operator.
 A crash before the Operator reports back would replay `waiting=true` with the command gone —
-a frozen car. On `RecoveryCompleted` the Controller re-sends the command; the latch is still
-set, so no duplicate, and the Operator's report clears it. **This is the only move
-redelivery — there is no wall-clock watchdog.**
+a frozen car. On `RecoveryCompleted` the Controller re-asks the [suspender](suspender.md) and
+re-issues the command; the latch is still set, so no duplicate, and the Operator's report clears
+it. If that ask fails, `MoveRetry` releases the latch and retries rather than stranding the car.
+**This is the only move redelivery — there is no wall-clock watchdog.**
 
 ## Ingress — claim *after* forwarding, never before
 `CallConsumer` **checks** `processed_calls` up front to drop re-sent call ids, forwards the
