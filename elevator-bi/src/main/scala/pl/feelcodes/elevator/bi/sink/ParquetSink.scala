@@ -12,10 +12,12 @@ import scala.reflect.io.Directory
 /** Writes the whole per-elevator model to a single Parquet directory, replacing it each cycle.
   *
   * Parquet files are immutable — there is no row-level upsert — so every refresh rewrites the full
-  * snapshot (the fleet is tiny). To keep readers (the api's DuckDB) from ever seeing a half-written
-  * file, we write to a staging dir first, then swap it onto the target with a single move. We
-  * `coalesce(1)` so the output is one part file, cheap to scan. The target is always a local mount
-  * (the shared hostPath volume), so the swap is a plain filesystem move.
+  * snapshot (the fleet is tiny). We write to a staging dir first so readers (the api's DuckDB) never
+  * see a partially written part file: staging is invisible under the target path until it is moved
+  * in. Publishing is delete-then-move, not one atomic swap, so there is a brief window where the
+  * target is absent — the reader tolerates that as an empty result. We `coalesce(1)` so the output
+  * is one part file, cheap to scan. Staging and target share the hostPath filesystem, so the move is
+  * a plain rename, not a copy.
   */
 object ParquetSink {
 
