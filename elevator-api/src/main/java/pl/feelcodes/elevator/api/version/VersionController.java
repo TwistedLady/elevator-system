@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 /**
- * Exposes the single build version so clients (Rust CLI + Angular web console) can check they are
+ * Exposes the single build version so clients (Rust CLI + Elm web console) can check they are
  * running against a matching backend. The value is the repo-root VERSION file, copied onto the
  * classpath at build time (see the copy-resources execution in this module's pom.xml).
  */

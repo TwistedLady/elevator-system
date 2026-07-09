@@ -32,7 +32,7 @@ version, then compares.
 ## Releasing a new version
 
 1. Edit `VERSION` (one line, e.g. `1.1.0`).
-2. Rebuild — `./mvnw -Pconsole install` picks it up everywhere (the Rust `build.rs` and the Angular
+2. Rebuild — `./mvnw -Pconsole install` picks it up everywhere (the Rust `build.rs` and the Elm
    pre-build hook both `rerun`/regenerate on the new value).
 
 `VERSION` is the only place to change. Maven `<version>` in the poms stays independent and is **not**

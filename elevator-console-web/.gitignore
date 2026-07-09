@@ -3,11 +3,12 @@
 # Compiled output
 /dist
 /tmp
-/out-tsc
-/bazel-out
 
 # Generated from the repo-root VERSION file at build time (scripts/gen-version.mjs)
-/src/app/version.ts
+/src/generated/
+
+# Elm
+/elm-stuff/
 
 # Node
 /node_modules
@@ -18,7 +19,6 @@ yarn-error.log
 .idea/
 .project
 .classpath
-.c9/
 *.launch
 .settings/
 *.sublime-workspace
@@ -31,16 +31,6 @@ yarn-error.log
 !.vscode/extensions.json
 !.vscode/mcp.json
 .history/*
-
-# Miscellaneous
-/.angular/cache
-.sass-cache/
-/connect.lock
-/coverage
-/libpeerconnection.log
-testem.log
-/typings
-__screenshots__/
 
 # System files
 .DS_Store

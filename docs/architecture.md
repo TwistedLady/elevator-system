@@ -13,7 +13,7 @@ Postgres. Users submit **calls**; the app groups same-floor calls into **orders*
 | `elevator-app` | Pekko | The brain: event-sourced [actors](actors.md) + R2DBC journal + [read-side projections](read-model.md). |
 | `elevator-api` | Spring WebFlux | HTTP edge + Actuator health. No actors. |
 | `elevator-console-cli` | Rust (ratatui) | Terminal dashboard + call sender. |
-| `elevator-console-web` | Angular | Read-only browser monitor (Chart + Trend), a web sibling of the Rust console. |
+| `elevator-console-web` | Elm | Read-only browser monitor (Chart + Trend + Stats), a web sibling of the Rust console. |
 
 Infra: **Kafka** (4 topics) and **Postgres** (event journal + read-model tables).
 
