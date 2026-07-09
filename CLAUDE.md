@@ -52,8 +52,10 @@ reads the `call_status` read table. Full detail: [docs/protocol.md](docs/protoco
 
 ## Hard rules (do not break without an explicit ask)
 
-- **Never edit `pom.xml`** (artifactId / name / version / modules) to fix IDE or naming issues.
-  Fix those on the IntelliJ side. Module id must stay `pl.feelcodes.elevator:elevator`.
+- **Never edit `pom.xml`** (artifactId / name / modules) to fix IDE or naming issues. Fix those on
+  the IntelliJ side. Module id must stay `pl.feelcodes.elevator:elevator`. **Never hand-edit
+  version numbers anywhere** — the version is `${revision}` (root `pom.xml`) mirrored to `VERSION`
+  and all modules, bumped automatically by release-please. See [docs/versioning.md](docs/versioning.md).
 - **Don't add code comments without asking.** Approved comments stay short and meaningful; strip
   comments when refactoring.
 - **Run the test suite after every code change**, before reporting done. Don't wait to be asked.

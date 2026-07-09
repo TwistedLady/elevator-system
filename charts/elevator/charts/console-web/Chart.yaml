@@ -2,4 +2,4 @@ apiVersion: v2
 name: console-web
 description: The Elm web console (nginx). Optional — toggled by console-web.enabled in the parent.
 type: application
-version: 0.0.1
+version: 0.0.1 # x-release-please-version

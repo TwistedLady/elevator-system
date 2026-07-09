@@ -24,8 +24,8 @@ permissions:
 
 jobs:
   # The lockstep guard: every module's version MUST equal the repo-root VERSION file. Fails the
-  # build on drift (so app can never be 1.0.0 while api is 0.1.0). Bump all at once with
-  # `mvn versions:set -DnewVersion=X` + edit Cargo.toml / package.json / Chart.yaml / VERSION.
+  # build on drift (so app can never be 1.0.0 while api is 0.1.0). Versions are bumped automatically
+  # by release-please (see .github/workflows/release.yml) — never hand-edit them.
   version-check:
     name: Version lockstep (all modules == VERSION)
     runs-on: ubuntu-latest
@@ -37,11 +37,14 @@ jobs:
           import re, sys, json, xml.etree.ElementTree as ET
           V = open('VERSION').read().strip()
           ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
-          pomv = lambda p: ET.parse(p).getroot().findtext('m:version', namespaces=ns)
+          root = ET.parse('pom.xml').getroot()
+          # The reactor version is the ${revision} property (CI-friendly single-source version).
+          rootv = root.find('m:properties/m:revision', namespaces=ns).text
+          biv = ET.parse('elevator-bi/pom.xml').getroot().findtext('m:version', namespaces=ns)
           got = {
             'VERSION':                 V,
-            'pom.xml':                 pomv('pom.xml'),
-            'elevator-bi/pom.xml':     pomv('elevator-bi/pom.xml'),
+            'pom.xml (revision)':      rootv,
+            'elevator-bi/pom.xml':     biv,
             'Cargo.toml':              re.search(r'^version\s*=\s*"([^"]+)"', open('elevator-console-cli/Cargo.toml').read(), re.M).group(1),
             'package.json':            json.load(open('elevator-console-web/package.json'))['version'],
             'charts/elevator/Chart.yaml': re.search(r'^version:\s*(\S+)', open('charts/elevator/Chart.yaml').read(), re.M).group(1),
