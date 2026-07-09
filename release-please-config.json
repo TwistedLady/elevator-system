@@ -13,10 +13,6 @@
         "pom.xml",
         "elevator-bi/pom.xml",
         "elevator-console-cli/Cargo.toml",
-        "charts/elevator/Chart.yaml",
-        "charts/elevator/charts/console-web/Chart.yaml",
-        "charts/elevator/charts/bi/Chart.yaml",
-        "charts/elevator/charts/seed/Chart.yaml",
         { "type": "json", "path": "elevator-console-web/package.json", "jsonpath": "$.version" }
       ]
     }
