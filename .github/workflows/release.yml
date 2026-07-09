@@ -1,0 +1,32 @@
+name: Release
+
+# Automatic versioning — no manual version editing. Driven by Conventional Commits (feat:/fix:/feat!:).
+# On every push to main, release-please keeps a "release PR" open that bumps VERSION + every module
+# version (pom ${revision}, elevator-bi, Cargo.toml, package.json, the Helm charts) and updates the
+# CHANGELOG. Merge that PR to cut a release: release-please tags vX.Y.Z and creates the GitHub
+# Release, which triggers Release & Deploy (cd.yml) to publish images and deploy.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # commit the release PR + create the tag/release
+  pull-requests: write   # open/update the release PR
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # A PAT (classic: repo+workflow, or a fine-grained token with contents+pull-requests write)
+          # so the tag release-please pushes TRIGGERS cd.yml. GitHub deliberately does NOT fire
+          # workflows for tags pushed with the default GITHUB_TOKEN. Without the PAT the release is
+          # still created, but you must start the deploy manually (cd.yml → Run workflow on the tag).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

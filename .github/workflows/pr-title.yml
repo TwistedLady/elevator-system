@@ -1,0 +1,39 @@
+name: PR title (Conventional Commits)
+
+# The rule that makes automatic versioning work: the repo squash-merges, so a PR's TITLE becomes the
+# commit on main that release-please reads to compute the next version. Enforce the Conventional
+# Commit format on the title (feat:, fix:, feat!:, chore:, docs:, refactor:, test:, ci:, build:…).
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    name: Lint PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Only these commit types are allowed. feat -> minor, fix -> patch (release-please);
+          # the rest don't cut a release on their own. Breaking change: append "!" (e.g. feat!:).
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            ci
+            build
+            perf
+            style
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" must start lower-case, e.g. "feat: add order batching".

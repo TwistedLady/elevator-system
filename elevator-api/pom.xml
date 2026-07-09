@@ -8,7 +8,7 @@
     <parent>
         <groupId>pl.feelcodes.elevator</groupId>
         <artifactId>elevator</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>elevator-api</artifactId>
