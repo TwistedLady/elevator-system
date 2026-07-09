@@ -32,10 +32,10 @@ object Controller:
             publish: ElevatorStateDto => Unit): Behavior[Command] =
     Behaviors.setup { context =>
 
-      given Timeout = 3.seconds
+      given Timeout = SuspendDwell.duration + 2.seconds
 
       def requestMove(s: State): Unit =
-        context.ask(suspendManager, SuspendManager.MayMove(s.elevatorState, _)) {
+        context.ask(suspendManager, SuspendManager.MayMove(s.elevatorName, s.elevatorState, _)) {
           case Success(SuspendManager.Decision(allowed)) => MoveDecision(allowed)
           case Failure(_)                                => MoveRetry
         }
@@ -59,6 +59,7 @@ object Controller:
               Effect.persist(ControllerLogic.arrival(newState, served.nonEmpty)).thenRun { s =>
                 publish(ElevatorStateDto(s.elevatorName,
                   newState.direction.toString, newState.motion.toString, newState.floor.num))
+                suspendManager ! SuspendManager.Arrived(s.elevatorName, newState.floor)
                 served.foreach(o => managerProvider(s.elevatorName) ! Manager.MarkDone(o.id))
                 if served.nonEmpty then doormanProvider(s.elevatorName) ! Doorman.Serve(s.elevatorName, newState.floor)
                 else context.self ! ChooseNext(s.orders)
