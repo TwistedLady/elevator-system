@@ -28,9 +28,9 @@ The app actors are **thin shells** that wire the pure `logic`.
 
 ## How it flows (one call)
 
-A **Call** = a user action (`id, elevatorName, floor`, optional `passengerId`). The `passengerId`
-is the authenticated username from optional HTTP Basic on `POST /api/call` (see [docs/auth.md](docs/auth.md)) —
-identity comes from the login, not the body; no credentials → anonymous. The app groups same-floor
+A **Call** = a user action (`id, elevatorName, floor`, optional `passengerId`). There is **no auth
+yet** (see [docs/auth.md](docs/auth.md)): `passengerId` is an optional, unverified field on the
+`POST /api/call` body; absent/blank → anonymous. The app groups same-floor
 calls into one living **Order** (`order id = f(elevator, floor)`; later same-floor calls attach
 until it is done) — one stop. The Order counts distinct riders vs. anonymous presses. Four actors,
 one per elevator:
