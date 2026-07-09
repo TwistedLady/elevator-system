@@ -1,4 +1,4 @@
-module Chart exposing (positionOption, trendOption)
+module Chart exposing (positionOption, rightAlign, trendOption)
 
 {-| Pure ECharts option builders for the two chart tabs, emitted as JSON for the <echarts-panel>
 custom element. Elm owns the data shaping; the element owns the canvas. The `__kind`/`__replace`
@@ -223,7 +223,7 @@ trendOption rows maxFloor theme =
                 , ( "lineStyle", E.object [ ( "width", E.float 2.5 ) ] )
                 , ( "emphasis", E.object [ ( "focus", E.string "series" ) ] )
                 , ( "endLabel", E.object [ ( "show", E.bool True ), ( "formatter", E.string "{a}" ), ( "fontSize", E.int 10 ) ] )
-                , ( "data", padLeft row.history Types.historyLen )
+                , ( "data", encodeSamples (rightAlign Types.historyLen row.history) )
                 ]
     in
     E.object
@@ -278,14 +278,21 @@ floorAxis p maxFloor =
         ]
 
 
-{-| Right-align a history to `len` points, padding the front with nulls (gaps ECharts skips). -}
-padLeft : List Int -> Int -> E.Value
-padLeft history len =
+{-| Right-align a history to `len` points, keeping the newest and front-padding with `Nothing`
+(gaps ECharts skips). Longer histories are trimmed to the last `len` samples.
+-}
+rightAlign : Int -> List Int -> List (Maybe Int)
+rightAlign len history =
     let
         tail =
             List.drop (max 0 (List.length history - len)) history
 
         pad =
-            List.repeat (max 0 (len - List.length tail)) E.null
+            List.repeat (max 0 (len - List.length tail)) Nothing
     in
-    E.list identity (pad ++ List.map E.int tail)
+    pad ++ List.map Just tail
+
+
+encodeSamples : List (Maybe Int) -> E.Value
+encodeSamples =
+    E.list (Maybe.map E.int >> Maybe.withDefault E.null)

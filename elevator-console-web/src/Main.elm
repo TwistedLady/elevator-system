@@ -10,6 +10,7 @@ import Browser
 import Chart
 import Dict exposing (Dict)
 import Filter
+import History
 import Html exposing (Html, button, div, h1, header, i, input, main_, section, span, strong, text)
 import Html.Attributes exposing (attribute, class, classList, placeholder, property, title, type_, value)
 import Html.Events exposing (onClick, onInput)
@@ -227,17 +228,12 @@ ingest state model =
             Dict.get state.name model.histories |> Maybe.withDefault []
 
         series =
-            capTail Types.historyLen (previous ++ [ state.floor ])
+            History.push Types.historyLen state.floor previous
     in
     { model
         | elevators = Dict.insert state.name state model.elevators
         , histories = Dict.insert state.name series model.histories
     }
-
-
-capTail : Int -> List a -> List a
-capTail n xs =
-    List.drop (max 0 (List.length xs - n)) xs
 
 
 

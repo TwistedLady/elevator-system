@@ -13,6 +13,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "elm-test",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "elm": "^0.19.1-6",
+    "elm-test": "^0.19.1-revision12",
     "vite": "^6.0.0",
     "vite-plugin-elm": "^3.0.1"
   }
