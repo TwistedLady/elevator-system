@@ -8,7 +8,7 @@
     <parent>
         <groupId>pl.feelcodes.elevator</groupId>
         <artifactId>elevator</artifactId>
-        <version>0.1.0</version>
+        <version>0.0.1</version>
     </parent>
 
     <!-- Not a Java module: it drives the Elm npm build (Vite + vite-plugin-elm) from Maven.
