@@ -11,7 +11,7 @@ flowchart LR
   V -->|build.rs → APP_VERSION| CLI["elevator-console-cli"]
   V -->|gen-version.mjs → version.ts| WEB["elevator-console-web"]
   V -->|revision property| MVN["Maven reactor (all modules)"]
-  V -->|Chart.yaml| HELM["Helm chart / images :X.Y.Z"]
+  V -->|git tag vX.Y.Z| IMG["Docker images :X.Y.Z → deployed by Helm"]
 ```
 
 ## Who reads VERSION, and how
@@ -22,7 +22,13 @@ flowchart LR
 | `elevator-console-cli` | `build.rs` bakes it in as `env!("APP_VERSION")` | `--version`, `version` subcommand |
 | `elevator-console-web` | `scripts/gen-version.mjs` writes `src/app/version.ts` | `APP_VERSION`, shown in the top bar |
 | Maven reactor | `<revision>` property in the root `pom.xml`; every module is `${revision}` | jar/image names are `…-X.Y.Z` |
-| Helm | `Chart.yaml` `version` / `appVersion` + subchart pins | chart + images tagged `X.Y.Z` |
+| Docker images | tagged with the git tag `X.Y.Z` on release (`cd.yml`) | `helm upgrade --set global.images.*=…:X.Y.Z` pins the deploy |
+
+> **Helm chart version is independent.** `Chart.yaml` `version` / `appVersion` are packaging
+> metadata and are **not** in lockstep — release-please can't edit a `.yaml` without reformatting it
+> (it strips comments and mishandles the subchart pins). What actually runs is decided by the
+> **image tag** (git tag), which release-please drives. So the chart version stays put; the app
+> version travels with the images.
 
 ## How the version is chosen — automatically
 
@@ -47,8 +53,9 @@ You do **not** touch version numbers. The flow is:
    `cd.yml` publishes images `ghcr.io/…:X.Y.Z` and deploys the chart pinned to that version.
 
 Config: `release-please-config.json` + `.release-please-manifest.json`. Version-bearing lines carry
-an `x-release-please-version` marker so release-please updates them without reformatting the file
-(JSON `package.json` is updated by jsonpath — no marker possible in JSON).
+an `x-release-please-version` marker so release-please updates them in place (pom `<revision>`,
+`elevator-bi` pom, `Cargo.toml`); `package.json` is updated by jsonpath (no marker possible in JSON).
+The Helm charts are deliberately left out (see the note above).
 
 ## Enforced rules
 
