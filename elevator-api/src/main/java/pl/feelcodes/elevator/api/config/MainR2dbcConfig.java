@@ -13,9 +13,9 @@ import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
 
 /**
  * Primary datasource → the operational `elevator` DB (Pekko journal + call read-models).
- * Owns the `call` repositories. The stats read-models live in a SEPARATE datasource
- * ({@link StatsR2dbcConfig}); Boot's single-datasource repository auto-config is disabled on
- * {@code ElevatorApi} so each package binds to exactly one connection factory.
+ * Owns the `call` repositories. The BI stats read-models are not in a database — they come from the
+ * Spark-produced Parquet file (see the stats package). Boot's single-datasource repository
+ * auto-config is disabled on {@code ElevatorApi} so the `call` package binds explicitly to this one.
  */
 @Configuration
 @EnableR2dbcRepositories(

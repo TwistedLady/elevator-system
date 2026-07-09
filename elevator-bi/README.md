@@ -31,7 +31,7 @@ flowchart LR
   kafka(("Kafka<br/>elevator-state"))
   pgSrc[("Postgres<br/>order_status")]
   subgraph spark["Spark on Kubernetes (elevator-bi)"]
-    driver["driver<br/>(Deployment, client mode)"]
+    driver["driver<br/>(CronJob, client mode)"]
     ex1["executor 1"]
     ex2["executor 2"]
   end

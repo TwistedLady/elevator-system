@@ -11,8 +11,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Read-only BI endpoint over the elevator_orders_served table (maintained by the elevator-bi
- * OrdersServedJob): how many times each elevator reached an ordered floor (= completed orders).
+ * Read-only BI endpoint over the Parquet BI read-model (produced by the elevator-bi Spark job, read
+ * via DuckDB): how many times each elevator reached an ordered floor (= completed orders).
  */
 @RestController
 @RequestMapping("/api/served")
