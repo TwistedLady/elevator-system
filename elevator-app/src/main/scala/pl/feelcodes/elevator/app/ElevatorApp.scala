@@ -4,16 +4,20 @@ import com.typesafe.config.{ConfigFactory, ConfigValueFactory}
 import org.apache.pekko.actor.typed.{ActorSystem, DispatcherSelector}
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
+import org.apache.pekko.cluster.typed.{ClusterSingleton, SingletonActor}
 import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import pl.feelcodes.elevator.app.actors.*
-import pl.feelcodes.elevator.common.core.domain.Elevator
+import pl.feelcodes.elevator.common.core.domain.{Elevator, DoorState}
+import pl.feelcodes.elevator.common.core.engine.DoorEngine
+import pl.feelcodes.elevator.common.dto.DoorStateDto
 import pl.feelcodes.elevator.app.inbound.{CallConsumer, CallDedup}
 import pl.feelcodes.elevator.app.outbound.Publishers
 import pl.feelcodes.elevator.app.readside.{CallStatusProjection, ElevatorStateProjection, OrderStatusProjection}
 
 import java.nio.file.Path
 import scala.concurrent.duration.*
+import scala.jdk.DurationConverters.*
 
 object ElevatorApp extends App {
 
@@ -41,12 +45,18 @@ object ElevatorApp extends App {
         val controllerProvider = sharding.entityRefFor(Controller.TypeKey, _)
         val managerProvider = sharding.entityRefFor(Manager.TypeKey, _)
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
+        val doormanProvider = sharding.entityRefFor(Doorman.TypeKey, _)
+
+        val suspendManager = ClusterSingleton(ctx.system)
+          .init(SingletonActor(SuspendManager(), "SuspendManager"))
 
         val engineMode = new EngineMode(ctx.system.settings.config.getString("elevator.engine"))
         val enginePath = Path.of(ctx.system.settings.config.getString("elevator.engine-file"))
         ctx.system.scheduler.scheduleWithFixedDelay(0.seconds, 5.seconds) { () =>
           val _ = engineMode.refreshFrom(enginePath)
         }(ctx.executionContext)
+
+        val doorDwell = ctx.system.settings.config.getDuration("elevator.door-dwell").toScala
 
         val buildElevator: Operator.BuildElevator = (name, state) =>
           engineMode.current match
@@ -59,8 +69,14 @@ object ElevatorApp extends App {
             (name, state) => controllerProvider(name) ! Controller.MarkExecuted(state)
           Operator(publishMove, buildElevator)
         }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
+        sharding.init(Entity(Doorman.TypeKey) { _ =>
+          val publishDoor: Doorman.PublishDoor = (name, floor, doorState) =>
+            publishers.door.publish(DoorStateDto(name, floor.num, doorState.toString))
+            if doorState == DoorState.Closed then controllerProvider(name) ! Controller.DoorClosed(floor)
+          Doorman(publishDoor, DoorEngine(doorDwell))
+        }.withEntityProps(DispatcherSelector.fromConfig("elevator-blocking-dispatcher")))
         sharding.init(Entity(Controller.TypeKey) { e =>
-          Controller(e.entityId, operatorProvider, managerProvider, publishers.elevator.publish)
+          Controller(e.entityId, operatorProvider, managerProvider, suspendManager, doormanProvider, publishers.elevator.publish)
         })
         sharding.init(Entity(Manager.TypeKey) { e =>
           Manager(e.entityId, coordinatorProvider, controllerProvider, publishers.order.publish)

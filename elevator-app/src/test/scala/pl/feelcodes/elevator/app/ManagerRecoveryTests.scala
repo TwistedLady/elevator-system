@@ -88,7 +88,7 @@ final class ManagerRecoveryTests
       val orderId = esTestKit.getState().orders.keys.head
 
       val r = esTestKit.runCommand(Manager.Combine(List(Call("c2", Floor(3)))))
-      r.event shouldBe ManagerEvents.OrderExtended(orderId, Set("c2"))
+      r.event shouldBe ManagerEvents.OrderExtended(orderId, Set("c2"), Set.empty, Set("c2"))
       esTestKit.getState().orders(orderId).callIds shouldBe Set("c1", "c2")
       coordinatorProbe.expectMessage(Coordinator.AssignOrder("c2", orderId))
       controllerProbe.expectMessageType[Controller.Process].orders.map(_.id) shouldBe Set(orderId)

@@ -1,43 +1,66 @@
 # The four actors
 
-A **Call** is one user action (press a button: `id, elevatorName, floor`). The app groups
-calls that share a floor into one living **Order** (`order id = f(elevator, floor)`), a single
-stop that later same-floor calls attach to. Four actors, one per elevator; the first three are cluster-sharded and
-event-sourced, the **Operator** is a stateless worker.
+One elevator = **four actors**. Three **remember** (event-sourced); the **Operator** is a dumb worker.
 
-| Actor | Owns | Job | Event-sourced |
-|---|---|---|---|
-| **Coordinator** | call status | Persist `CallReceived`, forward calls to the Manager, record `CallAssigned` / `CallDone`. | yes |
-| **Manager** | call ↔ order relation | Group calls by floor (`GroupCallsStrategy`), persist `OrderCreated` (new floor) or `OrderExtended` (attach to a live one), tell the Coordinator each call's order, hand orders to the Controller; on done persist `OrderDone` + tell the Coordinator each call is done. | yes |
-| **Controller** | movement | Pick the next stop (`NextFloorStrategy`), tell the Operator to `Move`, publish state, mark reached orders done via the Manager. | yes |
-| **Operator** | nothing | Run one move on the car, report the new state. Decides nothing. | no |
+| Actor | Remembers? | Owns |
+|---|---|---|
+| **Coordinator** | yes | call status |
+| **Manager** | yes | call ↔ order |
+| **Controller** | yes | direction (movement) |
+| **Operator** | no | one move |
 
-## Flow
+## One call, start to finish
 
 ```mermaid
-flowchart TD
-  call(["CallDto<br/>from Kafka elevator-calls"]) -->|CallConsumer: first-seen, maps → Call| coord
+sequenceDiagram
+    autonumber
+    participant K as Kafka
+    participant CC as CallConsumer
+    participant Co as Coordinator
+    participant Mg as Manager
+    participant Ct as Controller
+    participant Op as Operator
 
-  coord["<b>Coordinator</b><br/>persist CallReceived ·<br/>forward calls"]
-  coord -->|Combine calls| mgr
+    K->>CC: CallDto
+    CC->>Co: Handle(List[Call])
+    Note over Co: store CallReceived<br/>publish call = PROGRESS
+    Co->>Mg: Combine(calls)
+    Note over Mg: group by floor → Order<br/>store OrderCreated / OrderExtended<br/>publish order = PROGRESS
+    Mg->>Co: AssignOrder(callId, orderId)
+    Mg->>Ct: Process(orders)
 
-  mgr["<b>Manager</b><br/>group calls → orders ·<br/>persist OrderCreated"]
-  mgr -.->|AssignOrder| coord
-  mgr -->|Process orders| ctrl
+    loop until the target floor is reached
+        Ct->>Op: Move(state, cmd)
+        Op-->>Ct: MarkExecuted(newState)
+        Note over Ct: at the floor? → orders there are served
+    end
 
-  ctrl["<b>Controller</b><br/>hold orders · pick next move ·<br/>publish state · drop served floors"]
-  ctrl -->|Move / Stop| op
-  ctrl -->|publish| out[("Kafka elevator-state")]
-  ctrl -.->|MarkDone| mgr
-  mgr -.->|MarkDone| coord
-
-  op["<b>Operator</b><br/>compute new floor/dir/motion"]
-  op -.->|MarkExecuted| ctrl
+    Ct->>Mg: MarkDone(orderId)
+    Note over Mg: store OrderDone<br/>publish order = DONE
+    Mg->>Co: MarkDone(callId)
+    Note over Co: store CallDone<br/>publish call = DONE
 ```
 
-- The Controller **drives its own loop**: after each move it self-sends `ChooseNext`.
-  Pacing comes from the [engine](core.md), not a timer.
-- On arrival, **every** order waiting at that floor is dropped in one go (same-floor
-  coalescing) — the Manager then marks it done, closing every call under it.
+## Who talks to whom
 
-Exact messages and events: [protocol.md](protocol.md). Recovery guards: [crash-recovery.md](crash-recovery.md).
+```mermaid
+flowchart LR
+    K(["Kafka<br/>elevator-calls"]) -->|CallConsumer maps → Call| Co
+    Co["Coordinator"] -->|Combine| Mg["Manager"]
+    Mg -->|AssignOrder| Co
+    Mg -->|Process| Ct["Controller"]
+    Ct -->|Move| Op["Operator"]
+    Op -->|MarkExecuted| Ct
+    Ct -->|MarkDone| Mg
+    Mg -->|MarkDone| Co
+```
+
+Two things to hold onto:
+
+- The **Controller drives its own loop** — after each move it self-sends `ChooseNext`. The
+  [engine](core.md) paces it (real travel time), not a timer.
+- Serving is **floor-based** — reaching a floor closes *every* order waiting there at once, which
+  closes every call under them.
+
+Every message, event and type: [actor-contract.md](actor-contract.md). Recovery guards:
+[crash-recovery.md](crash-recovery.md).

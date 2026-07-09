@@ -59,7 +59,7 @@ object CallConsumer {
               val fresh = checked.collect { case (dto, false) => dto }.distinctBy(_.id)
 
               fresh.groupBy(_.elevatorName).foreach { case (elevatorName, dtos) =>
-                coordinatorProvider(elevatorName) ! Handle(dtos.map(d => Call(d.id, Floor(d.floor))).toList)
+                coordinatorProvider(elevatorName) ! Handle(dtos.map(d => Call(d.id, Floor(d.floor), Option(d.passengerId))).toList)
               }
 
               Future

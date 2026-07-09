@@ -28,7 +28,9 @@ data:
   ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
   ELEVATOR_KAFKA_ORDER_STATE_TOPIC: {{ .Values.global.kafka.orderStateTopic | quote }}
   ELEVATOR_KAFKA_CALL_STATE_TOPIC: {{ .Values.global.kafka.callStateTopic | quote }}
+  ELEVATOR_KAFKA_DOOR_STATE_TOPIC: {{ .Values.global.kafka.doorStateTopic | quote }}
   # Kafka — api-side env names (same values, different keys)
   SPRING_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
   ELEVATOR_CALL_TOPIC: {{ .Values.global.kafka.callTopic | quote }}
   ELEVATOR_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
+  ELEVATOR_DOOR_STATE_TOPIC: {{ .Values.global.kafka.doorStateTopic | quote }}
