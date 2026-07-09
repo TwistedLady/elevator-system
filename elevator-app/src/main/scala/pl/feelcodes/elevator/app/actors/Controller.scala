@@ -28,6 +28,7 @@ object Controller:
             operatorProvider: String => EntityRef[Operator.Command],
             managerProvider: String => EntityRef[Manager.Command],
             suspendManager: ActorRef[SuspendManager.Command],
+            doormanProvider: String => EntityRef[Doorman.Command],
             publish: ElevatorStateDto => Unit): Behavior[Command] =
     Behaviors.setup { context =>
 
@@ -55,12 +56,16 @@ object Controller:
 
             case MarkExecuted(newState) =>
               val served = state.orders.filter(_.floor == newState.floor)
-              Effect.persist(ControllerLogic.publishState(newState)).thenRun { s =>
+              Effect.persist(ControllerLogic.arrival(newState, served.nonEmpty)).thenRun { s =>
                 publish(ElevatorStateDto(s.elevatorName,
                   newState.direction.toString, newState.motion.toString, newState.floor.num))
                 served.foreach(o => managerProvider(s.elevatorName) ! Manager.MarkDone(o.id))
-                context.self ! ChooseNext(s.orders)
+                if served.nonEmpty then doormanProvider(s.elevatorName) ! Doorman.Serve(s.elevatorName, newState.floor)
+                else context.self ! ChooseNext(s.orders)
               }
+
+            case DoorClosed(_) =>
+              Effect.persist(WaitingSet(false)).thenRun(s => context.self ! ChooseNext(s.orders))
 
             case ChooseNext(orders) =>
               if ControllerLogic.shouldAct(state, orders) then

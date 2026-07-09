@@ -121,8 +121,22 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
         let mut spans = vec![Span::from(format!("{floor:>4} ")).dark_gray()];
         for c in &cars {
             if c.floor == floor {
-                let cell = center(&format!("[{}]", car_glyph(&c.direction, &c.motion)), COL_W);
-                spans.push(Span::styled(cell, car_style(&c.direction, &c.motion)));
+                let open = app
+                    .doors
+                    .get(&c.elevator_name)
+                    .map(|d| d.door_state.eq_ignore_ascii_case("open"))
+                    .unwrap_or(false);
+                let door = if open { 'o' } else { 'x' };
+                let cell = center(
+                    &format!("[{}][{}]", car_glyph(&c.direction, &c.motion), door),
+                    COL_W,
+                );
+                let style = if open {
+                    Style::new().fg(Color::Yellow).bold()
+                } else {
+                    car_style(&c.direction, &c.motion)
+                };
+                spans.push(Span::styled(cell, style));
             } else {
                 spans.push(Span::from(center("·", COL_W)).dark_gray());
             }

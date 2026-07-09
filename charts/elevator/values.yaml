@@ -23,6 +23,7 @@ global:
     stateTopic: "elevator-state"
     orderStateTopic: "elevator-order-state"
     callStateTopic: "elevator-call-state"
+    doorStateTopic: "elevator-door-state"
     groupId: "elevator-app"
   postgres:
     host: "postgres"

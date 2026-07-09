@@ -21,6 +21,14 @@ pub struct ElevatorState {
     pub floor: i32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct DoorState {
+    #[serde(rename = "elevatorName")]
+    pub elevator_name: String,
+    #[serde(rename = "doorState")]
+    pub door_state: String,
+}
+
 /// One row of `GET /api/mileage` (Spark streaming BI): floors travelled per elevator.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MileageRow {
@@ -211,6 +219,7 @@ impl View {
 pub struct App {
     pub view: View,
     pub latest: BTreeMap<String, ElevatorState>,
+    pub doors: BTreeMap<String, DoorState>,
     pub history: BTreeMap<String, VecDeque<(f64, f64)>>,
     pub seen_elevators: BTreeSet<String>,
     pub seen_floor_max: i32,
@@ -247,6 +256,7 @@ impl App {
         let mut app = Self {
             view: View::Chart,
             latest: BTreeMap::new(),
+            doors: BTreeMap::new(),
             history: BTreeMap::new(),
             seen_elevators: BTreeSet::new(),
             seen_floor_max: 0,
@@ -327,6 +337,10 @@ impl App {
         self.seen_elevators.insert(state.elevator_name.clone());
         self.seen_floor_max = self.seen_floor_max.max(state.floor);
         self.latest.insert(state.elevator_name.clone(), state);
+    }
+
+    pub fn record_door(&mut self, door: DoorState) {
+        self.doors.insert(door.elevator_name.clone(), door);
     }
 
     pub fn now_secs(&self) -> f64 {
