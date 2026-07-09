@@ -3,7 +3,6 @@ package pl.feelcodes.elevator.common.core.domain
 import pl.feelcodes.elevator.common.core.domain.Command.{Go, Stop}
 import pl.feelcodes.elevator.common.core.domain.Direction.*
 import pl.feelcodes.elevator.common.core.domain.Motion.{Moving, Stopped}
-import pl.feelcodes.elevator.common.core.engine.{FastEngine, SlowEngine}
 
 /** Elevator = name + engine + state; `move` advances it one command. */
 final case class Elevator(name: ElevatorName,
