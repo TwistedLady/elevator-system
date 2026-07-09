@@ -1,49 +1,26 @@
 {
   "name": "elevator-console-web",
   "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.9.4",
   "scripts": {
-    "ng": "ng",
     "gen-version": "node scripts/gen-version.mjs",
     "postinstall": "node scripts/gen-version.mjs",
     "prestart": "node scripts/gen-version.mjs",
     "prebuild": "node scripts/gen-version.mjs",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
-  "prettier": {
-    "printWidth": 100,
-    "singleQuote": true,
-    "overrides": [
-      {
-        "files": "*.html",
-        "options": {
-          "parser": "angular"
-        }
-      }
-    ]
-  },
-  "private": true,
-  "packageManager": "npm@10.9.4",
   "dependencies": {
-    "@angular/common": "^21.1.0",
-    "@angular/compiler": "^21.1.0",
-    "@angular/core": "^21.1.0",
-    "@angular/forms": "^21.1.0",
-    "@angular/platform-browser": "^21.1.0",
-    "@angular/router": "^21.1.0",
-    "echarts": "^6.1.0",
-    "rxjs": "~7.8.0",
-    "tslib": "^2.3.0"
+    "echarts": "^6.1.0"
   },
   "devDependencies": {
-    "@angular/build": "^21.1.0",
-    "@angular/cli": "^21.1.0",
-    "@angular/compiler-cli": "^21.1.0",
-    "jsdom": "^27.1.0",
-    "typescript": "~5.9.2",
-    "vitest": "^4.0.8"
+    "elm": "^0.19.1-6",
+    "vite": "^6.0.0",
+    "vite-plugin-elm": "^3.0.1"
   }
 }

@@ -7,7 +7,10 @@
 /bazel-out
 
 # Generated from the repo-root VERSION file at build time (scripts/gen-version.mjs)
-/src/app/version.ts
+/src/generated/
+
+# Elm
+/elm-stuff/
 
 # Node
 /node_modules
