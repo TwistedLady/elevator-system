@@ -11,8 +11,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * Health of the operational (main) database as the {@code db} component. Boot's built-in r2dbc
- * health is disabled (it would also flag the optional postgres-stats DB when BI is off); this pings
- * only the main datasource so it stays monitored.
+ * health is disabled; this pings only the main datasource so it stays monitored.
  */
 @Component("db")
 class MainDbHealthIndicator implements ReactiveHealthIndicator {
