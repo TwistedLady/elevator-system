@@ -6,7 +6,7 @@ The words this system uses. Call and Order are **not** the same thing.
 |---|---|
 | **Call** | A user action: a button press to visit a floor. `id, elevatorName, floor`, optional `passengerId`. |
 | **Order** | App-made. One living stop per floor. `id = f(elevator, floor)`; later same-floor calls attach until it is done. Tracks two tallies: `passengers` (distinct riders) and `anonymous` (id-less presses). |
-| **passengerId** | Optional rider identity on a Call, supplied by the API caller. Lets the Manager count distinct riders vs. anonymous presses per order. |
+| **passengerId** | Optional rider identity on a Call. The **authenticated username** (optional HTTP Basic on `POST /api/call`, see [auth](auth.md)), set by the api — never the request body; anonymous when no credentials. Lets the Manager count distinct riders vs. anonymous presses per order. |
 | **Coordinator** | Actor, owns **call** status. Receives calls, forwards them to the Manager, tracks each to done. |
 | **Manager** | Actor, owns the **call↔order** relation. Groups calls into orders, assigns them, marks orders done. |
 | **Controller** | Actor, owns **movement**. Picks the next stop (`NextFloorStrategy`), tells the Operator to move. |
