@@ -1,5 +1,5 @@
 /* Global palette exposed as roles so the light/dark values swap in one place.
-   Chart colours live in chart-options.ts (ECharts needs concrete values in JS);
+   Chart colours live in Chart.elm (ECharts needs concrete values in the option JSON);
    keep the two in sync — Material blue accent, blue-grey idle. */
 :root {
   --page: #f4f6f8;
@@ -43,29 +43,6 @@
   }
 }
 
-/* Explicit theme attribute wins over the OS preference in both directions. */
-:root[data-theme='light'] {
-  color-scheme: light;
-}
-:root[data-theme='dark'] {
-  --page: #0e1416;
-  --surface-1: #1c262b;
-  --surface-2: #263238;
-  --text-primary: #eceff1;
-  --text-secondary: #b0bec5;
-  --muted: #78909c;
-  --border: rgba(236, 239, 241, 0.12);
-  --accent: #64b5f6;
-  --ok: #81c784;
-  --bad: #ef5350;
-  --up: #66bb6a;
-  --down: #ff8a65;
-  --grid: #2b3a41;
-  --cab-active-fill: #64b5f6;
-  --cab-idle-fill: #78909c;
-  color-scheme: dark;
-}
-
 html,
 body {
   margin: 0;
@@ -76,4 +53,331 @@ body {
   color: var(--text-primary);
   font-family: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---- app chrome (was app.css :host) ---- */
+.app {
+  display: block;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.badges {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: 0.78rem/1 ui-monospace, monospace;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+button.badge {
+  cursor: pointer;
+}
+
+.badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge.ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
+}
+
+.badge.bad {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
+}
+
+.warnbar {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  font: 0.85rem/1.3 ui-monospace, monospace;
+}
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.tabs {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.4rem 1.2rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.filterbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.filterbox input {
+  padding: 0.45rem 1.8rem 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  min-width: 14rem;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.filterbox input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.filterbox .clear {
+  position: absolute;
+  right: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.2rem;
+}
+
+.panel {
+  min-width: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem 1.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.chart-area {
+  width: 100%;
+  height: clamp(360px, 58vh, 620px);
+}
+
+/* The chart itself is the custom element; it fills the chart-area box. */
+echarts-panel {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 3rem 1rem;
+  margin: 0;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.swatch.moving {
+  background: var(--cab-active-fill);
+  box-shadow: 0 0 5px var(--cab-active-fill);
+}
+
+.swatch.idle {
+  background: transparent;
+  border: 2px solid var(--cab-idle-fill);
+}
+
+/* ---- stats tab (was stats.css) ---- */
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.stats-legend {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.stats .swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+/* Two categorical series from the validated dataviz palette: accent blue + direction orange. */
+.swatch.mileage,
+.bar.mileage {
+  background: var(--accent);
+}
+
+.swatch.served,
+.bar.served {
+  background: var(--down);
+}
+
+.stale {
+  color: var(--bad);
+  font-variant: small-caps;
+  letter-spacing: 0.03em;
+}
+
+/* Wide content scrolls inside its own box instead of stretching the page. */
+.scroll {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 320px;
+  column-gap: 1rem;
+  row-gap: 0.4rem;
+  align-items: center;
+}
+
+.row {
+  display: contents;
+}
+
+.head .name,
+.head .col {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3rem;
+}
+
+.head small {
+  text-transform: none;
+  color: var(--muted);
+}
+
+.name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.col {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.bartrack {
+  flex: 1;
+  min-width: 0;
+  height: 14px;
+  background: var(--grid);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  min-width: 2px;
+  transition: width 0.4s ease;
+}
+
+.val {
+  flex: none;
+  min-width: 2.2ch;
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted);
 }
