@@ -8,7 +8,7 @@
 
 # Build output
 **/target/
-**/.angular/
+**/elm-stuff/
 **/dist/
 **/node_modules/
 

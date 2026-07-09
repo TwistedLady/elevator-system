@@ -220,8 +220,8 @@ motionDecoder =
             )
 
 
-{-| Decoding fails (and the frame is dropped upstream) when elevatorName is missing, matching the
-Angular guard that ignored frames without a name. -}
+{-| Decoding fails (and the frame is dropped upstream) when elevatorName is missing, so frames
+without a name are ignored. -}
 elevatorStateDecoder : Decoder ElevatorState
 elevatorStateDecoder =
     Decode.map5 ElevatorState

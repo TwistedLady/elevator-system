@@ -1,4 +1,4 @@
-# The Angular web console: nginx serving the static bundle + reverse-proxying /api + /actuator to
+# The Elm web console: nginx serving the static bundle + reverse-proxying /api + /actuator to
 # the elevator-api Service. Internal-only (ClusterIP) — reach it with:
 #   kubectl port-forward svc/elevator-console-web 8081:80
 apiVersion: apps/v1

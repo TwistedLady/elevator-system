@@ -1,9 +1,9 @@
 # Maven / build output
 target/
 
-# Node / Angular
+# Node / Elm
 node_modules/
-.angular/
+elm-stuff/
 dist/
 
 # IDE

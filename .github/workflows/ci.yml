@@ -5,7 +5,7 @@ name: Build & Test
 #   - elevator-app       (Pekko cluster)          - unit tested (actor recovery)
 #   - elevator-api       (Spring)                 - unit + Testcontainers IT
 #   - elevator-console-cli   (Rust/Cargo)             - fmt + clippy + test
-#   - elevator-console-web (Angular)              - image build proven on PRs
+#   - elevator-console-web (Elm)                  - image build proven on PRs
 #   - elevator-bi        (Spark, Scala 2.12, standalone) - uber jar + ScalaTest + image
 # On PRs it also proves all three JVM/web Docker images still build.
 
