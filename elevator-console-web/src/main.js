@@ -87,3 +87,13 @@ app.ports.connectStream.subscribe(() => {
 });
 
 darkMedia.addEventListener('change', (event) => app.ports.themeChanged.send(event.matches));
+
+// Logging sink for the Log port: shared [web-console] prefix + a level threshold (debug in dev,
+// info and up in a production build), so devtools output is easy to filter.
+const LOG_PREFIX = '[web-console]';
+const LOG_ORDER = { debug: 0, info: 1, warn: 2, error: 3 };
+const LOG_THRESHOLD = LOG_ORDER[import.meta.env.DEV ? 'debug' : 'info'];
+app.ports.logMessage.subscribe(({ level, message }) => {
+  if ((LOG_ORDER[level] ?? 1) < LOG_THRESHOLD) return;
+  (console[level] || console.log)(LOG_PREFIX, message);
+});

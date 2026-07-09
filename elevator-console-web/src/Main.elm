@@ -17,6 +17,7 @@ import Html.Events exposing (onClick, onInput)
 import Html.Keyed as Keyed
 import Http
 import Json.Decode as Decode exposing (Value)
+import Log
 import Ports
 import Stats
 import Time
@@ -93,6 +94,7 @@ init flags =
         , Api.getConfig GotConfig
         , Api.getHealth GotHealth
         , Api.getVersion GotVersion
+        , Log.info "connecting to SSE stream /api/elevator/stream"
         ]
     )
 
@@ -129,14 +131,14 @@ update msg model =
                 Ok state ->
                     ( ingest state model, Cmd.none )
 
-                Err _ ->
-                    ( model, Cmd.none )
+                Err error ->
+                    ( model, Log.warn ("dropped an unparseable SSE frame: " ++ Decode.errorToString error) )
 
         StreamOpened ->
-            ( { model | stream = Live }, Cmd.none )
+            ( { model | stream = Live }, Log.info "SSE stream open" )
 
         StreamErrored ->
-            ( { model | stream = Offline }, Cmd.none )
+            ( { model | stream = Offline }, Log.warn "SSE stream dropped — awaiting auto-reconnect" )
 
         ThemeChanged dark ->
             ( { model
@@ -163,19 +165,19 @@ update msg model =
             ( { model | config = config, tab = tab }, Cmd.none )
 
         GotConfig (Err _) ->
-            ( model, Cmd.none )
+            ( model, Log.debug "config fetch failed — keeping last known limits" )
 
         GotHealth (Ok health) ->
             ( { model | health = health }, Cmd.none )
 
         GotHealth (Err _) ->
-            ( { model | health = HealthDown }, Cmd.none )
+            ( { model | health = HealthDown }, Log.warn "health check failed" )
 
         GotVersion (Ok version) ->
             ( { model | backendVersion = Version version }, Cmd.none )
 
         GotVersion (Err _) ->
-            ( { model | backendVersion = Unreachable }, Cmd.none )
+            ( { model | backendVersion = Unreachable }, Log.warn "backend version unreachable" )
 
         GotStats (Ok ( mileage, served )) ->
             ( { model | stats = { mileage = mileage, served = served, loaded = True, failed = False } }
@@ -187,7 +189,9 @@ update msg model =
                 stats =
                     model.stats
             in
-            ( { model | stats = { stats | loaded = True, failed = True } }, Cmd.none )
+            ( { model | stats = { stats | loaded = True, failed = True } }
+            , Log.warn "Spark BI stats poll failed — keeping last known values"
+            )
 
         PollHealth _ ->
             ( model, Api.getHealth GotHealth )
