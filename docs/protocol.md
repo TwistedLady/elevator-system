@@ -101,10 +101,10 @@ there at once. Why claim-after-forward: [crash-recovery.md](crash-recovery.md).
 
 ## Passenger identification
 
-A `Call` may carry an optional `passengerId`. **Identity comes from authentication, not the request
-body:** `POST /api/call` accepts optional [HTTP Basic auth](auth.md); the api sets `passengerId` to
-the authenticated username and forwards it on the internal `CallDto`. No credentials → anonymous
-call. The `Manager` keeps two per-order tallies, both as sets so they dedup as the order grows:
+A `Call` may carry an optional `passengerId`. **There is no auth yet** ([auth.md](auth.md)), so for
+now the identity is an *unverified* field on the request body: `POST /api/call` accepts an optional
+`passengerId`, which the api forwards on the internal `CallDto`. Absent or blank → anonymous call.
+The `Manager` keeps two per-order tallies, both as sets so they dedup as the order grows:
 `passengers` (distinct identified riders) and `anonymousCallIds` (presses with no id). The same
 rider pressing twice counts **once**; the counts (`passengers`, `anonymous`) ride on
 `OrderStateDto`. This is a *third* grouping, distinct from the two dedups above — grouping by

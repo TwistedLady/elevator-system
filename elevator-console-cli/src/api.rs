@@ -94,37 +94,9 @@ struct CallPayload<'a> {
     #[serde(rename = "elevatorName")]
     elevator_name: &'a str,
     floor: i32,
-}
-
-/// Standard base64 encoding (for the HTTP Basic auth header). Tiny hand-rolled encoder so we don't
-/// pull in a crate for one header.
-fn base64(input: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
-        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(T[(n >> 18 & 63) as usize] as char);
-        out.push(T[(n >> 12 & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            T[(n >> 6 & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            T[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
-}
-
-/// The value for an `Authorization: Basic` header from a username/password pair.
-fn basic_auth(user: &str, pass: &str) -> String {
-    format!("Basic {}", base64(format!("{user}:{pass}").as_bytes()))
+    // Optional passenger identity, sent in the body; omitted (anonymous) when None.
+    #[serde(rename = "passengerId", skip_serializing_if = "Option::is_none")]
+    passenger_id: Option<&'a str>,
 }
 
 /// A short-timeout agent for request/response calls (orders, status, health).
@@ -163,19 +135,17 @@ pub fn post_call(
     elevator: &str,
     floor: i32,
     id: &str,
-    credentials: Option<(&str, &str)>,
+    passenger: Option<&str>,
 ) -> Result<(), BoxErr> {
     let url = format!("{api_base}/api/call");
+    // The passenger identity travels in the body; None => anonymous call.
     let body = serde_json::to_string(&CallPayload {
         id,
         elevator_name: elevator,
         floor,
+        passenger_id: passenger,
     })?;
-    // Basic auth identifies the passenger; no credentials => anonymous call.
-    let mut req = agent.post(&url).set("Content-Type", "application/json");
-    if let Some((user, pass)) = credentials {
-        req = req.set("Authorization", &basic_auth(user, pass));
-    }
+    let req = agent.post(&url).set("Content-Type", "application/json");
     match req.send_string(&body) {
         Ok(_) => Ok(()),
         Err(ureq::Error::Status(code, _)) => Err(format!("POST /api/call → HTTP {code}").into()),
@@ -190,11 +160,11 @@ pub fn post_call_retry(
     elevator: &str,
     floor: i32,
     id: &str,
-    credentials: Option<(&str, &str)>,
+    passenger: Option<&str>,
 ) -> Result<(), BoxErr> {
     let mut last = None;
     for attempt in 0..3 {
-        match post_call(agent, api_base, elevator, floor, id, credentials) {
+        match post_call(agent, api_base, elevator, floor, id, passenger) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last = Some(e);
@@ -203,29 +173,4 @@ pub fn post_call_retry(
         }
     }
     Err(last.unwrap_or_else(|| "post_call failed".into()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn base64_matches_rfc_4648_test_vectors() {
-        assert_eq!(base64(b""), "");
-        assert_eq!(base64(b"f"), "Zg==");
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foo"), "Zm9v");
-        assert_eq!(base64(b"foob"), "Zm9vYg==");
-        assert_eq!(base64(b"fooba"), "Zm9vYmE=");
-        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
-    }
-
-    #[test]
-    fn basic_auth_encodes_user_and_password() {
-        // "rider-0:liftpass" base64 -> from an independent encoder.
-        assert_eq!(
-            basic_auth("rider-0", "liftpass"),
-            "Basic cmlkZXItMDpsaWZ0cGFzcw=="
-        );
-    }
 }

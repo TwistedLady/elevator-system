@@ -1,35 +1,34 @@
 # Auth
 
-`POST /api/call` accepts **optional HTTP Basic** authentication. The point is passenger identity:
-identity comes from the login, never the request body.
+**There is no authentication yet.** Every endpoint is open; nothing verifies who is calling. A real
+login is planned — to be built from the ground up.
 
-- **With valid credentials** → the authenticated username becomes the call's `passengerId`.
-- **No credentials** → the call is **anonymous** (still accepted).
-- **Bad credentials** → `401` (Spring Security rejects them).
+Until then, passenger identity is carried, unverified, in the request body:
 
-Every endpoint is `permitAll`, so anonymous access to state, health, and calls keeps working; auth
-only *labels* a call with a passenger. See the counts in [protocol.md](protocol.md#passenger-identification).
+- `POST /api/call` accepts an **optional `passengerId`** field.
+- **Present** → it becomes the call's passenger (see the per-order counts in
+  [protocol.md](protocol.md#passenger-identification)).
+- **Absent or blank** → the call is **anonymous** (still accepted).
+
+Because it is unverified, the `passengerId` is a *claim*, not proof of identity — a placeholder for
+the authenticated user a future login will supply.
 
 ## Where it lives
 
 | Piece | File |
 |---|---|
-| Security config (optional Basic, permitAll) | `elevator-api/.../config/SecurityConfig.java` |
-| User accounts | `elevator-api/src/main/resources/passengers.properties` |
-| Passenger extracted from the principal | `elevator-api/.../call/CallController.java` |
+| Reads `passengerId` from the body | `elevator-api/.../call/CallController.java` |
+| Carries it on the wire DTO | `elevator-common/.../dto` `CallDto.passengerId` |
 
-Users are a file of `username=password` lines — a lab stand-in for a real directory (LDAP/OIDC).
-Passwords are stored plainly with the `{noop}` encoder: **lab-only, not for production.**
-
-The Rust console's simulator authenticates ~half its calls as recurring `rider-N` accounts (shared
-password `liftpass`) and leaves the rest anonymous, so both tallies are exercised.
+The Rust console's simulator tags ~half its calls with recurring `rider-N` identities and leaves the
+rest anonymous, so both tallies are exercised.
 
 ```bash
 # anonymous
 curl -sk -X POST https://localhost:8080/api/call \
   -H 'content-type: application/json' -d '{"elevatorName":"e1","floor":3}'
 
-# as a passenger
-curl -sk -u rider-0:liftpass -X POST https://localhost:8080/api/call \
-  -H 'content-type: application/json' -d '{"elevatorName":"e1","floor":3}'
+# with a passenger claim
+curl -sk -X POST https://localhost:8080/api/call \
+  -H 'content-type: application/json' -d '{"elevatorName":"e1","floor":3,"passengerId":"rider-0"}'
 ```

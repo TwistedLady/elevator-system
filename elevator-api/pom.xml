@@ -42,13 +42,6 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- HTTP Basic auth for POST /api/call: the authenticated username becomes the passenger.
-             Users come from a file on the classpath (passengers.properties) — lab-only. -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-
         <!-- OpenAPI spec at /v3/api-docs (JSON only, no Swagger UI). -->
         <dependency>
             <groupId>org.springdoc</groupId>
@@ -106,12 +99,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 
