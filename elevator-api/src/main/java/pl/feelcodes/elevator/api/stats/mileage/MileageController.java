@@ -11,8 +11,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Read-only BI endpoint over the elevator_mileage table (maintained by the elevator-bi Spark job):
- * each elevator's cumulative floors travelled.
+ * Read-only BI endpoint over the Parquet BI read-model (produced by the elevator-bi Spark job, read
+ * via DuckDB): each elevator's cumulative floors travelled.
  */
 @RestController
 @RequestMapping("/api/mileage")
