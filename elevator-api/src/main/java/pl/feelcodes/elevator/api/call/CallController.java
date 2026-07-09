@@ -12,14 +12,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-import java.security.Principal;
-
 @Slf4j
 @RestController
 @RequestMapping("/api/call")
 class CallController {
-
-    private static final String ANONYMOUS = "anonymousUser";
 
     private final CallService callService;
     private final CallStatusService callStatusService;
@@ -29,23 +25,17 @@ class CallController {
         this.callStatusService = callStatusService;
     }
 
-    // The passenger is the authenticated username (HTTP Basic); no credentials => anonymous call.
-    // Identity comes from the login, never the request body.
+    // The passenger is an optional field on the request body; blank/absent => anonymous call.
+    // (No authentication yet — a real login is planned to supply this instead.)
     @PostMapping
-    public Mono<CallRequestDto> place(@Valid @RequestBody CallRequestDto dto, Mono<Principal> principal) {
+    public Mono<CallRequestDto> place(@Valid @RequestBody CallRequestDto dto) {
         CallRequestDto call = dto.withIdIfAbsent();
-        return principal
-                .map(Principal::getName)
-                .filter(name -> !ANONYMOUS.equals(name))
-                .defaultIfEmpty("")
-                .flatMap(name -> {
-                    String passenger = name.isEmpty() ? null : name;
-                    log.info("[call place ] {} -> floor {} (id {}, passenger {})",
-                            call.elevatorName(), call.floor(), call.id(),
-                            passenger == null ? "anonymous" : passenger);
-                    return callService.call(call.id(), call.elevatorName(), call.floor(), passenger)
-                            .thenReturn(call);
-                });
+        String passenger = call.passengerId() == null || call.passengerId().isBlank() ? null : call.passengerId();
+        log.info("[call place ] {} -> floor {} (id {}, passenger {})",
+                call.elevatorName(), call.floor(), call.id(),
+                passenger == null ? "anonymous" : passenger);
+        return callService.call(call.id(), call.elevatorName(), call.floor(), passenger)
+                .thenReturn(call);
     }
 
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
