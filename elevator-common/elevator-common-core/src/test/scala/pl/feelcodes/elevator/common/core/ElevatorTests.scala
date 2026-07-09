@@ -5,7 +5,6 @@ import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.core.domain.Direction.*
 import pl.feelcodes.elevator.common.core.domain.Motion.*
 import pl.feelcodes.elevator.common.core.domain.Command.*
-import pl.feelcodes.elevator.common.core.engine.Elevator
 
 final class ElevatorTests extends AnyFunSuite:
 
