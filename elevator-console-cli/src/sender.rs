@@ -14,12 +14,14 @@ pub fn send_one(api_base: &str, elevator: &str, floor: i32) -> Result<(), BoxErr
 }
 
 /// How many recurring riders the simulator draws from. A small pool means the same rider presses
-/// many times, so the Manager's distinct-passenger count stays below the raw call count.
+/// many times, so the Manager's distinct-passenger count stays below the raw call count. The names
+/// and password must match `passengers.properties` in elevator-api.
 pub const PASSENGER_POOL: usize = 8;
+pub const PASSENGER_PASSWORD: &str = "liftpass";
 
-/// Decide the passenger for a simulated call from a raw draw in `0..2 * PASSENGER_POOL`. The low
-/// half is anonymous (`None`); the high half maps to one of `PASSENGER_POOL` recurring riders, so
-/// roughly half the calls carry a passenger id and identified riders repeat.
+/// Decide the rider for a simulated call from a raw draw in `0..2 * PASSENGER_POOL`. The low half
+/// is anonymous (`None`, no credentials); the high half maps to one of `PASSENGER_POOL` recurring
+/// riders (`rider-N`), so roughly half the calls authenticate and identified riders repeat.
 pub fn passenger_for(draw: usize) -> Option<String> {
     if draw < PASSENGER_POOL {
         None
@@ -129,10 +131,9 @@ fn worker(
         let elevator = &elevators[rng.below(elevators.len())];
         let floor = rng.floor(max_floor);
         let id = call_id(run_id, tid, i);
-        let passenger = passenger_for(rng.below(PASSENGER_POOL * 2));
-        if api::post_call_retry(&agent, api_base, elevator, floor, &id, passenger.as_deref())
-            .is_ok()
-        {
+        let rider = passenger_for(rng.below(PASSENGER_POOL * 2));
+        let credentials = rider.as_deref().map(|u| (u, PASSENGER_PASSWORD));
+        if api::post_call_retry(&agent, api_base, elevator, floor, &id, credentials).is_ok() {
             sent.fetch_add(1, Ordering::Relaxed);
         }
         if let Some(d) = delay {
