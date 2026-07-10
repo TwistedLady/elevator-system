@@ -1,10 +1,10 @@
 package pl.feelcodes.elevator.bi
 
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, SaveMode, SparkSession}
 import org.slf4j.LoggerFactory
 import pl.feelcodes.elevator.bi.config.BiConfig
-import pl.feelcodes.elevator.bi.kafka.ElevatorStateSchema
+import pl.feelcodes.elevator.bi.kafka.{CallSchema, ElevatorStateSchema}
 import pl.feelcodes.elevator.bi.sink.ParquetSink
 
 /** Spark batch BI job: re-scan the elevator-state topic + order_status each cycle,
@@ -42,11 +42,24 @@ object ElevatorStatsJob {
   }
 
   def refreshOnce(spark: SparkSession, cfg: BiConfig): Unit = {
+    val orderStatus = readOrderStatus(spark, cfg)
     val mileage = ElevatorStats.mileage(readStateEvents(spark, cfg), spark)
-    val served  = OrdersServed.tally(readOrderStatus(spark, cfg))
+    val served  = OrdersServed.tally(orderStatus)
     val stats   = ElevatorStats.join(mileage, served, spark)
     ParquetSink.write(stats, cfg)
     log.info(s"stats: wrote ${stats.count()} elevator rows to ${cfg.parquetPath}")
+
+    refreshConflicts(spark, cfg, orderStatus)
+  }
+
+  private def refreshConflicts(spark: SparkSession, cfg: BiConfig, orderStatus: DataFrame): Unit = {
+    val windows = PassengerConflicts.windows(readCalls(spark, cfg), readCallStatus(spark, cfg), orderStatus)
+    val conflicts = PassengerConflicts.detect(windows)
+    conflicts.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.conflictsParquetPath + ".staging")
+    ParquetSink.replace(cfg.conflictsParquetPath)
+    val count = conflicts.count()
+    if (count == 0) log.info("conflicts: OK — no passenger was served by two lifts at once")
+    else log.warn(s"conflicts: $count passenger double-booking(s) — a passenger overlapped on two lifts (see ${cfg.conflictsParquetPath})")
   }
 
   private def readStateEvents(spark: SparkSession, cfg: BiConfig): Dataset[StateEvent] = {
@@ -69,14 +82,35 @@ object ElevatorStatsJob {
   }
 
   private def readOrderStatus(spark: SparkSession, cfg: BiConfig): DataFrame =
+    readTable(spark, cfg, cfg.orderStatusTable)
+
+  private def readCallStatus(spark: SparkSession, cfg: BiConfig): DataFrame =
+    readTable(spark, cfg, cfg.callStatusTable)
+
+  private def readTable(spark: SparkSession, cfg: BiConfig, table: String): DataFrame =
     spark.read
       .format("jdbc")
       .option("url", cfg.sourceJdbcUrl)
-      .option("dbtable", cfg.orderStatusTable)
+      .option("dbtable", table)
       .option("user", cfg.jdbcUser)
       .option("password", cfg.jdbcPassword)
       .option("driver", "org.postgresql.Driver")
       .load()
+
+  private def readCalls(spark: SparkSession, cfg: BiConfig): DataFrame =
+    spark.read
+      .format("kafka")
+      .option("kafka.bootstrap.servers", cfg.kafkaBootstrap)
+      .option("subscribe", cfg.callTopic)
+      .option("startingOffsets", "earliest")
+      .option("endingOffsets", "latest")
+      .load()
+      .select(
+        org.apache.spark.sql.functions
+          .from_json(col("value").cast("string"), CallSchema.schema)
+          .as("c"))
+      .select(col("c.id").as("call_id"), col("c.passengerId").as("passenger_id"))
+      .where(col("call_id").isNotNull)
 
   private def sleepInterruptibly(seconds: Int): Unit = {
     var left = seconds
