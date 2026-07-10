@@ -1,20 +1,17 @@
 package pl.feelcodes.elevator.bi.config
 
-/** All job configuration, resolved from environment variables (12-factor). Defaults match the
-  * in-cluster service names / mount paths so the job runs with no config on the kind cluster.
+/** Job config from env vars (12-factor); defaults match in-cluster service names /
+  * mount paths so it runs unconfigured on kind. Cadence: loop every intervalSeconds,
+  * or runOnce = one pass then exit when an external scheduler owns cadence.
   */
 final case class BiConfig(
     kafkaBootstrap: String,
     stateTopic: String,
-    // Source read: the operational `elevator` DB (order_status = the "orders served" signal).
     sourceJdbcUrl: String,
     jdbcUser: String,
     jdbcPassword: String,
     orderStatusTable: String,
-    // Analytics sink: the single Parquet directory the api reads via DuckDB (shared volume).
     parquetPath: String,
-    // Cadence: loop every intervalSeconds (Deployment), OR one pass then exit when an external
-    // scheduler (k8s CronJob / Spark Operator) owns the cadence.
     intervalSeconds: Int,
     runOnce: Boolean
 )

@@ -1,8 +1,10 @@
 package pl.feelcodes.elevator.common.core.domain
 
+/** Elevator domain values: Direction (`swap` reverses), Motion, a move Command, and the
+  * immutable ElevatorState snapshot (direction, motion, floor). */
+
 type ElevatorName = String
 
-/** Travel direction; `swap` reverses it. */
 enum Direction:
   case Up, Down
 
@@ -13,12 +15,10 @@ enum Direction:
 enum Motion:
   case Moving, Stopped
 
-/** A move command: go one way, or stop. */
 enum Command:
   case Go(direction: Direction)
   case Stop()
 
-/** Immutable elevator snapshot: floor + motion. */
 final case class ElevatorState(direction: Direction,
                                motion: Motion,
                                floor: Floor):

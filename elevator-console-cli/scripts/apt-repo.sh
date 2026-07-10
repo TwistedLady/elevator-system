@@ -1,17 +1,10 @@
 #!/usr/bin/env bash
-# Build the .deb and (re)publish a signed local APT repository for it.
-#
-#   scripts/apt-repo.sh
-#
-# Output: a flat, GPG-signed apt repo under  target/apt-repo/  containing:
-#   *.deb  Packages[.gz]  Release  Release.gpg  InRelease  elevator-console.gpg (public key)
-#
-# After running once, add it as an apt source (see the printed instructions or docs/apt-repo.md).
-# Re-run any time after `cargo deb` / code changes to refresh the index. Idempotent.
+# Build the .deb and (re)publish a signed, flat local APT repo under target/apt-repo/.
+# Idempotent; re-run after `cargo deb` or code changes. See the printed apt-source instructions.
 set -euo pipefail
 
-SIGN_EMAIL="apt@elevator-system.local"          # the repo signing key's uid
-HERE="$(cd -- "$(dirname -- "$0")/.." && pwd)"  # elevator-console-cli/
+SIGN_EMAIL="apt@elevator-system.local"
+HERE="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 REPO="$HERE/target/apt-repo"
 
 echo ">> building .deb"
@@ -23,11 +16,9 @@ mkdir -p "$REPO"
 cp "$HERE"/target/debian/*.deb "$REPO/"
 
 cd "$REPO"
-# Index every .deb in this dir (flat repo: paths are relative to the repo root).
 dpkg-scanpackages --multiversion . > Packages
 gzip -9 -k -f Packages
 
-# A flat-repo Release file that lists the checksums of Packages[.gz].
 apt-ftparchive \
   -o "APT::FTPArchive::Release::Origin=elevator-system" \
   -o "APT::FTPArchive::Release::Label=elevator-console" \
@@ -41,7 +32,6 @@ echo ">> signing"
 rm -f Release.gpg InRelease
 gpg --batch --yes --local-user "$SIGN_EMAIL" --armor --detach-sign -o Release.gpg Release
 gpg --batch --yes --local-user "$SIGN_EMAIL" --clearsign -o InRelease Release
-# Ship the public key so apt can verify (dearmored, ready for /etc/apt/keyrings).
 gpg --export "$SIGN_EMAIL" > elevator-console.gpg
 
 echo ">> done: $REPO"

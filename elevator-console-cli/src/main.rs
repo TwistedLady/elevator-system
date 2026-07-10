@@ -1,3 +1,5 @@
+//! elevator-console-cli entrypoint: CLI parsing and subcommand dispatch.
+//! Doc comments on Cli/Command below are clap `--help` text, not free-form comments.
 mod api;
 mod itest;
 mod monitor;
@@ -94,7 +96,6 @@ fn main() {
     }
 }
 
-/// Send a single call, pre-checking it against the API's live limits (the API stays authoritative).
 fn run_call(api: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     let agent = api::agent();
     if let Ok(cfg) = api::get_config(&agent, api) {
@@ -106,7 +107,6 @@ fn run_call(api: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     Ok(())
 }
 
-/// Trigger a server-side simulation and print the run id. The api fires the calls; we don't.
 fn run_simulate(api: &str, count: u64) -> Result<(), BoxErr> {
     let resp = api::post_simulate(&api::agent(), api, count)?;
     println!(

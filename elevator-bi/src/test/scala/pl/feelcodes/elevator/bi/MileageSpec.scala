@@ -2,6 +2,7 @@ package pl.feelcodes.elevator.bi
 
 import org.scalatest.funsuite.AnyFunSuite
 
+/** Unit tests for the pure Mileage fold. */
 class MileageSpec extends AnyFunSuite {
 
   test("first floor sets the baseline and contributes zero mileage") {
@@ -9,7 +10,6 @@ class MileageSpec extends AnyFunSuite {
   }
 
   test("mileage is the sum of absolute floor deltas, up and down") {
-    // 0 -> 3 (3) -> 1 (2) -> 4 (3) = 8 floors travelled, last floor 4
     val result = Mileage.update(None, Seq(0, 3, 1, 4))
     assert(result.contains(MileageState(4, 8L)))
   }
@@ -20,7 +20,6 @@ class MileageSpec extends AnyFunSuite {
 
   test("folding a new batch continues from prior state") {
     val prev = MileageState(lastFloor = 4, floorsTravelled = 8L)
-    // continue 4 -> 0 (4) -> 2 (2) = +6 => 14, last floor 2
     val result = Mileage.update(Some(prev), Seq(0, 2))
     assert(result.contains(MileageState(2, 14L)))
   }

@@ -22,7 +22,8 @@ import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.DurationConverters.*
 
-/** Reads calls from Kafka in batches, dedups by call id, and hands each elevator its calls. */
+/** Reads calls from Kafka in batches, dedups by call id, and hands each elevator its calls.
+  * Drains in-flight calls on shutdown; uncommitted ones redeliver (at-least-once + dedup). */
 object CallConsumer {
   private final case class ConsumerConf(bootstrapServers: String,
                                         groupId: String,
@@ -79,10 +80,6 @@ object CallConsumer {
 
     done.failed.foreach(ex => system.log.error("Kafka stream failed", ex))
 
-    // Drain on graceful shutdown (SIGTERM during a rolling restart): in PhaseServiceUnbind —
-    // which runs BEFORE the cluster member leaves and shards hand off — stop pulling new calls
-    // and let in-flight ones finish processing and commit their offsets. Uncommitted calls
-    // simply redeliver to the surviving pod (at-least-once + dedup), so no call is lost.
     CoordinatedShutdown(system).addTask(
       CoordinatedShutdown.PhaseServiceUnbind,
       "stop-call-consumer"

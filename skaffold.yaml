@@ -1,13 +1,13 @@
+# One Helm release = the whole system on a kind cluster. Local build push=false, so Skaffold loads
+# images straight into kind's containerd (no `kind load`, no registry). app/api/console-web build from
+# the repo-root context; console-cli from its own dir (bundles the CA Terraform wrote — `terraform
+# apply` first). values-dev.yaml trims to single-node (api:1, BI off); profiles: `-p bi` adds Spark BI,
+# `-p full` is the production-shaped api:2 + BI (needs >1 node's CPU).
 apiVersion: skaffold/v4beta11
 kind: Config
 metadata:
   name: elevator
 
-# ── build ──────────────────────────────────────────────────────────────────────────────────────
-# Build the images locally and (because the deploy target is a kind cluster and push=false) Skaffold
-# loads them straight into the cluster's containerd — no `kind load`, no registry. app/api/console-web
-# build from the REPO ROOT context (their Dockerfiles run `mvn ... COPY . .`); console-cli from its
-# own module dir (it bundles the CA that Terraform wrote — so run `terraform apply` first).
 build:
   local:
     push: false
@@ -30,9 +30,6 @@ build:
       docker:
         dockerfile: Dockerfile
 
-# ── render ─────────────────────────────────────────────────────────────────────────────────────
-# One Helm release = the whole system. Skaffold injects the freshly-built image refs into the
-# chart's image values. values-dev.yaml trims to the single-node profile (api:1, BI off).
 manifests:
   helm:
     releases:
@@ -47,11 +44,9 @@ manifests:
           global.images.consoleCli: '{{.IMAGE_FULLY_QUALIFIED_elevator_console_cli}}'
         setValues: {}
 
-# ── deploy ─────────────────────────────────────────────────────────────────────────────────────
 deploy:
   helm: {}
 
-# `skaffold dev` forwards the api to localhost:8080 so the host console/monitor can reach it.
 portForward:
   - resourceType: service
     resourceName: elevator-api
@@ -62,11 +57,7 @@ portForward:
     port: 80
     localPort: 8081
 
-# ── profiles ─────────────────────────────────────────────────────────────────────────────────────
 profiles:
-  # Turn the Spark BI layer on: build the (out-of-reactor, Scala 2.12) bi image via a custom builder
-  # that packages the jar first, then flip bi.enabled so the chart renders the stats driver (Parquet).
-  #   skaffold run -p bi
   - name: bi
     patches:
       - op: add
@@ -88,8 +79,6 @@ profiles:
         path: /manifests/helm/releases/0/setValues/bi.enabled
         value: "true"
 
-  # The full production-shaped profile (api:2, BI on) — needs more than one kind node's worth of CPU.
-  #   skaffold run -p full
   - name: full
     patches:
       - op: replace

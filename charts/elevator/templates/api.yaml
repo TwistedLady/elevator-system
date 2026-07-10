@@ -1,5 +1,6 @@
-# The Spring edge. Has a Service so you can reach POST /api/order and the monitor. Serves HTTPS
-# from the keystore in the elevator-api-tls secret (created by Terraform's tls provider).
+# The Spring edge: Service for POST /api/order + the monitor, serving HTTPS from the elevator-api-tls
+# keystore. Rolls in place (no surge) on the CPU-constrained single node. ELEVATOR_POD_NAME gives each
+# replica a unique state-consumer group so every replica reads the full fanout.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,7 +10,6 @@ metadata:
     app.kubernetes.io/part-of: elevator
 spec:
   replicas: {{ .Values.api.replicas }}
-  # Roll in place (no surge pod) on a CPU-constrained single node — see app.yaml.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -34,13 +34,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: elevator-config
-          env:                                 # TLS: serve HTTPS from the mounted keystore
+          env:
             - { name: ELEVATOR_TLS_ENABLED, value: "true" }
             - { name: ELEVATOR_TLS_KEYSTORE, value: "/etc/tls/keystore.p12" }
             - name: ELEVATOR_TLS_PASSWORD
               valueFrom:
                 secretKeyRef: { name: {{ .Values.api.tlsSecret }}, key: password }
-            # Per-replica id -> unique-but-stable state-consumer group (fanout: each replica reads all).
             - name: ELEVATOR_POD_NAME
               valueFrom:
                 fieldRef: { fieldPath: metadata.name }
@@ -48,10 +47,9 @@ spec:
             - { name: tls, mountPath: /etc/tls, readOnly: true }
             - { name: elevator-config, mountPath: /etc/elevator-config, readOnly: true }
             {{- if .Values.bi.enabled }}
-            # The Spark BI Parquet read-model, read-only (same node, shared hostPath). Read via DuckDB.
             - { name: data, mountPath: /data, readOnly: true }
             {{- end }}
-          readinessProbe:                      # HTTPS
+          readinessProbe:
             httpGet: { path: /api/elevator, port: 8080, scheme: HTTPS }
             initialDelaySeconds: 10
             periodSeconds: 5

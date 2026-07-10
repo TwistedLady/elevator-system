@@ -1,8 +1,7 @@
 name: PR title (Conventional Commits)
 
-# The rule that makes automatic versioning work: the repo squash-merges, so a PR's TITLE becomes the
-# commit on main that release-please reads to compute the next version. Enforce the Conventional
-# Commit format on the title (feat:, fix:, feat!:, chore:, docs:, refactor:, test:, ci:, build:…).
+# The repo squash-merges, so a PR title becomes the commit release-please reads for the next version.
+# Enforce Conventional Commits on the title (feat->minor, fix->patch, "!"=breaking; rest cut no release).
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
@@ -19,8 +18,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Only these commit types are allowed. feat -> minor, fix -> patch (release-please);
-          # the rest don't cut a release on their own. Breaking change: append "!" (e.g. feat!:).
           types: |
             feat
             fix

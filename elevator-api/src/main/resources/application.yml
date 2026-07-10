@@ -1,5 +1,9 @@
+# elevator-api config. Default profile is `test` (SPRING_PROFILES_ACTIVE=prod overrides). HTTPS on
+# 8080 only when a keystore is mounted (k8s), off for local. r2dbc = operational `elevator` DB;
+# order-validation limits come from a mounted ConfigMap (prod) or application-test.yml, never here.
+# `elevator.stats` is the Spark BI Parquet read-model; auth is passenger JWT on POST /api/call.
 server:
-  ssl:                    # HTTPS on 8080 when a keystore is provided (k8s mounts one; off by default for local/dev)
+  ssl:
     enabled: ${ELEVATOR_TLS_ENABLED:false}
     key-store: ${ELEVATOR_TLS_KEYSTORE:/etc/tls/keystore.p12}
     key-store-password: ${ELEVATOR_TLS_PASSWORD:changeit}
@@ -7,8 +11,8 @@ server:
     key-alias: elevator-api
 spring:
   profiles:
-    active: test          # default; override with SPRING_PROFILES_ACTIVE=prod (env wins)
-  r2dbc:                  # PRIMARY datasource → operational `elevator` DB (order_status read-model)
+    active: test
+  r2dbc:
     url: r2dbc:postgresql://${ELEVATOR_PG_HOST:localhost}:${ELEVATOR_PG_PORT:5432}/${ELEVATOR_PG_DATABASE:elevator}
     username: ${ELEVATOR_PG_USER:elevator}
     password: ${ELEVATOR_PG_PASSWORD:elevator}
@@ -22,41 +26,33 @@ spring:
     consumer:
       group-id: elevator-api
 elevator:
-  stats:                  # Spark BI read-model: a single Parquet file read via DuckDB (shared volume)
+  stats:
     parquet-path: ${ELEVATOR_STATS_PARQUET_PATH:/data/elevators.parquet}
   call-topic: elevator-calls
   state-topic: elevator-state
   door-state-topic: elevator-door-state
-  auth:                   # Passenger JWT: POST /api/call requires a valid Bearer token (sub = passengerId)
+  auth:
     issuer: elevator-api
     audience: elevator
     token-ttl-seconds: 300
-    # Gate for the dev token issuer (POST /api/token). Override in prod; the dev default lets
-    # local runs mint tokens without extra setup.
     client-secret: ${ELEVATOR_CLIENT_SECRET:dev-secret}
-  # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
-  # hot-reloaded by ElevatorLimits. No defaults here — a missing ConfigMap fails the pod fast.
-  # Test values live in application-test.yml.
-  # Per-replica id for the state consumer group (Downward API metadata.name); empty -> random uuid.
   pod-name: ${ELEVATOR_POD_NAME:}
 management:
   health:
     r2dbc:
-      enabled: false                   # the main DB has a custom indicator (db); the BI read-model is
-                                       # a Parquet file, checked by the (bi) indicator, not R2DBC
+      enabled: false
   endpoints:
     web:
       exposure:
-        include: health,info,metrics   # keep it tight; not "*"
+        include: health,info,metrics
   endpoint:
     health:
       probes:
-        enabled: true                  # adds /health/liveness and /health/readiness
-      show-details: always             # switch to when_authorized once security is added
+        enabled: true
+      show-details: always
       group:
         readiness:
-          include: readinessState,kafka  # broker must be reachable to be "ready"
-# Logging strategy lives in the profile files: application-test.yml / application-prod.yml.
+          include: readinessState,kafka
 logging:
   level:
-    org.apache.kafka: WARN              # silence consumer/producer coordination chatter (both profiles)
+    org.apache.kafka: WARN

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS order_status (
   order_id      VARCHAR(255) PRIMARY KEY,
   elevator_name VARCHAR(255) NOT NULL,
   floor         INT          NOT NULL,
-  status        VARCHAR(16)  NOT NULL,        -- PROGRESS | DONE
+  status        VARCHAR(16)  NOT NULL,
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
   done_at       TIMESTAMPTZ
 );

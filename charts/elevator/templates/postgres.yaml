@@ -1,5 +1,5 @@
 # Postgres for the Pekko event journal + projections. A StatefulSet (stable identity + own PVC) so
-# data survives pod restarts/reschedules. Reached at "postgres:5432" via the headless Service.
+# data survives restarts; reached at "postgres:5432" via the headless Service. Password is demo-only.
 apiVersion: v1
 kind: Service
 metadata:
@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: elevator
 spec:
-  clusterIP: None          # headless: stable DNS for the StatefulSet pod
+  clusterIP: None
   selector:
     app: postgres
   ports:
@@ -41,7 +41,6 @@ spec:
           env:
             - { name: POSTGRES_DB, value: {{ .Values.global.postgres.database | quote }} }
             - { name: POSTGRES_USER, value: {{ .Values.global.postgres.user | quote }} }
-            # demo only — replace with a valueFrom: secretKeyRef in a real cluster
             - { name: POSTGRES_PASSWORD, value: {{ .Values.global.postgres.password | quote }} }
             - { name: PGDATA, value: "/var/lib/postgresql/data/pgdata" }
           volumeMounts:

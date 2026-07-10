@@ -11,7 +11,6 @@ metadata:
     app.kubernetes.io/part-of: elevator
 spec:
   replicas: {{ .Values.app.replicas }}
-  # Roll in place (no surge pod) so a new revision schedules on a CPU-constrained single node.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -25,9 +24,7 @@ spec:
       labels:
         app: elevator-app
     spec:
-      # Needed by kubernetes-api discovery to list sibling pods (see rbac.yaml).
       serviceAccountName: elevator-app
-      # Allow graceful drain: stop the Kafka consumer + hand off shards before the pod dies.
       terminationGracePeriodSeconds: 60
       imagePullSecrets:
         - name: {{ .Values.global.imagePullSecret }}
@@ -39,15 +36,12 @@ spec:
             - configMapRef:
                 name: elevator-config
           env:
-            # Pekko remoting + management bind to the pod's own IP so peers can reach it.
             - name: ELEVATOR_POD_IP
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
             - name: ELEVATOR_CLUSTER_BOOTSTRAP
               value: "on"
-            # A node reports Ready only once the cluster has all its members (= app.replicas),
-            # so min-members tracks the replica count instead of a constant that drifts from it.
             - name: ELEVATOR_CLUSTER_MIN_MEMBERS
               value: {{ .Values.app.replicas | quote }}
           ports:
@@ -71,7 +65,6 @@ spec:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1",    memory: "512Mi" }
           volumeMounts:
-            # Same ConfigMap as files, for live engine reload (no subPath — keeps updates flowing).
             - name: elevator-config
               mountPath: /etc/elevator-config
               readOnly: true

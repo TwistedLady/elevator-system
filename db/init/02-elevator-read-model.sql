@@ -1,12 +1,12 @@
--- Read-model (CQRS read-side) maintained by ElevatorStateProjection.
--- One row per elevator = its current state, upserted on each Controller.ElevatorStateUpdated event.
--- This is the queryable view; the event_journal (01-pekko-r2dbc.sql) is the source of truth.
+-- Read-model (CQRS read-side) maintained by ElevatorStateProjection: one row per elevator, its
+-- current state, upserted on each Controller.ElevatorStateUpdated event. Source of truth is the
+-- event_journal (01-pekko-r2dbc.sql). direction Up|Down, motion Moving|Stopped.
 
 CREATE TABLE IF NOT EXISTS elevator_state_view (
   elevator_name  VARCHAR(255) PRIMARY KEY,
   floor          INT          NOT NULL,
-  direction      VARCHAR(8)   NOT NULL,   -- Up | Down
-  motion         VARCHAR(8)   NOT NULL,   -- Moving | Stopped
-  last_order_tag VARCHAR(255),            -- tag of the order being served on the last update
+  direction      VARCHAR(8)   NOT NULL,
+  motion         VARCHAR(8)   NOT NULL,
+  last_order_tag VARCHAR(255),
   updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );

@@ -1,9 +1,6 @@
-# Additive NetworkPolicies for BI (a UNION with the parent's base). Separate objects, not edits to
-# the base — so no conditionals anywhere: the whole subchart is skipped when bi.enabled is false.
-#   - bi <-> bi        : driver <-> executor RPC
-#   - bi -> kafka      : executors read elevator-state
-#   - bi -> postgres   : read order_status (orders served). The stats read-model is now a Parquet
-#                        file on a shared volume, so there is no analytics DB to reach.
+# Additive BI NetworkPolicies (a UNION with the parent's base; the whole subchart is skipped when
+# bi.enabled is false, so no conditionals): bi<->bi driver/executor RPC, bi->kafka (read elevator-state),
+# bi->postgres (read order_status). The stats read-model is a Parquet file, so there's no analytics DB.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

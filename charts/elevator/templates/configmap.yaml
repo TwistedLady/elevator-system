@@ -9,22 +9,18 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: elevator
 data:
-  # ---- managed app params (hot-reloaded) ----
   ELEVATOR_MAXFLOOR: {{ .Values.config.maxFloor | quote }}
   ELEVATOR_ELEVATORS: {{ .Values.config.elevators | quote }}
   ELEVATOR_ENGINE: {{ .Values.config.engine | quote }}
   ELEVATOR_BI_ENABLED: {{ .Values.bi.enabled | quote }}
 
-  # ---- infra wiring (needs a restart to change) ----
   ELEVATOR_PG_HOST: {{ .Values.global.postgres.host | quote }}
   ELEVATOR_PG_DATABASE: {{ .Values.global.postgres.database | quote }}
   ELEVATOR_PG_USER: {{ .Values.global.postgres.user | quote }}
   ELEVATOR_PG_PASSWORD: {{ .Values.global.postgres.password | quote }}
-  # BI read-model = the Spark-produced Parquet on the shared volume, read via DuckDB.
   ELEVATOR_STATS_PARQUET_PATH: "/data/elevators.parquet"
   SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
   SERVER_PORT: "8080"
-  # Kafka — app-side env names
   ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
   ELEVATOR_KAFKA_GROUP_ID: {{ .Values.global.kafka.groupId | quote }}
   ELEVATOR_KAFKA_CALL_TOPIC: {{ .Values.global.kafka.callTopic | quote }}
@@ -32,7 +28,6 @@ data:
   ELEVATOR_KAFKA_ORDER_STATE_TOPIC: {{ .Values.global.kafka.orderStateTopic | quote }}
   ELEVATOR_KAFKA_CALL_STATE_TOPIC: {{ .Values.global.kafka.callStateTopic | quote }}
   ELEVATOR_KAFKA_DOOR_STATE_TOPIC: {{ .Values.global.kafka.doorStateTopic | quote }}
-  # Kafka — api-side env names (same values, different keys)
   SPRING_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
   ELEVATOR_CALL_TOPIC: {{ .Values.global.kafka.callTopic | quote }}
   ELEVATOR_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}

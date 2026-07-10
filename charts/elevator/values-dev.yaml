@@ -1,14 +1,12 @@
-# Single-node kind dev loop (Skaffold's default). The one node can't hold api:2 + full Spark BI at
-# once, so trim to api:1 and BI off. Turn BI on with `skaffold run -p bi`.
+# Single-node kind dev overlay (Skaffold default): api:1, BI off, NodePort so the host reaches api at
+# localhost:8080. app stays 2 for the Pekko cluster (min-members=2). Turn BI on with `skaffold run -p bi`.
 api:
   replicas: 1
-  # Expose the api on the node so the host console/curl reach it at localhost:8080
-  # (kind maps hostPort 8080 -> nodePort 30080). `skaffold run` doesn't port-forward.
   serviceType: NodePort
   nodePort: 30080
 
 app:
-  replicas: 2   # keep 2 so the Pekko cluster still forms (min-members = 2)
+  replicas: 2
 
 bi:
   enabled: false

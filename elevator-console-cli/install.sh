@@ -1,10 +1,6 @@
 #!/usr/bin/env sh
-# Build the elevator-console-cli release binary and install it on your PATH.
-#
-#   ./install.sh                 # -> ~/.local/bin/elevator-console-cli
-#   PREFIX=/usr/local ./install.sh   # -> /usr/local/bin/elevator-console-cli (may need sudo)
-#
-# Needs a Rust toolchain (rustup/cargo). No system libraries.
+# Build the release binary and install it on PATH (default ~/.local/bin; override with PREFIX).
+# Needs a Rust toolchain (cargo).
 set -eu
 
 PREFIX="${PREFIX:-$HOME/.local}"

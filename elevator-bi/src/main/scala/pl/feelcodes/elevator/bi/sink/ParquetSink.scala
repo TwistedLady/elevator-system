@@ -9,15 +9,10 @@ import java.net.URI
 import java.nio.file.{Files, Path, Paths}
 import scala.reflect.io.Directory
 
-/** Writes the whole per-elevator model to a single Parquet directory, replacing it each cycle.
-  *
-  * Parquet files are immutable — there is no row-level upsert — so every refresh rewrites the full
-  * snapshot (the fleet is tiny). We write to a staging dir first so readers (the api's DuckDB) never
-  * see a partially written part file: staging is invisible under the target path until it is moved
-  * in. Publishing is delete-then-move, not one atomic swap, so there is a brief window where the
-  * target is absent — the reader tolerates that as an empty result. We `coalesce(1)` so the output
-  * is one part file, cheap to scan. Staging and target share the hostPath filesystem, so the move is
-  * a plain rename, not a copy.
+/** Rewrites the whole per-elevator model to one Parquet dir each cycle (Parquet is
+  * immutable, no upsert; the fleet is tiny). Writes to staging then moves it in so
+  * readers (api's DuckDB) never see a partial file; the delete-then-move leaves a
+  * brief window where the target is absent — the reader treats that as empty.
   */
 object ParquetSink {
 
@@ -31,7 +26,6 @@ object ParquetSink {
     Files.move(staging, target)
   }
 
-  /** Resolve a Spark path (`file:///data/x` or a bare `/data/x`) to a local filesystem Path. */
   private def localPath(path: String): Path =
     if (path.contains("://")) Paths.get(URI.create(path)) else Paths.get(path)
 }

@@ -1,5 +1,7 @@
 package pl.feelcodes.elevator.app
 
+/** Manager event-sourcing recovery: grouping calls into orders, extending them, and marking done. */
+
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.cluster.sharding.typed.testkit.scaladsl.TestEntityRef
 import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
@@ -73,7 +75,7 @@ final class ManagerRecoveryTests
     "mark an order done and tell the Coordinator each of its calls is done" in {
       val (esTestKit, coordinatorProbe, _) = newTestKit()
       esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)))))
-      coordinatorProbe.expectMessageType[Coordinator.AssignOrder] // from Combine
+      coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
       val orderId = esTestKit.getState().orders.keys.head
 
       esTestKit.runCommand(Manager.MarkDone(orderId)).event shouldBe ManagerEvents.OrderDone(orderId)

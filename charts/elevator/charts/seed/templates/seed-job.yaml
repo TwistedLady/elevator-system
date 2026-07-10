@@ -1,7 +1,7 @@
-# Seed the chart on FIRST install (replaces scripts/seed-k8s.sh). A Helm post-install hook Job runs
-# the console CLI `simulate` against the api over in-cluster HTTPS (the CLI image bundles the CA).
-# post-install only => a `skaffold dev` redeploy (an upgrade) does not re-seed. No conditionals here —
-# the whole subchart is skipped when seed.enabled is false (see the parent Chart.yaml condition).
+# Seed the chart on FIRST install (Helm post-install hook Job): runs the console CLI `simulate` against
+# the api over in-cluster HTTPS (the CLI image bundles the CA). post-install only, so a `skaffold dev`
+# upgrade won't re-seed; backoffLimit retries while the api is still rolling out. The whole subchart is
+# skipped when seed.enabled is false.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,7 +14,7 @@ metadata:
     "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
-  backoffLimit: 6            # the api may still be rolling out; retry until it answers
+  backoffLimit: 6
   ttlSecondsAfterFinished: 300
   template:
     metadata:

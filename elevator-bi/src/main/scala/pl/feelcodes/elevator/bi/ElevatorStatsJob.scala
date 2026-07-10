@@ -7,12 +7,10 @@ import pl.feelcodes.elevator.bi.config.BiConfig
 import pl.feelcodes.elevator.bi.kafka.ElevatorStateSchema
 import pl.feelcodes.elevator.bi.sink.ParquetSink
 
-/** Spark BATCH BI job producing the single per-elevator read-model as one Parquet file.
-  *
-  * Each cycle re-scans the whole `elevator-state` topic (mileage) and the `order_status` read-model
-  * (orders served), joins them into one row per elevator, and overwrites `elevators.parquet`. The
-  * api reads that file directly via DuckDB — no analytics database in between. The job loops so the
-  * file stays fresh; the fleet is tiny, so a full re-scan every interval is cheap.
+/** Spark batch BI job: re-scan the elevator-state topic + order_status each cycle,
+  * join to one row per elevator, overwrite elevators.parquet. The api reads that
+  * file via DuckDB — no analytics DB. Loops to stay fresh; the fleet is tiny so a
+  * full re-scan is cheap.
   */
 object ElevatorStatsJob {
 
@@ -43,7 +41,6 @@ object ElevatorStatsJob {
     }
   }
 
-  /** One pass: mileage from Kafka + orders served from Postgres -> joined snapshot -> Parquet. */
   def refreshOnce(spark: SparkSession, cfg: BiConfig): Unit = {
     val mileage = ElevatorStats.mileage(readStateEvents(spark, cfg), spark)
     val served  = OrdersServed.tally(readOrderStatus(spark, cfg))
@@ -52,7 +49,6 @@ object ElevatorStatsJob {
     log.info(s"stats: wrote ${stats.count()} elevator rows to ${cfg.parquetPath}")
   }
 
-  /** Batch read of the entire `elevator-state` topic, parsed to typed events. */
   private def readStateEvents(spark: SparkSession, cfg: BiConfig): Dataset[StateEvent] = {
     import spark.implicits._
     spark.read

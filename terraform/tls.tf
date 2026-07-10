@@ -2,7 +2,6 @@
 # self-signed CA used directly as the server cert). The tls provider does the cert work natively;
 # only the PKCS12 keystore step still needs openssl (no TF provider emits .p12).
 
-# 1) CA (self-signed, CA:TRUE)
 resource "tls_private_key" "ca" {
   algorithm = "RSA"
   rsa_bits  = 2048
@@ -11,14 +10,13 @@ resource "tls_private_key" "ca" {
 resource "tls_self_signed_cert" "ca" {
   private_key_pem       = tls_private_key.ca.private_key_pem
   is_ca_certificate     = true
-  validity_period_hours = 87600 # 10 years
+  validity_period_hours = 87600
   subject {
     common_name = "elevator-ca"
   }
   allowed_uses = ["cert_signing", "crl_signing", "digital_signature"]
 }
 
-# 2) server key + CSR
 resource "tls_private_key" "server" {
   algorithm = "RSA"
   rsa_bits  = 2048
@@ -33,7 +31,6 @@ resource "tls_cert_request" "server" {
   ip_addresses = ["127.0.0.1"]
 }
 
-# 3) sign the leaf with the CA (SANs above, serverAuth EKU — required by rustls-webpki)
 resource "tls_locally_signed_cert" "server" {
   cert_request_pem      = tls_cert_request.server.cert_request_pem
   ca_private_key_pem    = tls_private_key.ca.private_key_pem
@@ -42,7 +39,6 @@ resource "tls_locally_signed_cert" "server" {
   allowed_uses          = ["digital_signature", "key_encipherment", "server_auth"]
 }
 
-# Materialise the PEMs so openssl can bundle them into the keystore.
 resource "local_file" "server_crt" {
   filename        = "${var.tls_build_dir}/server.crt"
   content         = tls_locally_signed_cert.server.cert_pem
@@ -61,14 +57,12 @@ resource "local_file" "ca_crt" {
   file_permission = "0644"
 }
 
-# The CLI console bundles this CA to trust the api.
 resource "local_file" "console_ca" {
   filename        = var.console_ca_path
   content         = tls_self_signed_cert.ca.cert_pem
   file_permission = "0644"
 }
 
-# 4) keystore = server leaf + key, with the CA in the chain. The single openssl call left.
 resource "null_resource" "keystore" {
   triggers = {
     server_cert = tls_locally_signed_cert.server.cert_pem
@@ -88,13 +82,11 @@ resource "null_resource" "keystore" {
   depends_on = [local_file.server_crt, local_sensitive_file.server_key, local_file.ca_crt]
 }
 
-# Read the generated keystore back (deferred to apply — depends on the null_resource above).
 data "local_file" "keystore" {
   filename   = "${var.tls_build_dir}/keystore.p12"
   depends_on = [null_resource.keystore]
 }
 
-# 5) the secret the api mounts (keystore.p12 + password). TF-managed, so `destroy` removes it.
 resource "kubernetes_secret" "api_tls" {
   metadata {
     name = "elevator-api-tls"
