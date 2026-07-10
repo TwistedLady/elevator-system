@@ -1,8 +1,7 @@
-module Api exposing (getConfig, getHealth, getVersion, simulate, simulateStatus)
+module Api exposing (getConfig, getHealth, getVersion, progress, simulate)
 
 import Http
-import Json.Encode as Encode
-import Types exposing (Config, Health, SimStatus, SimulateResult)
+import Types exposing (Config, Health, SimProgress, SimulateResult)
 
 
 {-| All URLs are relative so the same build works behind the dev proxy (vite → :8080) and when the
@@ -42,11 +41,11 @@ simulate toMsg =
         }
 
 
-{-| Poll the status of a run's call ids. -}
-simulateStatus : List String -> (Result Http.Error SimStatus -> msg) -> Cmd msg
-simulateStatus ids toMsg =
-    Http.post
-        { url = "/api/simulate/status"
-        , body = Http.jsonBody (Encode.object [ ( "ids", Encode.list Encode.string ids ) ])
-        , expect = Http.expectJson toMsg Types.simStatusDecoder
+{-| Poll a run's rolled-up progress — GET /api/simulate/progress?runId=&size=. One request per
+tick drives the whole bar. -}
+progress : String -> Int -> (Result Http.Error SimProgress -> msg) -> Cmd msg
+progress runId size toMsg =
+    Http.get
+        { url = "/api/simulate/progress?runId=" ++ runId ++ "&size=" ++ String.fromInt size
+        , expect = Http.expectJson toMsg Types.simProgressDecoder
         }

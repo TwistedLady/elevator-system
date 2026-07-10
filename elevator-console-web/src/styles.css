@@ -350,6 +350,12 @@ echarts-panel {
   color: var(--bad);
 }
 
+.sim-meta {
+  margin: 0;
+  font: 0.8rem/1.4 ui-monospace, monospace;
+  color: var(--muted);
+}
+
 .sim-done {
   margin: 0;
   font-weight: 600;

@@ -1,8 +1,9 @@
 module Sim exposing (Model, Msg, init, subscriptions, update, view)
 
-{-| The SIM tab: one button runs a 10,000-call simulation, then this tab polls its status once a
-second and draws a progress bar split by status (done / progress / pending). Self-contained — its
-own Model, Msg, update, view, subscriptions; talks to the api via Api (Http, not ports).
+{-| The SIM tab: one button runs a 10,000-call simulation (server-side, via POST /api/simulate),
+then this tab polls GET /api/simulate/progress by run id every couple of seconds and draws the
+rolled-up summary — size, calls, orders, done, first-call / last-done — with a progress bar split
+by status. Self-contained — own Model/Msg/update/view/subscriptions; HTTP via Api (elm/http).
 -}
 
 import Api
@@ -11,67 +12,97 @@ import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
 import Http
 import Time
-import Types exposing (SimStatus, SimulateResult)
+import Types exposing (SimProgress, SimulateResult)
 
 
 type alias Model =
     { runId : Maybe String
-    , ids : List String
-    , status : Maybe SimStatus
+    , size : Int
+    , calls : Int
+    , orders : Int
+    , doneCalls : Int
+    , firstCall : Maybe String
+    , lastDone : Maybe String
     , active : Bool
+    , started : Bool
     , failed : Bool
     }
 
 
 init : Model
 init =
-    { runId = Nothing, ids = [], status = Nothing, active = False, failed = False }
+    { runId = Nothing
+    , size = 0
+    , calls = 0
+    , orders = 0
+    , doneCalls = 0
+    , firstCall = Nothing
+    , lastDone = Nothing
+    , active = False
+    , started = False
+    , failed = False
+    }
 
 
 type Msg
     = RunClicked
     | Started (Result Http.Error SimulateResult)
+    | Polled (Result Http.Error SimProgress)
     | Tick Time.Posix
-    | Polled (Result Http.Error SimStatus)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         RunClicked ->
-            ( { init | active = True }, Api.simulate Started )
+            ( { init | active = True, started = True }, Api.simulate Started )
 
         Started (Ok result) ->
-            ( { model | runId = Just result.runId, ids = result.ids, status = Nothing, active = True, failed = False }
-            , Api.simulateStatus result.ids Polled
+            ( { init | runId = Just result.runId, size = result.count, active = True, started = True }
+            , Api.progress result.runId result.count Polled
             )
 
         Started (Err _) ->
             ( { model | active = False, failed = True }, Cmd.none )
 
-        Tick _ ->
-            if List.isEmpty model.ids then
-                ( model, Cmd.none )
-
-            else
-                ( model, Api.simulateStatus model.ids Polled )
-
-        Polled (Ok status) ->
-            ( { model | status = Just status, active = not (complete status) }, Cmd.none )
+        Polled (Ok p) ->
+            ( { model
+                | calls = p.calls
+                , orders = p.orders
+                , doneCalls = p.doneCalls
+                , firstCall = p.firstCall
+                , lastDone = p.lastDone
+                , active = not (allDone model.size p.doneCalls)
+              }
+            , Cmd.none
+            )
 
         Polled (Err _) ->
             ( model, Cmd.none )
 
+        Tick _ ->
+            case ( model.active, model.runId ) of
+                ( True, Just runId ) ->
+                    ( model, Api.progress runId model.size Polled )
 
-complete : SimStatus -> Bool
-complete status =
-    status.progress == 0 && status.pending == 0
+                _ ->
+                    ( model, Cmd.none )
+
+
+allDone : Int -> Int -> Bool
+allDone size doneCalls =
+    size > 0 && doneCalls >= size
+
+
+complete : Model -> Bool
+complete model =
+    model.started && not model.failed && allDone model.size model.doneCalls
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     if model.active then
-        Time.every 1000 Tick
+        Time.every 2000 Tick
 
     else
         Sub.none
@@ -91,49 +122,82 @@ view model =
 
 body : Model -> Html Msg
 body model =
-    case model.status of
-        Just status ->
-            div [ class "sim-status" ]
-                [ progressBar status
-                , p [ class "sim-line" ] [ text (statusLine model.runId status) ]
-                , if complete status then
-                    p [ class "sim-done" ] [ text "✓ simulation complete" ]
+    if model.failed then
+        p [ class "sim-line bad" ] [ text "simulation could not be started" ]
 
-                  else
-                    text ""
-                ]
+    else if not model.started then
+        p [ class "sim-line muted" ] [ text "Press the button to run a 10,000-call simulation." ]
 
-        Nothing ->
-            if model.failed then
-                p [ class "sim-line bad" ] [ text "simulation could not be started" ]
+    else if model.size == 0 then
+        p [ class "sim-line muted" ] [ text "starting…" ]
 
-            else if model.active then
-                p [ class "sim-line muted" ] [ text "starting…" ]
+    else
+        let
+            done =
+                model.doneCalls
 
-            else
-                p [ class "sim-line muted" ] [ text "Press the button to run a 10,000-call simulation." ]
+            progress =
+                max 0 (model.calls - model.doneCalls)
+
+            pending =
+                max 0 (model.size - model.calls)
+        in
+        div [ class "sim-status" ]
+            [ progressBar model.size done progress pending
+            , p [ class "sim-line" ] [ text (countsLine model.runId model.size model.calls done progress pending) ]
+            , p [ class "sim-meta" ] [ text (metaLine model.orders model.firstCall model.lastDone) ]
+            , if complete model then
+                p [ class "sim-done" ] [ text "✓ simulation complete" ]
+
+              else
+                text ""
+            ]
 
 
-progressBar : SimStatus -> Html msg
-progressBar status =
+progressBar : Int -> Int -> Int -> Int -> Html msg
+progressBar size done progress pending =
     let
         width n =
-            style "width" (String.fromFloat (toFloat n / toFloat (max 1 status.total) * 100) ++ "%")
+            style "width" (String.fromFloat (toFloat n / toFloat (max 1 size) * 100) ++ "%")
     in
     div [ class "sim-bar" ]
-        [ span [ class "seg done", width status.done ] []
-        , span [ class "seg progress", width status.progress ] []
-        , span [ class "seg pending", width status.pending ] []
+        [ span [ class "seg done", width done ] []
+        , span [ class "seg progress", width progress ] []
+        , span [ class "seg pending", width pending ] []
         ]
 
 
-statusLine : Maybe String -> SimStatus -> String
-statusLine runId status =
+countsLine : Maybe String -> Int -> Int -> Int -> Int -> Int -> String
+countsLine runId size calls done progress pending =
     "run "
         ++ Maybe.withDefault "—" runId
+        ++ " · size "
+        ++ String.fromInt size
+        ++ " · calls "
+        ++ String.fromInt calls
         ++ " · done "
-        ++ String.fromInt status.done
+        ++ String.fromInt done
         ++ " · progress "
-        ++ String.fromInt status.progress
+        ++ String.fromInt progress
         ++ " · pending "
-        ++ String.fromInt status.pending
+        ++ String.fromInt pending
+
+
+metaLine : Int -> Maybe String -> Maybe String -> String
+metaLine orders firstCall lastDone =
+    "orders "
+        ++ String.fromInt orders
+        ++ " · first "
+        ++ hms firstCall
+        ++ " · last "
+        ++ hms lastDone
+
+
+hms : Maybe String -> String
+hms iso =
+    case iso |> Maybe.andThen (String.split "T" >> List.drop 1 >> List.head) of
+        Just t ->
+            String.left 8 t
+
+        Nothing ->
+            "—"

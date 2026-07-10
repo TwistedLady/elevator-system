@@ -6,7 +6,7 @@ module Types exposing
     , Health(..)
     , Motion(..)
     , Row
-    , SimStatus
+    , SimProgress
     , SimulateResult
     , Tab(..)
     , Theme(..)
@@ -19,7 +19,7 @@ module Types exposing
     , historyLen
     , motionLabel
     , naturalKey
-    , simStatusDecoder
+    , simProgressDecoder
     , simulateResultDecoder
     , versionDecoder
     )
@@ -88,7 +88,7 @@ type alias Config =
     }
 
 
-{-| The 202-ish response from POST /api/simulate — the run id plus the call ids to poll. -}
+{-| The response from POST /api/simulate — the run id and how many calls it fired. -}
 type alias SimulateResult =
     { runId : String
     , count : Int
@@ -96,12 +96,15 @@ type alias SimulateResult =
     }
 
 
-{-| The rollup from POST /api/simulate/status; done + progress + pending == total. -}
-type alias SimStatus =
-    { total : Int
-    , done : Int
-    , progress : Int
-    , pending : Int
+{-| The rolled-up view of a run from GET /api/simulate/progress. `firstCall`/`lastDone` are absent
+until there is data. The progress bar is derived: done = doneCalls, progress = calls - doneCalls,
+pending = simSize - calls (simSize is known from the simulate response). -}
+type alias SimProgress =
+    { calls : Int
+    , orders : Int
+    , doneCalls : Int
+    , firstCall : Maybe String
+    , lastDone : Maybe String
     }
 
 
@@ -246,10 +249,11 @@ simulateResultDecoder =
         (Decode.field "ids" (Decode.list Decode.string))
 
 
-simStatusDecoder : Decoder SimStatus
-simStatusDecoder =
-    Decode.map4 SimStatus
-        (Decode.field "total" Decode.int)
-        (Decode.field "done" Decode.int)
-        (Decode.field "progress" Decode.int)
-        (Decode.field "pending" Decode.int)
+simProgressDecoder : Decoder SimProgress
+simProgressDecoder =
+    Decode.map5 SimProgress
+        (Decode.field "calls" Decode.int)
+        (Decode.field "orders" Decode.int)
+        (Decode.field "doneCalls" Decode.int)
+        (Decode.maybe (Decode.field "firstCall" Decode.string))
+        (Decode.maybe (Decode.field "lastDone" Decode.string))
