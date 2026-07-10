@@ -3,15 +3,11 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 
-use crate::sender::{call_ids, run_simulation};
 use crate::BoxErr;
-
-const THREADS: u64 = 4;
 
 pub fn run_itest(
     api_base: &str,
@@ -38,34 +34,18 @@ pub fn run_itest(
         );
     }
 
-    let cfg = crate::api::get_config(&agent, api_base)
-        .map_err(|e| format!("cannot fetch /api/config: {e}"))?;
-    if cfg.elevators.is_empty() || cfg.max_floor <= 0 {
-        return Err("api /api/config returned empty limits".into());
-    }
-    let run_id = now_ms();
-    let fleet: Vec<String> = cfg.elevators.clone();
-    let sent = AtomicU64::new(0);
     let sent_ms = now_ms();
     let send_start = Instant::now();
-    run_simulation(
-        api_base,
-        count,
-        THREADS,
-        &fleet,
-        cfg.max_floor,
-        &sent,
-        None,
-        run_id,
-    )?;
+    let resp = crate::api::post_simulate(&agent, api_base, count)
+        .map_err(|e| format!("cannot POST /api/simulate: {e}"))?;
     let send_secs = send_start.elapsed().as_secs_f64();
+    let run_id = resp.run_id.clone();
+    let requested = resp.count;
     if !quiet {
-        eprintln!("[itest] sent {count} calls in {send_secs:.2}s (run {run_id})");
+        eprintln!("[itest] fired {requested} calls in {send_secs:.2}s (run {run_id})");
     }
 
-    let mut pending: BTreeSet<String> = call_ids(run_id, count, THREADS, count as usize)
-        .into_iter()
-        .collect();
+    let mut pending: BTreeSet<String> = resp.ids.iter().cloned().collect();
     let mut latencies: Vec<u64> = Vec::new();
     let done = poll_done(
         &agent,
@@ -101,8 +81,8 @@ pub fn run_itest(
         ("console: lost == 0".into(), lost == 0),
         ("console: health UP".into(), health_ok),
         (
-            format!("api log: >= {count} calls confirmed DONE"),
-            api_done.len() as u64 >= count,
+            format!("api log: >= {requested} calls confirmed DONE"),
+            api_done.len() as u64 >= requested,
         ),
         ("app log: elevators moved".into(), app_moves > 0),
         ("app log: no 'Kafka stream failed'".into(), !stream_failed),
@@ -112,7 +92,7 @@ pub fn run_itest(
     let report = serde_json::json!({
         "run_id": run_id,
         "mode": mode,
-        "requests": count,
+        "requests": requested,
         "done": done,
         "lost": lost,
         "send_secs": send_secs,

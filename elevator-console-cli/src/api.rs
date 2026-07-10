@@ -10,28 +10,11 @@ use crate::BoxErr;
 
 /// The system's live limits, fetched from the API (`GET /api/config`) — never hardcoded here.
 /// `max_floor` = highest valid floor (0..max_floor); `elevators` = the allowed fleet.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ElevatorConfig {
     #[serde(rename = "maxFloor")]
     pub max_floor: i32,
     pub elevators: Vec<String>,
-    /// Whether the BI (Stats) layer is on. When false, the console hides the Stats tab.
-    #[serde(rename = "biEnabled", default = "default_true")]
-    pub bi_enabled: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-impl Default for ElevatorConfig {
-    fn default() -> Self {
-        Self {
-            max_floor: 0,
-            elevators: Vec::new(),
-            bi_enabled: true,
-        }
-    }
 }
 
 impl ElevatorConfig {
@@ -153,24 +136,53 @@ pub fn post_call(
     }
 }
 
-/// POST with a few retries, for the bulk simulator where transient blips shouldn't drop a call.
-pub fn post_call_retry(
+/// The server-side simulation is triggered here: `POST /api/simulate?count=N` fires N calls in the
+/// api and returns the run id plus the generated call ids to poll.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SimulateResponse {
+    #[serde(rename = "runId")]
+    pub run_id: String,
+    pub count: u64,
+    pub ids: Vec<String>,
+}
+
+/// A batched status roll-up for a set of simulated calls: `done + progress + pending == total`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SimStatus {
+    pub total: u64,
+    pub done: u64,
+    pub progress: u64,
+    pub pending: u64,
+}
+
+/// Kick off a server-side simulation of `count` calls. The api caps and defaults the count itself.
+pub fn post_simulate(
     agent: &ureq::Agent,
     api_base: &str,
-    elevator: &str,
-    floor: i32,
-    id: &str,
-    passenger: Option<&str>,
-) -> Result<(), BoxErr> {
-    let mut last = None;
-    for attempt in 0..3 {
-        match post_call(agent, api_base, elevator, floor, id, passenger) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                last = Some(e);
-                std::thread::sleep(Duration::from_millis(50 * (attempt + 1)));
-            }
-        }
-    }
-    Err(last.unwrap_or_else(|| "post_call failed".into()))
+    count: u64,
+) -> Result<SimulateResponse, BoxErr> {
+    let url = format!("{api_base}/api/simulate?count={count}");
+    let body = agent.post(&url).call()?.into_string()?;
+    Ok(serde_json::from_str(&body)?)
+}
+
+#[derive(Serialize)]
+struct IdsPayload<'a> {
+    ids: &'a [String],
+}
+
+/// Poll the aggregate status of a running simulation by its call ids.
+pub fn post_simulate_status(
+    agent: &ureq::Agent,
+    api_base: &str,
+    ids: &[String],
+) -> Result<SimStatus, BoxErr> {
+    let url = format!("{api_base}/api/simulate/status");
+    let payload = serde_json::to_string(&IdsPayload { ids })?;
+    let body = agent
+        .post(&url)
+        .set("Content-Type", "application/json")
+        .send_string(&payload)?
+        .into_string()?;
+    Ok(serde_json::from_str(&body)?)
 }
