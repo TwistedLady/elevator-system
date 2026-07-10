@@ -10,6 +10,7 @@ Postgres. Users submit **calls**; the app groups same-floor calls into **orders*
 |---|---|---|
 | `elevator-common-core` | Scala 3 | Pure domain + engine — see [core.md](core.md). |
 | `elevator-common-dto` | Scala 3 | Wire DTOs shared across modules. |
+| `elevator-sim` | Scala 3 | Load simulator engine: a fixed burst of random calls fired via a caller-supplied `CallSender`. Behind `POST /api/simulate`. |
 | `elevator-app` | Pekko | The brain: event-sourced [actors](actors.md) + R2DBC journal + [read-side projections](read-model.md). |
 | `elevator-api` | Spring WebFlux | HTTP edge + Actuator health. No actors. |
 | `elevator-console-cli` | Rust (ratatui) | Terminal console: Chart + Trend + Sim tabs, call sender + simulate trigger. |

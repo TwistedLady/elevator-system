@@ -50,7 +50,7 @@ Logs while running: `docker compose -f docker-compose.demo.yml logs -f app api`.
 | `GET` | `/api/elevator` | Latest state of every known elevator. |
 | `GET` | `/api/elevator/stream` | **SSE** live state stream. |
 | `GET` | `/api/call/{id}` | Call lifecycle `PROGRESS → DONE` from `call_status`, or `404`. |
-| `POST` | `/api/simulate?count=N` | Generate `count` random calls server-side (optional, default & max 10000) → `{runId, count, ids}`. |
+| `POST` | `/api/simulate` | Run the `elevator-sim` engine server-side — a fixed burst of 100 random calls → `{runId, count, ids}`. (`count` is accepted but ignored.) |
 | `GET` | `/api/simulate/progress?runId=..&size=..` | Rolled-up run summary `{simSize, calls, orders, doneCalls, firstCall, lastDone}` — source for the console progress bar. |
 | `GET` | `/actuator/health` | Health incl. Kafka readiness. Default port **8080**. |
 
