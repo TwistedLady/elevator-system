@@ -35,6 +35,9 @@ spec:
             - configMapRef:
                 name: elevator-config
           env:
+            - name: ELEVATOR_PG_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: elevator-pg, key: password }
             - { name: ELEVATOR_TLS_ENABLED, value: "true" }
             - { name: ELEVATOR_TLS_KEYSTORE, value: "/etc/tls/keystore.p12" }
             - name: ELEVATOR_TLS_PASSWORD

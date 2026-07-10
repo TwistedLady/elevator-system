@@ -16,7 +16,6 @@ data:
   ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
   ELEVATOR_BI_SOURCE_JDBC_URL: "jdbc:postgresql://{{ .Values.global.postgres.host }}:5432/{{ .Values.global.postgres.database }}"
   ELEVATOR_PG_USER: {{ .Values.global.postgres.user | quote }}
-  ELEVATOR_PG_PASSWORD: {{ .Values.global.postgres.password | quote }}
   ELEVATOR_BI_ORDER_STATUS_TABLE: "order_status"
   ELEVATOR_BI_PARQUET_PATH: "file:///data/elevators.parquet"
   ELEVATOR_BI_RUN_ONCE: "true"
@@ -111,6 +110,9 @@ spec:
                   valueFrom: { fieldRef: { fieldPath: status.podIP } }
                 - name: POD_NAME
                   valueFrom: { fieldRef: { fieldPath: metadata.name } }
+                - name: ELEVATOR_PG_PASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: elevator-pg, key: password }
                 - { name: HOME, value: "/tmp" }
                 - { name: SPARK_LOCAL_DIRS, value: "/tmp" }
               command: ["/opt/spark/bin/spark-submit"]
@@ -134,15 +136,15 @@ spec:
                 - "--conf"
                 - "spark.kubernetes.driver.pod.name=$(POD_NAME)"
                 - "--conf"
-                - "spark.executor.instances=2"
+                - "spark.executor.instances={{ .Values.spark.executorInstances }}"
                 - "--conf"
-                - "spark.executor.cores=1"
+                - "spark.executor.cores={{ .Values.spark.executorCores }}"
                 - "--conf"
-                - "spark.executor.memory=512m"
+                - "spark.executor.memory={{ .Values.spark.executorMemory }}"
                 - "--conf"
-                - "spark.driver.memory=512m"
+                - "spark.driver.memory={{ .Values.spark.driverMemory }}"
                 - "--conf"
-                - "spark.sql.shuffle.partitions=4"
+                - "spark.sql.shuffle.partitions={{ .Values.spark.shufflePartitions }}"
                 - "--conf"
                 - "spark.eventLog.enabled=true"
                 - "--conf"

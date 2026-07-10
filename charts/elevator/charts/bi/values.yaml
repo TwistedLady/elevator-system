@@ -5,3 +5,10 @@ enabled: true
 schedule: "*/15 * * * *"
 logsHostPath: "/mnt/elevator-bi-logs"
 parquetHostPath: "/mnt/elevator-bi-parquet"
+
+spark:
+  executorInstances: 2
+  executorCores: 1
+  executorMemory: 512m
+  driverMemory: 512m
+  shufflePartitions: 4
