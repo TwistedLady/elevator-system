@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/TwistedLady/elevator-system/compare/v0.2.1...v0.3.0) (2026-07-10)
+
+
+### Features
+
+* **app:** enforce one lift per passenger via PassengerManager ([#74](https://github.com/TwistedLady/elevator-system/issues/74)) ([afe47ab](https://github.com/TwistedLady/elevator-system/commit/afe47ab91651c81dc81df2e72f9c9802078e5b71))
+* **bi:** add passenger double-booking audit stat ([#77](https://github.com/TwistedLady/elevator-system/issues/77)) ([10ea08a](https://github.com/TwistedLady/elevator-system/commit/10ea08a0e2ae24435be2392f49cceb0ef25364d2))
+
 ## [0.2.1](https://github.com/TwistedLady/elevator-system/compare/v0.2.0...v0.2.1) (2026-07-10)
 
 
