@@ -156,8 +156,11 @@ jobs:
       # this survives the volatile API-server port with no secret to keep in sync.
       - name: Configure kubectl
         run: |
+          # kubectl + kind live in ~/.local/bin on the host, which the runner service's PATH
+          # doesn't include — add it so this and later steps can find them.
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           echo "KUBECONFIG=$HOME/.kube/config" >> "$GITHUB_ENV"
-          kubectl config current-context
+          PATH="$HOME/.local/bin:$PATH" kubectl config current-context
 
       # The GHCR packages are private, and a local kind cluster can't pull them without
       # a registry secret. Simpler on the host: log in with the job's GITHUB_TOKEN, pull
