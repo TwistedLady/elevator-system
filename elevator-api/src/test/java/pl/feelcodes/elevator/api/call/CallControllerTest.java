@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import pl.feelcodes.elevator.api.auth.SecurityConfig;
 import pl.feelcodes.elevator.api.config.ElevatorLimits;
 import reactor.core.publisher.Mono;
 
@@ -13,11 +17,12 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
 
 @WebFluxTest(controllers = CallController.class)
+@Import(SecurityConfig.class)
 class CallControllerTest {
 
     @Autowired
@@ -32,6 +37,9 @@ class CallControllerTest {
     @MockBean
     ElevatorLimits limits;
 
+    @MockBean
+    ReactiveJwtDecoder jwtDecoder;
+
     @BeforeEach
     void limitsAllowTheCall() {
         when(limits.getMaxFloor()).thenReturn(15);
@@ -39,25 +47,22 @@ class CallControllerTest {
     }
 
     @Test
-    void call_without_passenger_is_accepted_as_anonymous() {
-        when(callService.call(any(), any(), any(), isNull())).thenReturn(Mono.empty());
-
+    void call_without_a_token_is_rejected() {
         client.post().uri("/api/call")
                 .header("Content-Type", "application/json")
                 .bodyValue("{\"elevatorName\":\"e1\",\"floor\":3}")
                 .exchange()
-                .expectStatus().isOk();
-
-        verify(callService).call(any(), eq("e1"), eq(3), isNull());
+                .expectStatus().isUnauthorized();
     }
 
     @Test
-    void call_with_a_passenger_in_the_body_carries_it_through() {
+    void call_with_a_valid_token_uses_the_subject_as_passenger() {
         when(callService.call(any(), any(), any(), eq("rider-3"))).thenReturn(Mono.empty());
 
-        client.post().uri("/api/call")
+        client.mutateWith(mockJwt().jwt(jwt -> jwt.subject("rider-3")))
+                .post().uri("/api/call")
                 .header("Content-Type", "application/json")
-                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":3,\"passengerId\":\"rider-3\"}")
+                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":3}")
                 .exchange()
                 .expectStatus().isOk();
 
@@ -65,15 +70,28 @@ class CallControllerTest {
     }
 
     @Test
-    void blank_passenger_is_treated_as_anonymous() {
-        when(callService.call(any(), any(), any(), isNull())).thenReturn(Mono.empty());
+    void passenger_in_the_body_is_ignored_the_token_subject_wins() {
+        when(callService.call(any(), any(), any(), eq("rider-0"))).thenReturn(Mono.empty());
 
-        client.post().uri("/api/call")
+        client.mutateWith(mockJwt().jwt(jwt -> jwt.subject("rider-0")))
+                .post().uri("/api/call")
                 .header("Content-Type", "application/json")
-                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":3,\"passengerId\":\"  \"}")
+                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":3,\"passengerId\":\"rider-9\"}")
                 .exchange()
                 .expectStatus().isOk();
 
-        verify(callService).call(any(), eq("e1"), eq(3), isNull());
+        verify(callService).call(any(), eq("e1"), eq(3), eq("rider-0"));
+    }
+
+    @Test
+    void call_with_an_invalid_token_is_rejected() {
+        when(jwtDecoder.decode("bad-token")).thenReturn(Mono.error(new BadJwtException("bad")));
+
+        client.post().uri("/api/call")
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer bad-token")
+                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":3}")
+                .exchange()
+                .expectStatus().isUnauthorized();
     }
 }
