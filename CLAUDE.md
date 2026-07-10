@@ -17,8 +17,8 @@ Rust (ratatui) terminal console.
 | `elevator-common` | Scala | Shared library, split into small submodules (below) |
 | `elevator-app` | Scala / Pekko | The brain: sharded, event-sourced actors + Postgres projections |
 | `elevator-api` | Java / WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, health |
-| `elevator-console-cli` | Rust / ratatui | Terminal dashboard + call sender |
-| `elevator-console-web` | Elm | Read-only browser monitor (Chart + Trend + Stats tabs), talks to the api only |
+| `elevator-console-cli` | Rust / ratatui | Terminal console: one header + three shared tabs (Chart / Trend / Sim), a `call` sender, and a `simulate` trigger |
+| `elevator-console-web` | Elm | Browser console: same header + three tabs (Chart / Trend / Sim); mostly a monitor, but the Sim tab triggers a run. Talks to the api only |
 | `elevator-bi` | Scala 2.12 / Spark | **Standalone** (not in the reactor): one Spark **batch** job → a single **Parquet** file (read by the api via DuckDB) — **mileage** from `elevator-state`, **orders-served** (DONE counts) from `order_status`. Build: `mvn -f elevator-bi/pom.xml package` |
 
 `elevator-common` submodules keep a clean layering:
@@ -46,9 +46,10 @@ Four Kafka topics: `elevator-calls` (api → app), and three state feeds (app �
 `elevator-state`, `elevator-order-state`, `elevator-call-state`. Status query: `GET /api/call/{id}`
 reads the `call_status` read table. Full detail: [docs/protocol.md](docs/protocol.md).
 
-> **The Rust console is HTTP-only.** It reaches the system **only** via the elevator-api HTTP edge
-> (`POST /api/call`, `GET /api/elevator`, `GET /api/elevator/stream` SSE) plus infra (`kubectl`/`git`).
-> It does **not** talk to Kafka.
+> **The Rust console is HTTP-only.** It reaches the system **only** via the elevator-api HTTP edge —
+> `POST /api/call`, `GET /api/elevator`, `GET /api/elevator/stream` SSE, and for the Sim tab
+> `POST /api/simulate` + polling `GET /api/simulate/progress` (the api generates and fires the
+> calls) — plus `kubectl` in the `itest` log cross-check. It does **not** talk to Kafka.
 
 ## Hard rules (do not break without an explicit ask)
 

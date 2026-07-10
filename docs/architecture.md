@@ -12,8 +12,8 @@ Postgres. Users submit **calls**; the app groups same-floor calls into **orders*
 | `elevator-common-dto` | Scala 3 | Wire DTOs shared across modules. |
 | `elevator-app` | Pekko | The brain: event-sourced [actors](actors.md) + R2DBC journal + [read-side projections](read-model.md). |
 | `elevator-api` | Spring WebFlux | HTTP edge + Actuator health. No actors. |
-| `elevator-console-cli` | Rust (ratatui) | Terminal dashboard + call sender. |
-| `elevator-console-web` | Elm | Read-only browser monitor (Chart + Trend + Stats), a web sibling of the Rust console. |
+| `elevator-console-cli` | Rust (ratatui) | Terminal console: Chart + Trend + Sim tabs, call sender + simulate trigger. |
+| `elevator-console-web` | Elm | Browser console (Chart + Trend + Sim tabs), a web sibling of the Rust console. |
 
 Infra: **Kafka** (4 topics) and **Postgres** (event journal + read-model tables).
 
