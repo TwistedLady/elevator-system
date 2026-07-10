@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import pl.feelcodes.elevator.api.auth.SecurityConfig;
 import pl.feelcodes.elevator.api.config.ElevatorLimits;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -21,6 +24,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(controllers = SimulationController.class)
+@Import(SecurityConfig.class)
 class SimulationControllerTest {
 
     @Autowired
@@ -34,6 +38,9 @@ class SimulationControllerTest {
 
     @MockBean
     ElevatorLimits limits;
+
+    @MockBean
+    ReactiveJwtDecoder jwtDecoder;
 
     @BeforeEach
     void fleet() {
