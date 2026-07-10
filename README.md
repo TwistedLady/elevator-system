@@ -316,6 +316,14 @@ pod spawns 2 executors, does one pass, and exits. It reads `elevator-state` (Kaf
 overwrites `elevators.parquet` on a shared `hostPath` — the api reads it via DuckDB. It's **standalone**
 (own pom, outside the reactor) and pinned to **Scala 2.12** because Spark has no Scala 3 build.
 
+Each tick also runs an **audit stat** for the one-lift-per-passenger invariant (`PassengerConflicts`):
+`passengerId` lives only on the `elevator-calls` topic, so it rebuilds each served window by joining
+call → order → lift (`elevator-calls` → `call_status` → `order_status`) and self-joins per passenger to
+find windows that **overlap in time on two different lifts**. A **frozen** call has no `order_id` yet, so
+it is never a served window and never a false positive — the `PassengerManager` gate is exactly what
+keeps those apart. Result → `passenger-conflicts.parquet`; a clean run should be empty (logged at INFO,
+non-empty at WARN).
+
 **Install the console via apt** — the Rust console ships as a signed `.deb` from a local apt repo:
 
 ```bash

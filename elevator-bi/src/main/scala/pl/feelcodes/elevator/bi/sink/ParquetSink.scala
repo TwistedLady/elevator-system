@@ -17,11 +17,15 @@ import scala.reflect.io.Directory
 object ParquetSink {
 
   def write(stats: Dataset[StatsRow], cfg: BiConfig): Unit = {
-    val stagingUri = cfg.parquetPath + ".staging"
-    stats.coalesce(1).write.mode(SaveMode.Overwrite).parquet(stagingUri)
+    stats.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.parquetPath + ".staging")
+    replace(cfg.parquetPath)
+  }
 
-    val target  = localPath(cfg.parquetPath)
-    val staging = localPath(stagingUri)
+  /** Move an already-written `<path>.staging` dir onto `<path>`, atomically enough that a
+    * reader never sees a partial file (a brief absent window reads as empty). */
+  def replace(parquetPath: String): Unit = {
+    val target  = localPath(parquetPath)
+    val staging = localPath(parquetPath + ".staging")
     if (Files.exists(target)) new Directory(new File(target.toString)).deleteRecursively()
     Files.move(staging, target)
   }
