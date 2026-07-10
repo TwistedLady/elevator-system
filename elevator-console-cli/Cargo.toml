@@ -61,5 +61,4 @@ section = "utils"
 priority = "optional"
 assets = [
     ["target/release/elevator-console-cli", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/elevator-console-cli/README.md", "644"],
 ]

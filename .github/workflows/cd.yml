@@ -138,7 +138,7 @@ jobs:
     needs: publish
     # Self-hosted: the only cluster is a local kind (127.0.0.1), which GitHub's
     # cloud runners cannot reach. Register a runner on the kind host (see
-    # docs/CICD.md). The publish job above stays on cloud runners.
+    # README.md#ci--cd). The publish job above stays on cloud runners.
     runs-on: self-hosted
     # The `dev` environment gates this: add required reviewers for a manual
     # approval, and store KUBECONFIG (+ optional GHCR_PULL_TOKEN) as env secrets.
