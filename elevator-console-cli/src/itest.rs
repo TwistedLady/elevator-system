@@ -1,3 +1,4 @@
+//! `itest` subcommand: fire calls through the api, poll status, then cross-check kubectl logs.
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -333,7 +334,7 @@ mod tests {
         let s = LatencyStats::from(&sorted);
         assert_eq!(s.min, 10);
         assert_eq!(s.max, 100);
-        assert_eq!(s.avg, 40); // (10+20+30+40+100)/5
+        assert_eq!(s.avg, 40);
         assert_eq!(s.p50, 30);
         assert_eq!(s.p95, 100);
     }

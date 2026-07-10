@@ -1,3 +1,5 @@
+//! Background HTTP source threads for the monitor: each prefers the api's SSE stream and falls back
+//! to polling, feeding state/door/config/version/health into channels or shared mutexes.
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -9,14 +11,10 @@ use super::app::{DoorState, ElevatorState, HealthComp, HealthSnapshot};
 
 #[derive(PartialEq)]
 enum Loop {
-    Stop,     // the receiver is gone — shut the source down
-    Continue, // this source ended/unavailable — try the other one
+    Stop,
+    Continue,
 }
 
-/// Live elevator state, entirely over HTTP (no Kafka). Prefers the API's SSE stream
-/// (`GET /api/elevator/stream`, low latency); if that endpoint is absent or drops, falls back to
-/// polling `GET /api/elevator` every 500ms. Either way it feeds `ElevatorState`s into `tx`, exactly
-/// like the old Kafka consumer did, so the Chart/Trend views are unchanged.
 pub fn spawn_state_source(api_base: String, tx: Sender<ElevatorState>) {
     std::thread::spawn(move || loop {
         if stream_states(&api_base, &tx) == Loop::Stop {
@@ -58,7 +56,7 @@ fn stream_states(api_base: &str, tx: &Sender<ElevatorState>) -> Loop {
     let url = format!("{api_base}/api/elevator/stream");
     let resp = match agent.get(&url).set("Accept", "text/event-stream").call() {
         Ok(r) => r,
-        Err(_) => return Loop::Continue, // endpoint absent / unreachable → fall back to polling
+        Err(_) => return Loop::Continue,
     };
     let reader = BufReader::new(resp.into_reader());
     for line in reader.lines() {
@@ -80,8 +78,6 @@ fn stream_states(api_base: &str, tx: &Sender<ElevatorState>) -> Loop {
     Loop::Continue
 }
 
-/// Live door state over HTTP, mirroring `spawn_state_source`: prefers the SSE stream
-/// (`GET /api/door/stream`) and falls back to polling `GET /api/door`. Feeds `DoorState`s into `tx`.
 pub fn spawn_door_source(api_base: String, tx: Sender<DoorState>) {
     std::thread::spawn(move || loop {
         if stream_doors(&api_base, &tx) == Loop::Stop {
@@ -145,8 +141,6 @@ fn stream_doors(api_base: &str, tx: &Sender<DoorState>) -> Loop {
     Loop::Continue
 }
 
-/// Poll `GET /api/config` for the live limits (floor range + allowed fleet) so the console reflects
-/// them — including ConfigMap hot-reloads — instead of hardcoding. Keeps the last good value on error.
 pub fn spawn_config_poll(api_base: String, shared: Arc<Mutex<crate::api::ElevatorConfig>>) {
     std::thread::spawn(move || {
         let agent = crate::api::agent();
@@ -161,8 +155,6 @@ pub fn spawn_config_poll(api_base: String, shared: Arc<Mutex<crate::api::Elevato
     });
 }
 
-/// Poll `GET /api/version` so the header can show the backend build and flag a console↔api mismatch.
-/// Keeps the last good value; `None` until the first successful fetch.
 pub fn spawn_version_poll(api_base: String, shared: Arc<Mutex<Option<String>>>) {
     std::thread::spawn(move || {
         let agent = crate::api::agent();

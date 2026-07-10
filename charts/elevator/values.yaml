@@ -1,7 +1,5 @@
-# Default values = the full system (api:2, app:2, web console + BI + seed on). Skaffold layers
-# values-dev.yaml on top for the single-node kind loop (api:1, BI off).
-
-# ── global: shared with EVERY subchart (Helm auto-propagates `.Values.global`) ───────────────────
+# Full-system defaults (api:2, app:2, web+BI+seed on); Skaffold layers values-dev.yaml for single-node kind.
+# global.* auto-propagates to every subchart. Passwords are demo-only — use a Secret in prod.
 global:
   images:
     app: elevator-app:local
@@ -11,14 +9,10 @@ global:
     consoleCli: elevator-console-cli:local
     kafka: apache/kafka:3.8.1
     postgres: postgres:17
-    # IfNotPresent so kind uses the image Skaffold loaded instead of trying to pull it.
     pullPolicy: IfNotPresent
-  # Pull secret the pods reference (created by Terraform; tolerated if absent for :local images).
   imagePullSecret: ghcr-pull
-  # kind's node/docker network CIDR — kubelet probes originate here, so the netpols must allow it.
   nodeCidr: "172.20.0.0/16"
   kafka:
-    # Durable KRaft log dir (PVC) so a broker restart keeps the live feed.
     storage: "2Gi"
     bootstrap: "kafka:9092"
     callTopic: "elevator-calls"
@@ -31,28 +25,22 @@ global:
     host: "postgres"
     database: "elevator"
     user: "elevator"
-    # demo only — a real cluster should mount this from a Secret
     password: "elevator"
     storage: "1Gi"
 
-# ── parent-only: the always-on core ──────────────────────────────────────────────────────────────
 app:
   replicas: 2
 
 api:
   replicas: 2
-  # TLS keystore secret mounted at /etc/tls (created by Terraform's tls provider).
   tlsSecret: elevator-api-tls
 
-# elevator-config: the one place app params live (mounted as env + as files for hot reload).
 config:
   maxFloor: 15
   elevators: "e1,e2,e3,e4,e5,e6,e7,e8,e9,e10"
-  engine: "fast"          # fast | slow — hot-swapped per move
+  engine: "fast"
   springProfile: "prod"
 
-# ── optional components (subcharts; see Chart.yaml dependencies) ──────────────────────────────────
-# `<name>.enabled` is BOTH the subchart condition AND passed into the subchart as its values.
 console-web:
   enabled: true
   replicas: 1
@@ -63,8 +51,6 @@ bi:
   logsHostPath: "/mnt/elevator-bi-logs"
   parquetHostPath: "/mnt/elevator-bi-parquet"
 
-# Seed orders on FIRST install (post-install hook Job runs the console CLI `simulate`). post-install
-# only, so a `skaffold dev` redeploy (an upgrade) does not re-seed the empty Kafka.
 seed:
   enabled: true
   count: 300

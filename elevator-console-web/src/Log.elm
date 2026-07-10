@@ -1,8 +1,7 @@
 port module Log exposing (debug, error, info, warn)
 
-{-| Structured logging to the browser console via a port (Elm is pure, and Debug.log is banned
-under --optimize). main.js prefixes with [web-console] and filters by a level threshold, mirroring
-the old logger.ts.
+{-| Console logging via a port (Elm is pure; Debug.log is banned under --optimize).
+main.js adds the [web-console] prefix and level filtering.
 -}
 
 import Json.Encode as E

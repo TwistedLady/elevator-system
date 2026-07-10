@@ -6,8 +6,8 @@ logging:
     org.springframework: WARN
   structured:
     format:
-      console: logstash   # stdout as one-line JSON
-      file: logstash      # logs/api.json as one-line JSON
+      console: logstash
+      file: logstash
   file:
     name: logs/api.json
   logback:

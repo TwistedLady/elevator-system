@@ -1,10 +1,6 @@
--- Pekko-owned schema for pekko-persistence-r2dbc + pekko-projection-r2dbc 1.1.0.
--- Verbatim from pekko-persistence-r2dbc v1.1.0 ddl-scripts/create_tables_postgres.sql.
--- We manage this ourselves (the plugin never auto-creates tables). Keep in step with the
--- pekko.r2dbc.version property in the parent pom when bumping.
---
--- Runs once, on a FRESH pgdata volume, via the postgres image's docker-entrypoint-initdb.d.
--- To force a re-run: docker compose -p elevator-demo -f docker-compose.demo.yml down -v
+-- Pekko-owned schema for pekko-persistence-r2dbc + pekko-projection-r2dbc 1.1.0, verbatim from the
+-- plugin's ddl-scripts (we manage it; the plugin never auto-creates). Keep in step with the
+-- pekko.r2dbc.version in the parent pom. Runs once on a fresh pgdata volume via docker-entrypoint-initdb.d.
 
 CREATE TABLE IF NOT EXISTS event_journal(
   slice INT NOT NULL,

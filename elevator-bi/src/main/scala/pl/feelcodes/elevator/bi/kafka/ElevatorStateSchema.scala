@@ -2,11 +2,8 @@ package pl.feelcodes.elevator.bi.kafka
 
 import org.apache.spark.sql.types.{DataTypes, StructType}
 
-/** Wire schema of the `elevator-state` Kafka value (JSON produced by elevator-app).
-  *
-  * Mirrors `ElevatorStateDto{elevatorName, direction, motion, floor}`. We parse by contract
-  * rather than depend on the Scala 3 `elevator-common-dto` — only the fields mileage needs are typed
-  * strictly; the rest are declared for completeness / future BI jobs.
+/** Wire schema of the elevator-state Kafka JSON value (mirrors ElevatorStateDto).
+  * Parsed by contract to avoid depending on the Scala 3 elevator-common-dto.
   */
 object ElevatorStateSchema {
   val schema: StructType = new StructType()

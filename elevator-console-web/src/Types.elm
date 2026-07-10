@@ -24,12 +24,13 @@ module Types exposing
     , versionDecoder
     )
 
+{-| Console domain types + JSON decoders. Mirrors the elevator-api elevator-state contract
+(elevator-common-dto/Dtos.scala, GET /api/elevator/stream); the console is read-only.
+-}
+
 import Json.Decode as Decode exposing (Decoder)
 
 
-{-| Mirrors the elevator-api elevator-state contract (elevator-common-dto/Dtos.scala,
-GET /api/elevator/stream). The console is read-only.
--}
 type alias ElevatorState =
     { tag : String
     , name : String
@@ -49,21 +50,18 @@ type Motion
     | Stopped
 
 
-{-| A live snapshot paired with its recent floor history (oldest → newest), for the charts. -}
 type alias Row =
     { state : ElevatorState
     , history : List Int
     }
 
 
-{-| /actuator/health status, reflected in the health badge. -}
 type Health
     = HealthUnknown
     | HealthUp
     | HealthDown
 
 
-{-| The backend's reported version vs. this build's — drives the match/mismatch badge. -}
 type BackendVersion
     = VersionUnknown
     | Unreachable
@@ -81,14 +79,12 @@ type Theme
     | Dark
 
 
-{-| Live limits from GET /api/config; maxFloor is 0 until the first fetch (never hardcoded). -}
 type alias Config =
     { maxFloor : Int
     , biEnabled : Bool
     }
 
 
-{-| The response from POST /api/simulate — the run id and how many calls it fired. -}
 type alias SimulateResult =
     { runId : String
     , count : Int
@@ -96,9 +92,6 @@ type alias SimulateResult =
     }
 
 
-{-| The rolled-up view of a run from GET /api/simulate/progress. `firstCall`/`lastDone` are absent
-until there is data. The progress bar is derived: done = doneCalls, progress = calls - doneCalls,
-pending = simSize - calls (simSize is known from the simulate response). -}
 type alias SimProgress =
     { calls : Int
     , orders : Int
@@ -108,14 +101,9 @@ type alias SimProgress =
     }
 
 
-{-| How many recent floor samples the Trend tab keeps per elevator. -}
 historyLen : Int
 historyLen =
     48
-
-
-
--- LABELS
 
 
 directionLabel : Direction -> String
@@ -164,18 +152,11 @@ backendLabel version =
             v
 
 
-{-| Sort key for natural elevator order (e1, e2, … e10), matching the other consoles: split the
-name into its non-digit prefix and trailing number so "e10" sorts after "e2".
--}
 naturalKey : String -> ( String, Int )
 naturalKey name =
     ( String.filter (not << Char.isDigit) name
     , String.toInt (String.filter Char.isDigit name) |> Maybe.withDefault 0
     )
-
-
-
--- DECODERS
 
 
 directionDecoder : Decoder Direction
@@ -204,8 +185,6 @@ motionDecoder =
             )
 
 
-{-| Decoding fails (and the frame is dropped upstream) when elevatorName is missing, so frames
-without a name are ignored. -}
 elevatorStateDecoder : Decoder ElevatorState
 elevatorStateDecoder =
     Decode.map5 ElevatorState

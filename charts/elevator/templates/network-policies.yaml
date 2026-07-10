@@ -1,6 +1,6 @@
-# Base NetworkPolicies — expose ONLY the api; keep kafka/postgres/app internal. Enforced under
-# Calico. Policies are a UNION: the console-web + BI subcharts add their own policies when enabled,
-# so nothing here is conditional.
+# Base NetworkPolicies (Calico-enforced): default-deny ingress, expose ONLY the api externally, keep
+# kafka/postgres/app internal. Policies are a UNION, so the console-web + BI subcharts add their own —
+# nothing here is conditional. The app also allows :8558 from nodeCidr for kubelet probes.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -9,9 +9,8 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: elevator
 spec:
-  podSelector: {}            # all pods in the namespace
+  podSelector: {}
   policyTypes: [Ingress]
-  # no ingress rules => deny all ingress
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -25,7 +24,7 @@ spec:
     matchLabels: { app: elevator-api }
   policyTypes: [Ingress]
   ingress:
-    - from: []               # from anywhere (incl. outside the cluster) — the visible edge
+    - from: []
       ports:
         - { protocol: TCP, port: 8080 }
 ---
@@ -80,9 +79,9 @@ spec:
     - from:
         - podSelector: { matchLabels: { app: elevator-app } }
       ports:
-        - { protocol: TCP, port: 2551 }   # Pekko remoting
-        - { protocol: TCP, port: 8558 }   # Pekko management / cluster bootstrap
-    - from:                               # kubelet liveness/readiness probes come from the node
+        - { protocol: TCP, port: 2551 }
+        - { protocol: TCP, port: 8558 }
+    - from:
         - ipBlock: { cidr: {{ .Values.global.nodeCidr | quote }} }
       ports:
         - { protocol: TCP, port: 8558 }

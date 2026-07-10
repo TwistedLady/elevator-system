@@ -1,14 +1,8 @@
 name: Build & Test
 
-# Validates every change to the polyglot reactor:
-#   - elevator-common-* (Scala 3 domain/logic)   - unit tested
-#   - elevator-app       (Pekko cluster)          - unit tested (actor recovery)
-#   - elevator-api       (Spring)                 - unit + Testcontainers IT
-#   - elevator-console-cli   (Rust/Cargo)             - fmt + clippy + test
-#   - elevator-console-web (Elm)                  - image build proven on PRs
-#   - elevator-bi        (Spark, Scala 2.12, standalone) - uber jar + ScalaTest + image
-# On PRs it also proves all three JVM/web Docker images still build.
-
+# Build + test the polyglot reactor on every push/PR to main: Scala 3 domain, Pekko app,
+# Spring api (Testcontainers IT), Rust console, Elm web, standalone Spark BI. PRs also prove
+# the Docker images still build.
 on:
   push:
     branches: [main]
@@ -23,9 +17,6 @@ permissions:
   contents: read
 
 jobs:
-  # The lockstep guard: every module's version MUST equal the repo-root VERSION file. Fails the
-  # build on drift (so app can never be 1.0.0 while api is 0.1.0). Versions are bumped automatically
-  # by release-please (see .github/workflows/release.yml) — never hand-edit them.
   version-check:
     name: Version lockstep (all modules == VERSION)
     runs-on: ubuntu-latest
@@ -69,18 +60,12 @@ jobs:
           java-version: "21"
           cache: maven
 
-      # Enforcer requireUpperBoundDeps + POM sanity across the 12-module reactor.
       - name: Validate reactor & dependency convergence
         run: ./mvnw -B -ntp -DskipTests validate
 
-      # Compiles Scala 3 (elevator-common-*) + elevator-app/elevator-api, runs the
-      # surefire unit tests (logic, strategy, event evolution, actor recovery,
-      # serialization) and installs artifacts. IT skipped here for a clean signal.
       - name: Build & unit tests
         run: ./mvnw -B -ntp install -DskipITs
 
-      # Runs only the failsafe *IT (ElevatorStateFlowIT): boots Spring and spins up
-      # Postgres + Kafka via Testcontainers (ubuntu-latest ships a Docker daemon).
       - name: Integration tests (Testcontainers)
         run: ./mvnw -B -ntp verify -Dsurefire.skip=true
 
@@ -102,8 +87,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No system libraries needed: the console is HTTP-only (ureq + rustls/ring),
-      # so there's nothing to apt-install before building.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -121,7 +104,6 @@ jobs:
       - name: Test
         run: cargo test
 
-      # The demo and the pre-commit itest run the release binary; make sure it builds.
       - name: Release build
         run: cargo build --release
 
@@ -131,8 +113,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # elevator-bi is a STANDALONE module (Scala 2.12 / Spark), deliberately not in the
-      # Scala 3 reactor. Build it on its own pom. It targets Java 17.
       - name: Set up JDK 17 (Temurin)
         uses: actions/setup-java@v4
         with:
@@ -143,11 +123,8 @@ jobs:
       - name: Build uber jar + ScalaTest
         run: ./mvnw -B -ntp -f elevator-bi/pom.xml package
 
-      # buildx (docker-container driver) is required for the gha cache backend below;
-      # the default docker driver can't export cache.
       - uses: docker/setup-buildx-action@v3
 
-      # Prove the image builds (the Dockerfile packages the uber jar just built).
       - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
@@ -159,13 +136,10 @@ jobs:
 
   images:
     name: Docker images build (no push)
-    # PR-only smoke: prove the Dockerfiles build. On main, Release & Deploy pushes them.
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # elevator-console-web builds from its own dir (self-contained npm project);
-      # the JVM images build from the repo root. Carry context + file per entry.
       matrix:
         include:
           - { name: elevator-app,         context: .,                    file: elevator-app/Dockerfile }

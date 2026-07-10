@@ -1,3 +1,4 @@
+//! Monitor TUI rendering: header, footer, and the Chart, Trend, and Sim views.
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::symbols::Marker;
@@ -43,7 +44,6 @@ fn retro_block(title: &str) -> Block<'_> {
         .title(Span::from(title).yellow().bold())
 }
 
-/// Health badge text + colour: UP (green) / unknown (yellow) / anything else (red).
 fn health_badge(reachable: bool, overall: &str) -> (&'static str, Color) {
     if reachable && overall.eq_ignore_ascii_case("UP") {
         ("API UP", Color::Green)
@@ -54,7 +54,6 @@ fn health_badge(reachable: bool, overall: &str) -> (&'static str, Color) {
     }
 }
 
-/// Version badge text + colour: match (green), mismatch (red), backend unknown yet (yellow).
 fn version_badge(console: &str, backend: Option<&str>) -> (String, Color) {
     match backend {
         None => (format!("v{console} · api …"), Color::Yellow),
@@ -315,8 +314,6 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(meta.dark_gray()), rows[3]);
 }
 
-/// Reduce an ISO-8601 instant (e.g. `2026-07-10T10:00:05Z`) to just `10:00:05` for a compact line;
-/// `—` when the timestamp is absent.
 fn hms(iso: Option<String>) -> String {
     match iso {
         Some(s) => s
@@ -328,8 +325,6 @@ fn hms(iso: Option<String>) -> String {
     }
 }
 
-/// Split a `width`-cell bar into (done, progress, pending) segment widths, proportional to the
-/// counts. Pure — unit-tested. When nothing is counted yet the whole bar is pending.
 fn split_bar(done: u64, progress: u64, pending: u64, width: usize) -> (usize, usize, usize) {
     let total = done + progress + pending;
     if total == 0 || width == 0 {
@@ -444,7 +439,6 @@ mod tests {
     fn split_bar_is_proportional_and_fills_width() {
         let (d, p, r) = split_bar(50, 30, 20, 100);
         assert_eq!((d, p, r), (50, 30, 20));
-        // segments always sum to the full width
         let (d, p, r) = split_bar(1, 1, 1, 10);
         assert_eq!(d + p + r, 10);
     }

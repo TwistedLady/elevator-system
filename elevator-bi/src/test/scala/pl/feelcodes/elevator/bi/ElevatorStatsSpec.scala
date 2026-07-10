@@ -8,6 +8,7 @@ import pl.feelcodes.elevator.bi.sink.ParquetSink
 
 import java.nio.file.Files
 
+/** Spark transform tests (ElevatorStats + ParquetSink) against a local Spark. */
 class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   private var spark: SparkSession = _
@@ -39,7 +40,6 @@ class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
     ds.collect().map(r => r.elevatorName -> (r.floorsTravelled, r.ordersServed)).toMap
 
   test("batch mileage folds each elevator's events in offset order, independent of input order") {
-    // e1: 0 -> 3 (3) -> 1 (2) = 5 ; fed out of order to prove sorting by offset
     val ds = events(
       StateEvent("e1", 1, offset = 2),
       StateEvent("e1", 3, offset = 1),
@@ -50,7 +50,6 @@ class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   test("join yields one row per elevator, zero-filling a metric missing on either side") {
-    // e1 has both; e2 only moved (no DONE orders); e3 only served (no state events)
     val mileage = ElevatorStats.mileage(
       events(StateEvent("e1", 0, 0), StateEvent("e1", 2, 1),
              StateEvent("e2", 4, 0), StateEvent("e2", 6, 1)), spark)
@@ -77,7 +76,6 @@ class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
     ParquetSink.write(Seq(StatsRow("e1", 10L, 2L), StatsRow("e2", 4L, 0L)).toDS(), cfg)
     assert(readBack() === Map("e1" -> (10L, 2L), "e2" -> (4L, 0L)))
 
-    // second write is a full overwrite, not an append
     ParquetSink.write(Seq(StatsRow("e1", 12L, 3L)).toDS(), cfg)
     assert(readBack() === Map("e1" -> (12L, 3L)))
   }

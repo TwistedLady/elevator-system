@@ -1,3 +1,5 @@
+//! Monitor TUI state: the `App` model plus `SimRun`, whose background thread POSTs `/api/simulate`
+//! then polls progress into shared atomics that the UI only reads.
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,7 +11,6 @@ use serde::Deserialize;
 
 pub const TREND_WINDOW_SECS: f64 = 60.0;
 
-/// How many calls one simulation fires. The api defaults and caps to this too.
 pub const SIM_COUNT: u64 = 10_000;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,9 +54,6 @@ impl Default for HealthSnapshot {
     }
 }
 
-/// A server-side simulation in flight: a background thread POSTs `/api/simulate`, then polls
-/// `/api/simulate/progress` every couple of seconds and stores the rolled-up summary. The UI only
-/// reads it; the progress bar is derived from size/calls/doneCalls.
 pub struct SimRun {
     pub run_id: Arc<Mutex<String>>,
     pub size: Arc<AtomicU64>,

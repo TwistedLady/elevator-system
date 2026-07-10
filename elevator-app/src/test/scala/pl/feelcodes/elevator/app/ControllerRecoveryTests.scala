@@ -1,5 +1,7 @@
 package pl.feelcodes.elevator.app
 
+/** Controller event-sourcing recovery: state rebuilds correctly across crashes and restarts. */
+
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.cluster.sharding.typed.testkit.scaladsl.TestEntityRef
 import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
@@ -118,14 +120,13 @@ final class ControllerRecoveryTests
 
       esTestKit.runCommand(Controller.Process(Set(order)))
       esTestKit.runCommand(Controller.ChooseNext(Set(order)))
-      operatorProbe.expectMessageType[Operator.Move] // suspend allows -> move issued
+      operatorProbe.expectMessageType[Operator.Move]
 
       esTestKit.runCommand(Controller.MarkExecuted(ElevatorState(Direction.Up, Motion.Moving, Floor(3))))
-      managerProbe.expectMessage(Manager.MarkDone("o-5")) // served on open
+      managerProbe.expectMessage(Manager.MarkDone("o-5"))
       doormanProbe.expectMessage(Doorman.Serve("lift-a", Floor(3)))
-      esTestKit.getState().waiting shouldBe true // door open -> no move can start
+      esTestKit.getState().waiting shouldBe true
 
-      // door closes -> loop resumes and the next stop is issued
       esTestKit.runCommand(Controller.DoorClosed(Floor(3)))
       operatorProbe.expectMessageType[Operator.Move].command shouldBe Command.Stop()
     }

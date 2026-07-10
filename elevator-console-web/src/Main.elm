@@ -1,9 +1,8 @@
 module Main exposing (main)
 
-{-| Elevator web console — a read-only browser monitor. Talks to the elevator-api only (SSE live
-stream + REST config/health/version + the simulate endpoints). A thin orchestrator: it owns the
-top-level model, tab switching and subscriptions, and delegates each tab to its own module
-(Chart / Trend / Sim) and the header to Header.
+{-| Read-only web console over elevator-api (SSE stream + REST config/health/version/simulate).
+A thin orchestrator: owns the model, tabs and subscriptions; delegates each tab (Chart / Trend /
+Sim) and the header to its own module.
 -}
 
 import Api
@@ -44,10 +43,6 @@ main =
         , subscriptions = subscriptions
         , view = view
         }
-
-
-
--- MODEL
 
 
 type alias Flags =
@@ -96,10 +91,6 @@ init flags =
         , Log.info "connecting to SSE stream /api/elevator/stream"
         ]
     )
-
-
-
--- UPDATE
 
 
 type Msg
@@ -211,10 +202,6 @@ ingest state model =
     }
 
 
-
--- SUBSCRIPTIONS
-
-
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
@@ -226,10 +213,6 @@ subscriptions model =
         , Time.every 10000 PollConfig
         , Sub.map SimMsg (Sim.subscriptions model.sim)
         ]
-
-
-
--- VIEW
 
 
 view : Model -> Html Msg
@@ -338,10 +321,6 @@ chartPanel model render =
 emptyMsg : String -> Html Msg
 emptyMsg message =
     p [ class "empty" ] [ text message ]
-
-
-
--- DERIVED
 
 
 rows : Model -> List Row

@@ -1,25 +1,15 @@
 name: Console Release
 
-# Publishes the Rust console on a console-scoped tag (this is a polyglot monorepo, so the console
-# has its own tag namespace):
-#
-#   git tag elevator-console-cli-v1.0.0 && git push origin elevator-console-cli-v1.0.0
-#
-# Produces:
-#   - a GitHub *Release* with:
-#       elevator-console-cli-<tag>-x86_64-linux.tar.gz  (stripped release binary + its sha256)
-#       elevator-console-cli_<ver>-1_amd64.deb          (Debian package)
-#   - a GitHub *Package* (container image) in GHCR:
-#       ghcr.io/<owner>/elevator-console-cli:<ver>  and  :latest
-
+# Publishes the Rust console on its own tag namespace (elevator-console-cli-v*): a GitHub Release
+# (tarball + sha256, .deb) plus a GHCR image ghcr.io/<owner>/elevator-console-cli:<ver> and :latest.
 on:
   push:
     tags: ["elevator-console-cli-v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write   # create the Release
-  packages: write   # push the image to GHCR
+  contents: write
+  packages: write
 
 jobs:
   release:
@@ -37,7 +27,6 @@ jobs:
         with:
           workspaces: elevator-console-cli
 
-      # Fast fail before packaging: the release must be green.
       - name: Test
         run: cargo test
 
@@ -73,8 +62,6 @@ jobs:
             elevator-console-cli/dist/*.deb
           generate_release_notes: true
 
-      # Container image → GHCR, so `elevator-console-cli` shows up in the repo's Packages tab
-      # alongside elevator-app / elevator-api (which cd.yml publishes the same way).
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR

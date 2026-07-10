@@ -1,9 +1,8 @@
-//! `version` subcommand: show the console's own version and check it matches the backend API.
-//! The console is the frontend here — it displays both versions and fails on a mismatch, so an
-//! operator can't unknowingly drive a backend built from a different release.
+//! `version` subcommand: show the console version and fail on a mismatch with the backend,
+//! so an operator can't unknowingly drive a backend from a different release.
+//! CONSOLE_VERSION is baked in at build time from the repo-root VERSION file (build.rs).
 use crate::{api, BoxErr};
 
-/// Baked in at compile time from the repo-root VERSION file (see build.rs).
 pub const CONSOLE_VERSION: &str = env!("APP_VERSION");
 
 pub fn run(api_base: &str) -> Result<(), BoxErr> {

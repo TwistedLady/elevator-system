@@ -3,17 +3,11 @@ package pl.feelcodes.elevator.bi
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{col, count, lit}
 
-/** Pure Spark transform for the "orders served" BI: how many times each elevator reached an ordered
-  * floor.
-  *
-  * When a car reaches an order's floor the app marks that order DONE (order_status.status = 'DONE').
-  * So "times reached an ordered floor" = count of DONE rows per elevator. (The elevator-state Kafka
-  * topic can't answer this — its published tag is always empty — so we read the order_status
-  * read-model instead.)
+/** Orders served = count of DONE order_status rows per elevator. Read from the
+  * order_status read-model, not the elevator-state topic (its tag is always empty).
   */
 object OrdersServed {
 
-  /** order_status rows -> (elevator_name, orders_served) counting only DONE rows. */
   def tally(orderStatus: DataFrame): DataFrame =
     orderStatus
       .filter(col("status") === "DONE")

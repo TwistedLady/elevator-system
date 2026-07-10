@@ -1,21 +1,18 @@
 name: Release & Deploy
 
-# TAG-ONLY: a version tag (v*.*.*) is the ONLY thing that publishes + deploys. Pushing to main just
-# runs Build & Test (ci.yml) — it does NOT deploy, so the cluster always reflects the last released
-# version. A tag publishes version-tagged images to GHCR, creates a GitHub Release, and deploys the
-# chart (charts/elevator) pinned to that version. The cluster itself (kind + Calico + the
-# elevator-api-tls / ghcr-pull secrets) is provisioned separately, once, by `terraform apply`.
+# A version tag (v*.*.*) is the ONLY trigger that publishes images + deploys; main just runs ci.yml.
+# The cluster (kind/Calico/secrets) is provisioned separately by `terraform apply`.
 on:
   push:
-    tags: ['v*.*.*']          # the version tag = the release (images :X.Y.Z + GitHub Release + deploy)
-  workflow_dispatch:          # manual escape hatch: a sha-tagged deploy of the selected branch
+    tags: ['v*.*.*']
+  workflow_dispatch:
 
 concurrency:
   group: release-main
   cancel-in-progress: false
 
 permissions:
-  contents: write             # create the GitHub Release on a version tag
+  contents: write
   packages: write
 
 jobs:
@@ -79,7 +76,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Repo-root context (like api/app) so the shared VERSION file reaches gen-version.mjs.
       - name: Build & push elevator-console-web
         uses: docker/build-push-action@v6
         with:
@@ -92,8 +88,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # elevator-bi is a standalone Scala 2.12 / Spark module: build the uber jar on the host
-      # (JDK 17), then the Dockerfile packages it onto the apache/spark base image.
       - name: Set up JDK 17 (Temurin) — for the Spark uber jar
         uses: actions/setup-java@v4
         with:
@@ -116,10 +110,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # On a version tag only: the tag must equal the VERSION file. The GitHub Release is normally
-      # created by release-please (.github/workflows/release.yml); this step only fills it in for a
-      # hand-pushed tag, and no-ops if the release already exists.
-      # The GHCR packages auto-link to the repo via each image's org.opencontainers.image.source label.
       - name: Ensure GitHub Release
         if: ${{ steps.meta.outputs.release == 'true' }}
         env:
@@ -136,12 +126,7 @@ jobs:
   deploy:
     name: Deploy → Kubernetes (Pekko cluster)
     needs: publish
-    # Self-hosted: the only cluster is a local kind (127.0.0.1), which GitHub's
-    # cloud runners cannot reach. Register a runner on the kind host (see
-    # README.md#ci--cd). The publish job above stays on cloud runners.
     runs-on: self-hosted
-    # The `dev` environment gates this: add required reviewers for a manual
-    # approval, and store KUBECONFIG (+ optional GHCR_PULL_TOKEN) as env secrets.
     environment: dev
     env:
       OWNER: ${{ needs.publish.outputs.owner }}
@@ -151,9 +136,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      # The self-hosted runner lives on the kind host, so use its OWN kubeconfig
-      # (~/.kube/config) rather than a secret: kind rewrites it on every recreate, so
-      # this survives the volatile API-server port with no secret to keep in sync.
       - name: Configure kubectl
         run: |
           # kubectl + kind live in ~/.local/bin on the host, which the runner service's PATH
@@ -162,11 +144,6 @@ jobs:
           echo "KUBECONFIG=$HOME/.kube/config" >> "$GITHUB_ENV"
           PATH="$HOME/.local/bin:$PATH" kubectl config current-context
 
-      # The GHCR packages are private, and a local kind cluster can't pull them without
-      # a registry secret. Simpler on the host: log in with the job's GITHUB_TOKEN, pull
-      # each image, and `kind load` it straight into the cluster's containerd. The
-      # sha-tagged refs then resolve locally (imagePullPolicy IfNotPresent) — no cluster
-      # pull, no public packages, no pull secret.
       - name: Pull images & load into kind
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -176,12 +153,6 @@ jobs:
             kind load docker-image "$ref" --name elevator
           done
 
-      # Deploy the whole system as ONE Helm release, pinned to this commit's images. Helm renders
-      # the chart (RBAC, ConfigMaps, Postgres/Kafka, app/api, NetworkPolicies, web console); --wait
-      # blocks until every rollout is Ready. The app's generous startup probe tolerates Helm's
-      # kind-based apply order (it retries until Postgres/Kafka are up), so no manual staging needed.
-      # BI + one-shot seeding stay off in CD — turn BI on out-of-band with
-      #   helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=true
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:

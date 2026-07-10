@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
-# Render a Markdown file (Mermaid diagrams included) to PDF.
-#
-#   scripts/md-to-pdf.sh [input.md] [output.pdf]
-#   defaults: README.md -> target/README.pdf
-#
-# Pipeline: mermaid-cli renders each ```mermaid block to SVG, pandoc embeds them
-# into a self-contained HTML, headless Chromium prints it to PDF. A pure Maven
-# plugin can't do this — Mermaid needs a browser to draw the diagrams.
-#
-# Needs on PATH: pandoc, npx (Node), python3, and a Chromium. mermaid-cli fetches
-# its own Chromium; reuse it or point CHROME= at any chrome/chromium binary.
+# Render a Markdown file (Mermaid included) to PDF: mermaid-cli -> SVG, pandoc -> HTML, headless
+# Chromium -> PDF. Mermaid needs a browser, so a pure Maven plugin can't do this.
+#   scripts/md-to-pdf.sh [input.md] [output.pdf]   (defaults: README.md -> target/README.pdf)
+#   Needs on PATH: pandoc, npx (Node), python3, a Chromium (or set CHROME=).
 set -euo pipefail
 
 IN="${1:-README.md}"
@@ -23,7 +16,6 @@ command -v python3 >/dev/null || { echo "md-to-pdf: python3 not found"       >&2
 
 echo '{"args":["--no-sandbox"]}' > "$WORK/pptr.json"
 
-# 1) Render every ```mermaid block to SVG, swap in an image reference.
 python3 - "$IN" "$WORK" <<'PY'
 import re, sys, os, subprocess
 src, work = sys.argv[1], sys.argv[2]
@@ -42,7 +34,6 @@ open(os.path.join(work, "doc.md"), "w").write(txt)
 print(f"md-to-pdf: rendered {i[0]} diagram(s)")
 PY
 
-# 2) Markdown -> self-contained HTML (SVGs embedded as data URIs).
 cat > "$WORK/style.css" <<'CSS'
 @page{margin:1.1cm 1.2cm}
 body{font-family:system-ui,-apple-system,sans-serif;margin:0;line-height:1.4;font-size:12.5px;color:#1a1a1a}
@@ -55,13 +46,11 @@ code{font-size:11.5px} table{border-collapse:collapse;width:100%;margin:.4em 0}
 td,th{border:1px solid #ccc;padding:3px 7px;font-size:11px;text-align:left;vertical-align:top} th{background:#f4f4f4}
 blockquote{border-left:3px solid #ccc;margin:.5em 0;padding-left:1em;color:#555}
 CSS
-# Title = the file's first H1, else its basename (keeps pandoc from warning).
 TITLE="$(grep -m1 '^# ' "$IN" | sed 's/^# //')"
 TITLE="${TITLE:-$(basename "${IN%.md}")}"
 pandoc "$WORK/doc.md" -f gfm -t html5 --standalone --embed-resources \
   -M title="$TITLE" -c "$WORK/style.css" -o "$WORK/doc.html"
 
-# 3) HTML -> PDF via headless Chromium.
 CHROME="${CHROME:-}"
 [ -n "$CHROME" ] || CHROME="$(command -v chromium || command -v chromium-browser || command -v google-chrome || true)"
 [ -n "$CHROME" ] || CHROME="$(ls -1 "$HOME"/.cache/puppeteer/chrome/*/chrome-linux64/chrome 2>/dev/null | head -1 || true)"

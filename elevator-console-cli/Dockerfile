@@ -1,25 +1,17 @@
-# Multi-stage build for the elevator-console-cli.
-#
-# Build context is this module directory:
+# Multi-stage build for elevator-console-cli. Build context is this module dir:
 #   docker build -t elevator-console-cli:local elevator-console-cli/
-#
-# The image is meant for the headless subcommands (watch / selftest / order / simulate / itest),
-# which talk to the elevator-api over HTTP with the CA bundled into the binary. The interactive
-# `monitor` TUI needs a real terminal, so run it with `-it`. `kubectl`/`git`-backed views (K8s tab,
-# git header) are inert here — those binaries aren't in the image and the code degrades gracefully.
+# gcc is installed only because ring (TLS) compiles some C.
+# Headless subcommands work as-is; the interactive `monitor` TUI needs `-it`.
 
 FROM rust:1-slim AS build
-# ring compiles a little C, so the builder needs a C toolchain.
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-# Cache the dependency compile: build against a stub main, then drop it and build the real sources.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
     cargo build --release && rm -rf src
 
 COPY . .
-# `touch` so cargo notices the real main.rs is newer than the cached stub build.
 RUN touch src/main.rs && cargo build --release
 
 FROM debian:stable-slim AS runtime

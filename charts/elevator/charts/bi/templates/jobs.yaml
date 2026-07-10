@@ -1,4 +1,8 @@
-# BI job config (12-factor env). Matches in-cluster service names.
+# BI stack for the Spark stats job: config ConfigMap, Spark-on-k8s RBAC (driver creates/watches/deletes
+# executor pods + cleans up their services/configmaps/PVCs via deletecollection), and a CronJob whose
+# Job pod IS the Spark driver (client mode) — each tick does ONE pass (Kafka + order_status -> join ->
+# overwrite the shared Parquet, read by the api via DuckDB), then exits so nothing holds CPU between runs.
+# concurrencyPolicy Forbid + activeDeadline keep runs from overlapping the next tick.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,10 +19,8 @@ data:
   ELEVATOR_PG_PASSWORD: {{ .Values.global.postgres.password | quote }}
   ELEVATOR_BI_ORDER_STATUS_TABLE: "order_status"
   ELEVATOR_BI_PARQUET_PATH: "file:///data/elevators.parquet"
-  # One pass per CronJob run; the k8s schedule owns the cadence (no in-process loop).
   ELEVATOR_BI_RUN_ONCE: "true"
 ---
-# RBAC for Spark-on-Kubernetes: the driver creates/watches/deletes its executor pods.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -44,9 +46,6 @@ rules:
     resources: ["pods/log", "pods/status"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    # deletecollection: Spark cleans up executor services/configmaps/PVCs by label on driver
-    # shutdown (exercised now that each run-once driver exits — the always-on Deployment never did).
-    # PVCs are listed even though we use hostPath: Spark's cleanup issues the call unconditionally.
     resources: ["services", "configmaps", "persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
 ---
@@ -66,10 +65,6 @@ roleRef:
   name: elevator-bi-spark
   apiGroup: rbac.authorization.k8s.io
 ---
-# The Spark stats job as a CronJob: on each schedule tick a Job pod IS the Spark driver (client
-# mode), spark-submits, spawns executor pods, does ONE pass (re-scan Kafka + order_status -> join ->
-# overwrite the Parquet on the shared `data` hostPath), then exits. Executors are torn down with it,
-# so nothing holds CPU between runs. The api reads the Parquet via DuckDB.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -80,14 +75,14 @@ metadata:
     app: elevator-bi
 spec:
   schedule: {{ .Values.schedule | quote }}
-  concurrencyPolicy: Forbid        # never overlap runs — one Parquet swap at a time
+  concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 2
   jobTemplate:
     spec:
       backoffLimit: 1
-      activeDeadlineSeconds: 600    # a stuck run can't outlive the next tick
+      activeDeadlineSeconds: 600
       template:
         metadata:
           labels: { app: elevator-bi, role: driver, part-of: elevator }

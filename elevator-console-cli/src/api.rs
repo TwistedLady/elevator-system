@@ -1,6 +1,5 @@
-//! Thin blocking HTTP client for the elevator API. The console reaches the system ONLY through
-//! this API (never Kafka directly): calls are POSTed, state is polled/streamed, call status and
-//! health are GETed. No TLS, no async — just `ureq`.
+//! Blocking HTTP client for the elevator API — the console's only path to the system (never Kafka).
+//! TLS-only: verifies the api against the bundled self-signed CA.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::BoxErr;
 
-/// The system's live limits, fetched from the API (`GET /api/config`) — never hardcoded here.
-/// `max_floor` = highest valid floor (0..max_floor); `elevators` = the allowed fleet.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ElevatorConfig {
     #[serde(rename = "maxFloor")]
@@ -18,13 +15,10 @@ pub struct ElevatorConfig {
 }
 
 impl ElevatorConfig {
-    /// True once real values have been fetched (max_floor > 0 and a non-empty fleet).
     pub fn is_known(&self) -> bool {
         self.max_floor > 0 && !self.elevators.is_empty()
     }
 
-    /// Friendly client-side pre-check against the fetched limits. The API stays authoritative;
-    /// when the config is unknown (API unreachable) this passes and lets the API decide.
     pub fn validate_call(&self, elevator: &str, floor: i32) -> Result<(), String> {
         if !self.is_known() {
             return Ok(());
@@ -46,14 +40,11 @@ pub fn config_url(api_base: &str) -> String {
     format!("{api_base}/api/config")
 }
 
-/// Fetch the live limits from the API. Callers decide how to degrade if it fails.
 pub fn get_config(agent: &ureq::Agent, api_base: &str) -> Result<ElevatorConfig, BoxErr> {
     let body = agent.get(&config_url(api_base)).call()?.into_string()?;
     Ok(serde_json::from_str(&body)?)
 }
 
-/// A rustls config that trusts the bundled elevator-api certificate (self-signed). The console
-/// speaks TLS to the api and verifies it against this cert — plain HTTP is not accepted.
 pub fn tls_config() -> Arc<rustls::ClientConfig> {
     let mut roots = rustls::RootCertStore::empty();
     let pem: &[u8] = include_bytes!("../certs/elevator-ca.crt");
@@ -77,12 +68,10 @@ struct CallPayload<'a> {
     #[serde(rename = "elevatorName")]
     elevator_name: &'a str,
     floor: i32,
-    // Optional passenger identity, sent in the body; omitted (anonymous) when None.
     #[serde(rename = "passengerId", skip_serializing_if = "Option::is_none")]
     passenger_id: Option<&'a str>,
 }
 
-/// A short-timeout agent for request/response calls (orders, status, health).
 pub fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
@@ -91,7 +80,6 @@ pub fn agent() -> ureq::Agent {
         .build()
 }
 
-/// The API base URL, e.g. `http://localhost:8080`. Endpoints hang off it.
 pub fn health_url(api_base: &str) -> String {
     format!("{api_base}/actuator/health")
 }
@@ -101,8 +89,6 @@ struct VersionResp {
     version: String,
 }
 
-/// GET /api/version — the backend's build version. Used to check the console matches the backend.
-/// Parsed via serde_json (ureq's `json` feature is off) to keep the dependency surface small.
 pub fn get_version(agent: &ureq::Agent, api_base: &str) -> Result<String, BoxErr> {
     let url = format!("{api_base}/api/version");
     let body = agent.get(&url).call()?.into_string()?;
@@ -110,8 +96,6 @@ pub fn get_version(agent: &ureq::Agent, api_base: &str) -> Result<String, BoxErr
     Ok(resp.version)
 }
 
-/// POST a call. The API validates it and publishes it to the system; we don't wait for the car.
-/// Fire-and-forget from the caller's view (success = the API accepted it).
 pub fn post_call(
     agent: &ureq::Agent,
     api_base: &str,
@@ -121,7 +105,6 @@ pub fn post_call(
     passenger: Option<&str>,
 ) -> Result<(), BoxErr> {
     let url = format!("{api_base}/api/call");
-    // The passenger identity travels in the body; None => anonymous call.
     let body = serde_json::to_string(&CallPayload {
         id,
         elevator_name: elevator,
@@ -136,8 +119,6 @@ pub fn post_call(
     }
 }
 
-/// The server-side simulation is triggered here: `POST /api/simulate?count=N` fires N calls in the
-/// api and returns the run id plus the generated call ids to poll.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SimulateResponse {
     #[serde(rename = "runId")]
@@ -146,7 +127,6 @@ pub struct SimulateResponse {
     pub ids: Vec<String>,
 }
 
-/// Kick off a server-side simulation of `count` calls. The api caps and defaults the count itself.
 pub fn post_simulate(
     agent: &ureq::Agent,
     api_base: &str,
@@ -157,8 +137,6 @@ pub fn post_simulate(
     Ok(serde_json::from_str(&body)?)
 }
 
-/// A rolled-up view of one simulation run — the source for the Sim progress bar. `simSize` is
-/// echoed by the api but the console already knows it from the simulate response, so it is ignored.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SimProgress {
     pub calls: u64,
@@ -171,7 +149,6 @@ pub struct SimProgress {
     pub last_done: Option<String>,
 }
 
-/// Poll a run's rolled-up progress: `GET /api/simulate/progress?runId=..&size=..`.
 pub fn get_progress(
     agent: &ureq::Agent,
     api_base: &str,
