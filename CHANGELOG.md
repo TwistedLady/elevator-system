@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/TwistedLady/elevator-system/compare/v0.2.0...v0.2.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **infra:** reachable api, wired PG creds, durable TLS + Kafka, replica-aware cluster ([#72](https://github.com/TwistedLady/elevator-system/issues/72)) ([308c39a](https://github.com/TwistedLady/elevator-system/commit/308c39a0726faa0c92d9ca0716d55e69b1504983))
+
 ## [0.2.0](https://github.com/TwistedLady/elevator-system/compare/v0.1.1...v0.2.0) (2026-07-10)
 
 
