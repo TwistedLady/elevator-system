@@ -1,6 +1,4 @@
 # Defaults; the parent's `seed:` block overrides these (and carries `enabled` for the condition).
 enabled: true
 count: 300
-elevatorCount: 10
-maxFloor: 15
 apiUrl: "https://elevator-api:8080"
