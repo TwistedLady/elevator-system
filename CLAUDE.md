@@ -29,7 +29,7 @@ The app actors are **thin shells** that wire the pure `logic`.
 ## How it flows (one call)
 
 A **Call** = a user action (`id, elevatorName, floor`, optional `passengerId`). There is **no auth
-yet** (see [docs/auth.md](docs/auth.md)): `passengerId` is an optional, unverified field on the
+yet** (see [DOC.md](DOC.md)): `passengerId` is an optional, unverified field on the
 `POST /api/call` body; absent/blank → anonymous. The app groups same-floor
 calls into one living **Order** (`order id = f(elevator, floor)`; later same-floor calls attach
 until it is done) — one stop. The Order counts distinct riders vs. anonymous presses. Four actors,
@@ -44,7 +44,7 @@ Kafka `elevator-state` and marks reached orders done → `Manager.MarkDone` → 
 
 Four Kafka topics: `elevator-calls` (api → app), and three state feeds (app → api/console/BI):
 `elevator-state`, `elevator-order-state`, `elevator-call-state`. Status query: `GET /api/call/{id}`
-reads the `call_status` read table. Full detail: [docs/protocol.md](docs/protocol.md).
+reads the `call_status` read table. Full detail: [DOC.md](DOC.md).
 
 > **The Rust console is HTTP-only.** It reaches the system **only** via the elevator-api HTTP edge
 > (`POST /api/call`, `GET /api/elevator`, `GET /api/elevator/stream` SSE) plus infra (`kubectl`/`git`).
@@ -55,7 +55,7 @@ reads the `call_status` read table. Full detail: [docs/protocol.md](docs/protoco
 - **Never edit `pom.xml`** (artifactId / name / modules) to fix IDE or naming issues. Fix those on
   the IntelliJ side. Module id must stay `pl.feelcodes.elevator:elevator`. **Never hand-edit
   version numbers anywhere** — the version is `${revision}` (root `pom.xml`) mirrored to `VERSION`
-  and all modules, bumped automatically by release-please. See [docs/versioning.md](docs/versioning.md).
+  and all modules, bumped automatically by release-please. See [README.md](README.md#versioning).
 - **Don't add code comments without asking.** Approved comments stay short and meaningful; strip
   comments when refactoring.
 - **Run the test suite after every code change**, before reporting done. Don't wait to be asked.
@@ -93,7 +93,8 @@ Think of every session as an isolated **developer**: **one session = one branch 
 - **Kanban** (`../kanban.md`) has three parts: **Current** (one table per active session, newest on
   top — caption = task, columns = subtasks, cells = 🟩/🟨/⬜), **To-do** (bugs, ideas), and
   **Changelog** (one entry per commit, entry # = commit #, plain words, newest first).
-- **Knowledge split:** domain/project facts live in `docs/` (update after each PR). The base-dir
+- **Knowledge split:** domain/project facts live in `README.md` (usage + CI/CD) and `DOC.md`
+  (architecture + actor contract) — update them after each PR. The base-dir
   `../.knowledge/` is a symlink to the agent's own memory (what it knows across sessions).
 - **IntelliJ / Maven module naming:** the user marks the Maven project himself in one IntelliJ
   window — do not automate renaming, and never edit `pom.xml`.
@@ -118,5 +119,6 @@ Real hazards to be aware of (fix deliberately, on their own branch):
   overrides Boot's auto-config. Leftover — safe to remove.
 - **Rust console has unit tests now** (`cargo test` in `elevator-console-cli`, run by CI). Keep it that
   way: when adding pure Rust functions, add a test alongside them.
-- **Docs drift.** Re-verify docs/comments after a refactor — code is the source of truth. Full
-  docs are in [`docs/`](docs/README.md) (one topic per file, indexed).
+- **Docs drift.** Re-verify docs/comments after a refactor — code is the source of truth. The docs
+  are two files: [`README.md`](README.md) (how to use + CI/CD) and [`DOC.md`](DOC.md)
+  (architecture + actor contract).

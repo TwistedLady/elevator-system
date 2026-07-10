@@ -49,7 +49,7 @@ jobs:
             'package.json':            json.load(open('elevator-console-web/package.json'))['version'],
           }
           # NOTE: the Helm chart version is intentionally NOT in lockstep — it is packaging metadata.
-          # The deployed app version is the image tag (git tag vX.Y.Z), set by cd.yml. See docs/versioning.md.
+          # The deployed app version is the image tag (git tag vX.Y.Z), set by cd.yml. See README.md#versioning.
           for k, v in got.items():
               print(f"  {k:32} {v}")
           bad = {k: v for k, v in got.items() if v != V}

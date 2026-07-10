@@ -74,7 +74,7 @@ The uber jar bundles the Kafka source + Postgres driver; Spark itself is `provid
 
 ## Deploy (full Spark-on-Kubernetes, via the Helm chart)
 
-The BI layer is part of the `elevator` Helm chart, gated by `bi.enabled` (see [docs/cluster.md](../docs/cluster.md)):
+The BI layer is part of the `elevator` Helm chart, gated by `bi.enabled` (see [README.md](../README.md#run-on-a-cluster-kind)):
 
 ```bash
 skaffold run -p bi        # build jar + image, load into kind, deploy the stats CronJob
