@@ -140,4 +140,18 @@ mod tests {
         names.sort_by(|a, b| natural_key(a).cmp(&natural_key(b)));
         assert_eq!(names, v(&["e1", "e2", "e10"]));
     }
+
+    #[test]
+    fn natural_key_sorts_names_without_digits_last() {
+        let mut names = v(&["e2", "spare", "e1"]);
+        names.sort_by(|a, b| natural_key(a).cmp(&natural_key(b)));
+        assert_eq!(names, v(&["e1", "e2", "spare"]));
+    }
+
+    #[test]
+    fn natural_key_non_numeric_suffix_falls_back_to_max() {
+        assert_eq!(natural_key("e10"), ("e", 10));
+        assert_eq!(natural_key("e1a"), ("e", u64::MAX));
+        assert_eq!(natural_key("lift"), ("lift", u64::MAX));
+    }
 }

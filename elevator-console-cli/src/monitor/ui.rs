@@ -448,4 +448,39 @@ mod tests {
         assert_eq!(split_bar(0, 0, 0, 20), (0, 0, 20));
         assert_eq!(split_bar(0, 0, 0, 0), (0, 0, 0));
     }
+
+    #[test]
+    fn split_bar_rounds_down_and_gives_the_remainder_to_pending() {
+        assert_eq!(split_bar(2, 1, 1, 8), (4, 2, 2));
+        assert_eq!(split_bar(1, 1, 1, 10), (3, 3, 4));
+    }
+
+    #[test]
+    fn hms_takes_the_time_of_day_or_degrades_gracefully() {
+        assert_eq!(hms(Some("2026-07-10T12:34:56.789Z".to_string())), "12:34:56");
+        assert_eq!(hms(Some("no-time-here".to_string())), "no-time-here");
+        assert_eq!(hms(None), "—");
+    }
+
+    #[test]
+    fn center_pads_evenly_and_truncates_when_too_long() {
+        assert_eq!(center("hi", 6), "  hi  ");
+        assert_eq!(center("x", 4), " x  ");
+        assert_eq!(center("hello", 3), "hel");
+    }
+
+    #[test]
+    fn car_glyph_reflects_direction_and_motion() {
+        assert_eq!(car_glyph("UP", "moving"), '↑');
+        assert_eq!(car_glyph("down", "MOVING"), '↓');
+        assert_eq!(car_glyph("up", "stopped"), 'X');
+        assert_eq!(car_glyph("sideways", "moving"), '•');
+    }
+
+    #[test]
+    fn car_style_dims_stopped_cars_and_colours_moving_ones() {
+        assert_eq!(car_style("up", "stopped"), Style::new().fg(Color::DarkGray));
+        assert_eq!(car_style("up", "moving"), Style::new().fg(Color::Green).bold());
+        assert_eq!(car_style("down", "moving"), Style::new().fg(Color::Magenta).bold());
+    }
 }
