@@ -36,6 +36,9 @@ spec:
             - configMapRef:
                 name: elevator-config
           env:
+            - name: ELEVATOR_PG_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: elevator-pg, key: password }
             - name: ELEVATOR_POD_IP
               valueFrom:
                 fieldRef:
