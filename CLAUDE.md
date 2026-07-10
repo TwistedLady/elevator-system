@@ -64,8 +64,8 @@ Every session is an isolated **developer**: **one session = one branch = one dir
   group id is per-pod (`elevator-api-monitor-<POD_NAME>`) so replicas don't split partitions and
   empty groups don't leak.
 - **Huge sims bloat the journal** → slow recovery → "Kafka stream failed", app stops consuming. Wipe
-  + reseed to recover (Kafka has no volume, so a demo restart also empties the chart — reseed via the
-  compose `--profile seed`).
+  + reseed to recover (the **demo compose** gives Kafka no volume, so a restart there empties the chart
+  — reseed via `--profile seed`; the **kind chart** puts Kafka on a PVC, so a restart keeps the feed).
 - **`DefaultScalaModule` is registered in the pure-Java api** and a custom `ObjectMapper` bean
   overrides Boot's auto-config. Leftover — safe to remove.
 - **Rust console has unit tests** (`cargo test`, run by CI). Keep it that way: add a test alongside
