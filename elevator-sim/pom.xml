@@ -1,0 +1,48 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>pl.feelcodes.elevator</groupId>
+        <artifactId>elevator</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>elevator-sim</artifactId>
+    <packaging>jar</packaging>
+    <name>elevator-sim</name>
+
+    <!-- Load simulator engine: builds a fixed burst of random call specs and fires them via a
+         caller-supplied CallSender. Dependency-light (Scala stdlib only) and free of api/Kafka —
+         the api wires the sender. Grows into an authenticated HTTP-client sim (mint tokens, bearer
+         calls, checks) in a later step. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala3-library_${scala.binary.version}</artifactId>
+            <version>${scala.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <version>${scalatest.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
