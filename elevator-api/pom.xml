@@ -22,6 +22,20 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Load simulator engine behind POST /api/simulate. -->
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-sim</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Scala stdlib: elevator-sim is Scala; the api reads its case-class results. -->
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala3-library_${scala.binary.version}</artifactId>
+            <version>${scala.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
@@ -40,6 +54,17 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- OAuth2 resource server: validates the passenger's Bearer JWT on POST /api/call.
+             Also brings Nimbus JOSE, which the in-process dev issuer uses to sign tokens. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
         <!-- OpenAPI spec at /v3/api-docs (JSON only, no Swagger UI). -->
@@ -99,6 +124,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- mockJwt()/SecurityMockServerConfigurers for the WebFlux security slice tests. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 

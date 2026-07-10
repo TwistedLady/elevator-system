@@ -27,6 +27,13 @@ elevator:
   call-topic: elevator-calls
   state-topic: elevator-state
   door-state-topic: elevator-door-state
+  auth:                   # Passenger JWT: POST /api/call requires a valid Bearer token (sub = passengerId)
+    issuer: elevator-api
+    audience: elevator
+    token-ttl-seconds: 300
+    # Gate for the dev token issuer (POST /api/token). Override in prod; the dev default lets
+    # local runs mint tokens without extra setup.
+    client-secret: ${ELEVATOR_CLIENT_SECRET:dev-secret}
   # Order-validation limits (max-floor / elevators) come from the mounted ConfigMap and are
   # hot-reloaded by ElevatorLimits. No defaults here — a missing ConfigMap fails the pod fast.
   # Test values live in application-test.yml.

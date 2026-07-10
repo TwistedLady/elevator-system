@@ -101,9 +101,10 @@ there at once. Why claim-after-forward: [crash-recovery.md](crash-recovery.md).
 
 ## Passenger identification
 
-A `Call` may carry an optional `passengerId`. **There is no auth yet** ([auth.md](auth.md)), so for
-now the identity is an *unverified* field on the request body: `POST /api/call` accepts an optional
-`passengerId`, which the api forwards on the internal `CallDto`. Absent or blank → anonymous call.
+Every `Call` carries a **proven** `passengerId`. `POST /api/call` requires a valid Bearer JWT
+([auth.md](auth.md)); the api sets `passengerId` = the token's `sub` on the internal `CallDto`
+(a body `passengerId` is ignored). The `anonymous` tally remains a domain concept the app supports,
+but the authenticated api never emits an id-less call.
 The `Manager` keeps two per-order tallies, both as sets so they dedup as the order grows:
 `passengers` (distinct identified riders) and `anonymousCallIds` (presses with no id). The same
 rider pressing twice counts **once**; the counts (`passengers`, `anonymous`) ride on
