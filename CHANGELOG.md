@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/TwistedLady/elevator-system/compare/v0.1.1...v0.2.0) (2026-07-10)
+
+
+### Features
+
+* require passenger JWT on POST /api/call and extract the load simulator into elevator-sim ([#68](https://github.com/TwistedLady/elevator-system/issues/68)) ([692a977](https://github.com/TwistedLady/elevator-system/commit/692a9775653e684a25b79f3c220625f12ee4a8cf))
+* unify the two consoles (one header, 3 tabs) and move the 10k sim into the api ([#65](https://github.com/TwistedLady/elevator-system/issues/65)) ([177a6d6](https://github.com/TwistedLady/elevator-system/commit/177a6d66a5cd50996399b878a1c7c452e3e3e85c))
+
+
+### Bug Fixes
+
+* **chart:** seed job passes only --count to the simulate CLI ([#69](https://github.com/TwistedLady/elevator-system/issues/69)) ([5026010](https://github.com/TwistedLady/elevator-system/commit/50260101b0d29e883bd162f67430cd36f29c1850))
+
 ## [0.1.1](https://github.com/TwistedLady/elevator-system/compare/v0.1.0...v0.1.1) (2026-07-10)
 
 
