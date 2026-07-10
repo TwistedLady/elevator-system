@@ -116,5 +116,22 @@ final class ManagerRecoveryTests
         coordinatorProbe.expectMessageType[Coordinator.MarkDone]
       ).map(_.callId) shouldBe Set("c1", "c2")
     }
+
+    "rebuild its orders from the journal after a crash, preserving a merged floor order" in {
+      val (esTestKit, coordinatorProbe, controllerProbe) = newTestKit()
+      esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)))))
+      coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
+      controllerProbe.expectMessageType[Controller.Process]
+      val orderId = esTestKit.getState().orders.keys.head
+
+      esTestKit.runCommand(Manager.Combine(List(Call("c2", Floor(3)))))
+      coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
+      controllerProbe.expectMessageType[Controller.Process]
+
+      esTestKit.restart().state.orders(orderId).callIds shouldBe Set("c1", "c2")
+
+      esTestKit.runCommand(Manager.MarkDone(orderId))
+      esTestKit.restart().state.orders shouldBe empty
+    }
   }
 }

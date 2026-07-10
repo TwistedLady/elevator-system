@@ -1,11 +1,12 @@
 package pl.feelcodes.elevator.app
 
 import com.typesafe.config.ConfigFactory
+import org.apache.pekko.actor.ExtendedActorSystem
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
-import org.apache.pekko.serialization.{SerializationExtension, Serializers}
+import org.apache.pekko.serialization.{Serialization, SerializationExtension, Serializers}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Doorman, Manager, Operator, PassengerManager}
+import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Doorman, Manager, Operator, PassengerManager, SuspendManager}
 import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.{Handle, AssignOrder}
 import pl.feelcodes.elevator.common.protocol.ManagerProtocol.Combine
@@ -26,6 +27,8 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
       |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
       |    "pl.feelcodes.elevator.common.protocol.DoormanProtocol$Command"     = jackson-cbor
       |    "pl.feelcodes.elevator.common.protocol.PassengerProtocol$Command"   = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.SuspendManager$Command"           = jackson-cbor
+      |    "pl.feelcodes.elevator.app.actors.SuspendManager$Decision"          = jackson-cbor
       |  }
       |}
       |""".stripMargin
@@ -37,10 +40,12 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
   private def roundTrip[T <: AnyRef](msg: T): T =
-    val serializer = serialization.findSerializerFor(msg)
-    val bytes = serializer.toBinary(msg)
-    val manifest = Serializers.manifestFor(serializer, msg)
-    serialization.deserialize(bytes, serializer.identifier, manifest).get.asInstanceOf[T]
+    Serialization.withTransportInformation(testKit.system.classicSystem.asInstanceOf[ExtendedActorSystem]) { () =>
+      val serializer = serialization.findSerializerFor(msg)
+      val bytes = serializer.toBinary(msg)
+      val manifest = Serializers.manifestFor(serializer, msg)
+      serialization.deserialize(bytes, serializer.identifier, manifest).get.asInstanceOf[T]
+    }
 
   private val state = ElevatorState(Direction.Up, Motion.Moving, Floor(3))
   private val order = Order("o-1", Floor(5), Set("c1", "c2"))
@@ -100,3 +105,16 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
   test("Controller.DoorClosed round-trips"):
     val msg = Controller.DoorClosed(Floor(4))
     assert(roundTrip(msg) == msg)
+
+  test("SuspendManager.MayMove round-trips (cluster-singleton ask: carries an ActorRef and state)"):
+    val probe = testKit.createTestProbe[SuspendManager.Decision]()
+    val msg = SuspendManager.MayMove("lift-a", state, probe.ref)
+    assert(roundTrip(msg) == msg)
+
+  test("SuspendManager.Arrived round-trips"):
+    val msg = SuspendManager.Arrived("lift-a", Floor(3))
+    assert(roundTrip(msg) == msg)
+
+  test("SuspendManager.Decision round-trips both ways"):
+    assert(roundTrip(SuspendManager.Decision(true)) == SuspendManager.Decision(true))
+    assert(roundTrip(SuspendManager.Decision(false)) == SuspendManager.Decision(false))
