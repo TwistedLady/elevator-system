@@ -32,5 +32,7 @@ variable "console_ca_path" {
 variable "tls_build_dir" {
   description = "Scratch dir for the generated key/cert/keystore files."
   type        = string
-  default     = "/tmp/elevator-tls"
+  # /var/tmp (survives reboot), not /tmp: a wiped keystore.p12 is not regenerated when the cert
+  # PEMs (null_resource.keystore's triggers) are unchanged, and the data source read then fails.
+  default = "/var/tmp/elevator-tls"
 }
