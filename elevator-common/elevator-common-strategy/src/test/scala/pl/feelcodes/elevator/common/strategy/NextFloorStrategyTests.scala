@@ -46,8 +46,7 @@ final class NextFloorStrategyTests extends AnyFunSuite with ScalaCheckPropertyCh
     }
 
   test("never idles while targets remain and we are not standing on one"):
-    forAll(floors, dirs, targetSets.suchThat(_.nonEmpty)) { (current, dir, targets) =>
-      whenever(!targets.contains(current)) {
+    forAll(floors, dirs, targetSets) { (current, dir, targets) =>
+      if targets.nonEmpty && !targets.contains(current) then
         assert(choose(current, dir, targets) != Stop())
-      }
     }
