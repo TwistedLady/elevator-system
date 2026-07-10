@@ -1,9 +1,11 @@
 package pl.feelcodes.elevator.common.strategy
 
+import org.scalacheck.Gen
 import org.scalatest.funsuite.AnyFunSuite
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 import pl.feelcodes.elevator.common.core.domain.*
 
-final class GroupCallsStrategyTests extends AnyFunSuite:
+final class GroupCallsStrategyTests extends AnyFunSuite with ScalaCheckPropertyChecks:
 
   test("group | calls sharing a floor collapse into one order"):
     val orders = GroupCallsStrategy.default.group("lift-a", List(Call("c1", Floor(3)), Call("c2", Floor(3))))
@@ -40,3 +42,17 @@ final class GroupCallsStrategyTests extends AnyFunSuite:
 
   test("group | empty -> empty"):
     assert(GroupCallsStrategy.default.group("lift-a", Nil) == Set.empty)
+
+  private val calls: Gen[Call] = for
+    id    <- Gen.identifier
+    floor <- Gen.choose(0, 15)
+    who   <- Gen.option(Gen.oneOf("alice", "bob", "carol"))
+  yield Call(id, Floor(floor), who)
+
+  test("group | property: order-independent, one order per floor, every call placed"):
+    forAll(Gen.listOf(calls)) { cs =>
+      val orders = GroupCallsStrategy.default.group("lift-a", cs)
+      assert(orders == GroupCallsStrategy.default.group("lift-a", cs.reverse))
+      assert(orders.map(_.floor) == cs.map(_.floor).toSet)
+      assert(orders.flatMap(_.callIds) == cs.map(_.id).toSet)
+    }
