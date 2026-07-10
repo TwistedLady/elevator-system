@@ -17,6 +17,9 @@ data:
 
   # ---- infra wiring (needs a restart to change) ----
   ELEVATOR_PG_HOST: {{ .Values.global.postgres.host | quote }}
+  ELEVATOR_PG_DATABASE: {{ .Values.global.postgres.database | quote }}
+  ELEVATOR_PG_USER: {{ .Values.global.postgres.user | quote }}
+  ELEVATOR_PG_PASSWORD: {{ .Values.global.postgres.password | quote }}
   # BI read-model = the Spark-produced Parquet on the shared volume, read via DuckDB.
   ELEVATOR_STATS_PARQUET_PATH: "/data/elevators.parquet"
   SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
