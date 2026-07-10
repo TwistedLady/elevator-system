@@ -22,6 +22,20 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Load simulator engine behind POST /api/simulate. -->
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-sim</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Scala stdlib: elevator-sim is Scala; the api reads its case-class results. -->
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala3-library_${scala.binary.version}</artifactId>
+            <version>${scala.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>

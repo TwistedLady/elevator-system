@@ -10,6 +10,7 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import pl.feelcodes.elevator.api.auth.SecurityConfig;
 import pl.feelcodes.elevator.api.config.ElevatorLimits;
+import pl.feelcodes.elevator.sim.Simulator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -50,33 +51,26 @@ class SimulationControllerTest {
     }
 
     @Test
-    void simulate_generates_the_requested_number_of_calls_and_returns_their_ids() {
-        client.post().uri("/api/simulate?count=4")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .jsonPath("$.count").isEqualTo(4)
-                .jsonPath("$.ids.length()").isEqualTo(4);
-
-        verify(callService, times(4)).call(any(), any(), any(), isNull());
-    }
-
-    @Test
-    void simulate_defaults_to_ten_thousand() {
+    void simulate_fires_the_fixed_rider_count_and_returns_their_ids() {
         client.post().uri("/api/simulate")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.count").isEqualTo(SimulationController.DEFAULT_COUNT);
+                .jsonPath("$.count").isEqualTo(Simulator.Riders())
+                .jsonPath("$.ids.length()").isEqualTo(Simulator.Riders());
+
+        verify(callService, times(Simulator.Riders())).call(any(), any(), any(), isNull());
     }
 
     @Test
-    void simulate_clamps_a_too_large_count_to_the_max() {
-        client.post().uri("/api/simulate?count=999999")
+    void simulate_ignores_the_count_param_for_console_compatibility() {
+        client.post().uri("/api/simulate?count=4")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.count").isEqualTo(SimulationController.MAX_COUNT);
+                .jsonPath("$.count").isEqualTo(Simulator.Riders());
+
+        verify(callService, times(Simulator.Riders())).call(any(), any(), any(), isNull());
     }
 
     @Test
