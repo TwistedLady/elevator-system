@@ -18,6 +18,8 @@ global:
   # kind's node/docker network CIDR — kubelet probes originate here, so the netpols must allow it.
   nodeCidr: "172.20.0.0/16"
   kafka:
+    # Durable KRaft log dir (PVC) so a broker restart keeps the live feed.
+    storage: "2Gi"
     bootstrap: "kafka:9092"
     callTopic: "elevator-calls"
     stateTopic: "elevator-state"

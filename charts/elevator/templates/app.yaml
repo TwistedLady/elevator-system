@@ -46,9 +46,10 @@ spec:
                   fieldPath: status.podIP
             - name: ELEVATOR_CLUSTER_BOOTSTRAP
               value: "on"
-            # A node only reports Ready once it has joined a real (>=2 member) cluster.
+            # A node reports Ready only once the cluster has all its members (= app.replicas),
+            # so min-members tracks the replica count instead of a constant that drifts from it.
             - name: ELEVATOR_CLUSTER_MIN_MEMBERS
-              value: "2"
+              value: {{ .Values.app.replicas | quote }}
           ports:
             - name: remoting
               containerPort: 2551

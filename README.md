@@ -29,8 +29,9 @@ docker compose -f docker-compose.demo.yml down               # stop (add -v to w
 ```
 
 Seed knobs (`--elevator-count`, `--max-floor`, `--count`) live in the `seed` service's `command:`.
-Kafka has no volume, so a restart wipes the live chart (the Postgres journal keeps the actors) — the
-`seed` profile fires a burst of calls after boot. The durable read-model survives a restart:
+The demo compose gives Kafka no volume, so a restart wipes the live chart (the Postgres journal keeps
+the actors) — the `seed` profile fires a burst of calls after boot. The durable read-model survives a
+restart. (The kind chart differs: it puts Kafka on a PVC, so there a restart keeps the feed.)
 
 ```bash
 docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
@@ -284,6 +285,9 @@ helm upgrade elevator charts/elevator --reuse-values --set config.engine=slow   
 Run `terraform apply` **before** Skaffold. Tear down with `terraform destroy` — **never** `kind
 delete`, or Terraform's state drifts. Prereqs: `terraform`, `helm`, `skaffold`, `kind`, `docker`,
 `kubectl`, `mvn`.
+
+Kafka and Postgres each get their own PVC in the chart, so a pod restart keeps both the live
+`elevator-state` feed and the journal (unlike the volume-less demo compose above).
 
 **BI layer.** `elevator-bi` is a Spark **CronJob** (`bi.schedule`, default `*/15`); each tick a driver
 pod spawns 2 executors, does one pass, and exits. It reads `elevator-state` (Kafka) for mileage and
