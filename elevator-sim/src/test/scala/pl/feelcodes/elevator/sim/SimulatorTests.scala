@@ -1,13 +1,17 @@
 package pl.feelcodes.elevator.sim
 
+import org.scalacheck.Gen
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters.*
 import scala.util.Random
 
-class SimulatorTests extends AnyFunSuite, Matchers:
+/** Simulator: fires exactly Riders well-formed calls, returns ids matching what it fired, and — the
+  * point of injecting the seed — replays identically for the same seed while differing across seeds. */
+class SimulatorTests extends AnyFunSuite, Matchers, ScalaCheckPropertyChecks:
 
   private def collecting(): (CallSender, ListBuffer[SimSpec]) =
     val fired = ListBuffer.empty[SimSpec]
@@ -17,39 +21,55 @@ class SimulatorTests extends AnyFunSuite, Matchers:
 
   private val fleet = Seq("e1", "e2", "e3")
 
-  test("run fires exactly Riders calls through the sender"):
+  private def runWith(seed: Int, maxFloor: Int = 15): (SimRun, Seq[SimSpec]) =
     val (sender, fired) = collecting()
-    val run = Simulator(sender, fleet, maxFloor = 15, Random(1)).run()
+    val run = Simulator(sender, fleet, maxFloor, Random(seed)).run()
+    (run, fired.toSeq)
+
+  test("run fires exactly Riders calls through the sender"):
+    val (run, fired) = runWith(1)
     fired should have size Simulator.Riders
     run.ids.asScala should have size Simulator.Riders
 
-  test("every call is a valid, well-formed spec"):
-    val (sender, fired) = collecting()
-    val run = Simulator(sender, fleet, maxFloor = 15, Random(2)).run()
-    fired.foreach: spec =>
-      spec.id should startWith(s"sim-${run.runId}-")
-      fleet should contain(spec.elevator)
-      spec.floor should (be >= 1 and be <= 15)
-
   test("returned ids match the fired specs, in order"):
-    val (sender, fired) = collecting()
-    val run = Simulator(sender, fleet, maxFloor = 9, Random(3)).run()
+    val (run, fired) = runWith(3)
     run.ids.asScala.toSeq shouldBe fired.map(_.id).toSeq
 
-  test("two runs get distinct run ids"):
-    val (s1, _) = collecting()
-    val (s2, _) = collecting()
-    val a = Simulator(s1, fleet, maxFloor = 15, Random(10)).run()
-    val b = Simulator(s2, fleet, maxFloor = 15, Random(20)).run()
-    a.runId should not be b.runId
+  test("same seed reproduces the same run — ids, elevators, floors (deterministic replay)"):
+    val (runA, firedA) = runWith(42)
+    val (runB, firedB) = runWith(42)
+    runB.runId shouldBe runA.runId
+    firedB shouldBe firedA
+
+  test("a different seed produces a different sequence of calls"):
+    runWith(1)._2 should not be runWith(2)._2
+
+  test("maxFloor of 1 always fires floor 1"):
+    val (_, fired) = runWith(7, maxFloor = 1)
+    fired.map(_.floor).distinct shouldBe Seq(1)
 
   test("rejects an empty fleet"):
     val (sender, _) = collecting()
     an[IllegalArgumentException] should be thrownBy Simulator(sender, Seq.empty, 15, Random(1))
 
+  test("rejects a maxFloor below 1"):
+    val (sender, _) = collecting()
+    an[IllegalArgumentException] should be thrownBy Simulator(sender, fleet, 0, Random(1))
+
   test("rejects a noShowRate outside [0, 1]"):
     val (sender, _) = collecting()
     an[IllegalArgumentException] should be thrownBy Simulator(sender, fleet, 15, Random(1), noShowRate = 1.5)
+
+  test("property: for any seed, every call is in-fleet and within [1, maxFloor]"):
+    forAll(Gen.choose(Int.MinValue, Int.MaxValue), Gen.choose(1, 40)) { (seed, maxFloor) =>
+      val (_, fired) = runWith(seed, maxFloor)
+      fired should have size Simulator.Riders
+      fired.foreach { spec =>
+        spec.id should startWith("sim-")
+        fleet should contain(spec.elevator)
+        spec.floor should (be >= 1 and be <= maxFloor)
+      }
+    }
 
   test("boardingsFor returns only boarders at the given elevator and floor"):
     val (sender, _) = collecting()
