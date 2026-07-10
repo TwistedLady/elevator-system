@@ -31,9 +31,9 @@ Seed knobs live in the `seed` service's `command:` in `docker-compose.demo.yml`
 
 ## Watch live
 
-The **Rust console** is the rich view — a TUI with tabs: chart · trend · call · sim · health ·
-logs · k8s. It talks to the system **only over HTTP** (calls `POST /api/call`, live state via
-SSE `GET /api/elevator/stream`).
+The **Rust console** is the rich view — a TUI with three tabs: **chart · trend · sim** (the Sim tab
+runs a server-side simulation). It talks to the system **only over HTTP** (calls `POST /api/call`,
+live state via SSE `GET /api/elevator/stream`, simulation via `POST /api/simulate`).
 
 ```bash
 cd elevator-console-cli && cargo run -- monitor      # or: elevator-console-cli watch  (stream to stdout)
@@ -50,6 +50,8 @@ Logs while running: `docker compose -f docker-compose.demo.yml logs -f app api`.
 | `GET` | `/api/elevator` | Latest state of every known elevator. |
 | `GET` | `/api/elevator/stream` | **SSE** live state stream. |
 | `GET` | `/api/call/{id}` | Call lifecycle `PROGRESS → DONE` from `call_status`, or `404`. |
+| `POST` | `/api/simulate?count=N` | Generate `count` random calls server-side (optional, default & max 10000) → `{runId, count, ids}`. |
+| `GET` | `/api/simulate/progress?runId=..&size=..` | Rolled-up run summary `{simSize, calls, orders, doneCalls, firstCall, lastDone}` — source for the console progress bar. |
 | `GET` | `/actuator/health` | Health incl. Kafka readiness. Default port **8080**. |
 
 ## Test
@@ -80,16 +82,16 @@ hot-reloads the tunables in-process — no pod restart (kubelet file sync + a ~5
   limits; the app never validates. `GET /api/config` exposes them, and both consoles fetch it
   (no hardcoded floors/fleet). Edit the ConfigMap and validation updates live. A missing ConfigMap
   makes the api **fail to start** (no baked-in default).
-- **Engine — fast / slow** — the app reads `ELEVATOR_ENGINE` (`fast` / `slow`). Flip it from the
-  console's **K8s tab** (`f` / `s`) or `kubectl edit configmap elevator-config`. The app hot-swaps
-  the engine on the next move — **no rollout, no restart**.
+- **Engine — fast / slow** — the app reads `ELEVATOR_ENGINE` (`fast` / `slow`). Flip it with
+  `kubectl edit configmap elevator-config`. The app hot-swaps the engine on the next move —
+  **no rollout, no restart**.
 - **BI on / off** — `ELEVATOR_BI_ENABLED` toggles the Spark analytics layer (read at api startup via
   `@ConditionalOnProperty`). On kind, toggle it with Helm — `skaffold run -p bi`, or
   `helm upgrade elevator charts/elevator --reuse-values --set bi.enabled=false` ([cluster.md](cluster.md)):
   Helm flips the flag and applies/deletes the Spark stats driver (which writes the Parquet read-model
   the api reads via DuckDB) in one step. When off,
-  `GET /api/mileage` & `/api/served` are **not created (404)**, `/actuator/health` shows the `bi`
-  component **DISABLED** (overall stays **UP**), and both consoles hide the **Stats** tab.
+  `GET /api/mileage` & `/api/served` are **not created (404)** and `/actuator/health` shows the `bi`
+  component **DISABLED** (overall stays **UP**).
 
 ## Design note
 

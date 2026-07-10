@@ -1,9 +1,7 @@
-module Api exposing (getConfig, getHealth, getStats, getVersion)
+module Api exposing (getConfig, getHealth, getVersion, progress, simulate)
 
 import Http
-import Json.Decode as Decode
-import Task exposing (Task)
-import Types exposing (Config, Health, MileageStat, OrdersServedStat)
+import Types exposing (Config, Health, SimProgress, SimulateResult)
 
 
 {-| All URLs are relative so the same build works behind the dev proxy (vite → :8080) and when the
@@ -33,44 +31,21 @@ getVersion toMsg =
         }
 
 
-{-| Fetch both Spark BI feeds together; a failed poll keeps the last good data (handled in update)
-and the timer keeps running. Uses Task so the two requests combine into one Result.
--}
-getStats : (Result Http.Error ( List MileageStat, List OrdersServedStat ) -> msg) -> Cmd msg
-getStats toMsg =
-    Task.map2 Tuple.pair
-        (getJson "/api/mileage" (Decode.list Types.mileageDecoder))
-        (getJson "/api/served" (Decode.list Types.servedDecoder))
-        |> Task.attempt toMsg
-
-
-getJson : String -> Decode.Decoder a -> Task Http.Error a
-getJson url decoder =
-    Http.task
-        { method = "GET"
-        , headers = []
-        , url = url
+{-| Kick off a run — no body, so the api uses its default count (10000). -}
+simulate : (Result Http.Error SimulateResult -> msg) -> Cmd msg
+simulate toMsg =
+    Http.post
+        { url = "/api/simulate"
         , body = Http.emptyBody
-        , resolver = Http.stringResolver (jsonResolver decoder)
-        , timeout = Nothing
+        , expect = Http.expectJson toMsg Types.simulateResultDecoder
         }
 
 
-jsonResolver : Decode.Decoder a -> Http.Response String -> Result Http.Error a
-jsonResolver decoder response =
-    case response of
-        Http.GoodStatus_ _ body ->
-            Decode.decodeString decoder body
-                |> Result.mapError (Decode.errorToString >> Http.BadBody)
-
-        Http.BadStatus_ metadata _ ->
-            Err (Http.BadStatus metadata.statusCode)
-
-        Http.NetworkError_ ->
-            Err Http.NetworkError
-
-        Http.Timeout_ ->
-            Err Http.Timeout
-
-        Http.BadUrl_ url ->
-            Err (Http.BadUrl url)
+{-| Poll a run's rolled-up progress — GET /api/simulate/progress?runId=&size=. One request per
+tick drives the whole bar. -}
+progress : String -> Int -> (Result Http.Error SimProgress -> msg) -> Cmd msg
+progress runId size toMsg =
+    Http.get
+        { url = "/api/simulate/progress?runId=" ++ runId ++ "&size=" ++ String.fromInt size
+        , expect = Http.expectJson toMsg Types.simProgressDecoder
+        }
