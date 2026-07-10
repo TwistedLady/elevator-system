@@ -42,6 +42,17 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- OAuth2 resource server: validates the passenger's Bearer JWT on POST /api/call.
+             Also brings Nimbus JOSE, which the in-process dev issuer uses to sign tokens. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- OpenAPI spec at /v3/api-docs (JSON only, no Swagger UI). -->
         <dependency>
             <groupId>org.springdoc</groupId>
@@ -99,6 +110,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- mockJwt()/SecurityMockServerConfigurers for the WebFlux security slice tests. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 
