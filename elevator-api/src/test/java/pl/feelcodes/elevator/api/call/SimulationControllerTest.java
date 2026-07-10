@@ -10,6 +10,7 @@ import pl.feelcodes.elevator.api.config.ElevatorLimits;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -72,40 +73,48 @@ class SimulationControllerTest {
     }
 
     @Test
-    void status_splits_the_ids_into_done_progress_and_pending() {
-        CallStatusEntity done1 = entity("DONE");
-        CallStatusEntity done2 = entity("DONE");
-        CallStatusEntity progress = entity("PROGRESS");
-        when(callStatusRepository.findAllById(any(Iterable.class)))
-                .thenReturn(Flux.just(done1, done2, progress));
+    void progress_rolls_up_the_runs_calls_into_a_summary() {
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-07-10T10:00:00Z");
+        OffsetDateTime t1 = OffsetDateTime.parse("2026-07-10T10:00:05Z");
+        CallStatusEntity done = row("DONE", "order-a", t0, t1);
+        CallStatusEntity progress = row("PROGRESS", "order-a", t0, null);
+        CallStatusEntity fresh = row("PROGRESS", "order-b", t1, null);
+        when(callStatusRepository.findByCallIdPrefix(any())).thenReturn(Flux.just(done, progress, fresh));
 
-        client.post().uri("/api/simulate/status")
-                .header("Content-Type", "application/json")
-                .bodyValue("{\"ids\":[\"a\",\"b\",\"c\",\"d\",\"e\"]}")
+        client.get().uri("/api/simulate/progress?runId=abc123&size=10")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.total").isEqualTo(5)
-                .jsonPath("$.done").isEqualTo(2)
-                .jsonPath("$.progress").isEqualTo(1)
-                .jsonPath("$.pending").isEqualTo(2);
+                .jsonPath("$.simSize").isEqualTo(10)
+                .jsonPath("$.calls").isEqualTo(3)
+                .jsonPath("$.orders").isEqualTo(2)
+                .jsonPath("$.doneCalls").isEqualTo(1)
+                .jsonPath("$.firstCall").isEqualTo("2026-07-10T10:00:00Z")
+                .jsonPath("$.lastDone").isEqualTo("2026-07-10T10:00:05Z");
     }
 
     @Test
-    void status_of_an_empty_id_list_is_all_zero() {
-        client.post().uri("/api/simulate/status")
-                .header("Content-Type", "application/json")
-                .bodyValue("{\"ids\":[]}")
+    void progress_of_a_run_with_no_calls_yet_is_zeroed() {
+        when(callStatusRepository.findByCallIdPrefix(any())).thenReturn(Flux.empty());
+
+        client.get().uri("/api/simulate/progress?runId=nope&size=10")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.total").isEqualTo(0)
-                .jsonPath("$.pending").isEqualTo(0);
+                .jsonPath("$.simSize").isEqualTo(10)
+                .jsonPath("$.calls").isEqualTo(0)
+                .jsonPath("$.orders").isEqualTo(0)
+                .jsonPath("$.doneCalls").isEqualTo(0)
+                .jsonPath("$.firstCall").doesNotExist()
+                .jsonPath("$.lastDone").doesNotExist();
     }
 
-    private static CallStatusEntity entity(String status) {
+    private static CallStatusEntity row(String status, String orderId, OffsetDateTime created, OffsetDateTime done) {
         CallStatusEntity entity = mock(CallStatusEntity.class);
         when(entity.getStatus()).thenReturn(status);
+        when(entity.getOrderId()).thenReturn(orderId);
+        when(entity.getCreatedAt()).thenReturn(created);
+        when(entity.getDoneAt()).thenReturn(done);
         return entity;
     }
 }
