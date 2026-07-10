@@ -1,10 +1,13 @@
-module Chart exposing (positionOption, rightAlign, trendOption)
+module Chart exposing (Palette, floorAxis, palette, positionOption, view)
 
-{-| Pure ECharts option builders for the two chart tabs, emitted as JSON for the <echarts-panel>
-custom element. Elm owns the data shaping; the element owns the canvas. The `__kind`/`__replace`
-hints are read by main.js (tooltip formatter, series replace) and ignored by ECharts.
+{-| The CHART tab: each elevator is a cab parked at its floor (ECharts scatter). Also home to the
+shared palette + floor axis reused by the Trend tab. The `__kind` hint is read by main.js (tooltip
+formatter) and ignored by ECharts.
 -}
 
+import Html exposing (Html, div, i, span, text)
+import Html.Attributes exposing (class, property)
+import Html.Keyed as Keyed
 import Json.Encode as E
 import Types exposing (Direction(..), Motion(..), Row, Theme(..), directionLabel, motionLabel)
 
@@ -71,8 +74,28 @@ chevron direction =
             "▼"
 
 
-{-| CHART tab — each elevator is a cab (rounded rect) parked at its floor; the cab glides when its
-floor changes (ECharts animates the position update). Colour = moving/idle.
+view : List Row -> Int -> Theme -> Html msg
+view rows maxFloor theme =
+    div []
+        [ Keyed.node "div"
+            [ class "chart-area" ]
+            [ ( "chart", Html.node "echarts-panel" [ property "option" (positionOption rows maxFloor theme) ] [] ) ]
+        , legend
+        ]
+
+
+legend : Html msg
+legend =
+    div [ class "chart-legend" ]
+        [ span [ class "key" ] [ i [ class "swatch moving" ] [], text "moving" ]
+        , span [ class "key" ] [ i [ class "swatch idle" ] [], text "idle" ]
+        , span [ class "key" ] [ text "▲ up" ]
+        , span [ class "key" ] [ text "▼ down" ]
+        ]
+
+
+{-| Each elevator is a cab (rounded rect) parked at its floor; the cab glides when its floor changes
+(ECharts animates the position update). Colour = moving/idle.
 -}
 positionOption : List Row -> Int -> Theme -> E.Value
 positionOption rows maxFloor theme =
@@ -90,7 +113,6 @@ positionOption rows maxFloor theme =
 
                 itemStyle =
                     if moving then
-                        -- Solid + glow when moving.
                         E.object
                             [ ( "color", E.string p.moving )
                             , ( "borderRadius", E.int 5 )
@@ -100,7 +122,6 @@ positionOption rows maxFloor theme =
                             ]
 
                     else
-                        -- Hollow outline when idle — so state reads at a glance.
                         E.object
                             [ ( "color", E.string "transparent" )
                             , ( "borderRadius", E.int 5 )
@@ -196,74 +217,6 @@ positionOption rows maxFloor theme =
         ]
 
 
-{-| TREND tab — floor over time, one smooth line per elevator. Series are right-aligned
-(front-padded with nulls) so every "now" sample sits at the right edge on a shared x.
--}
-trendOption : List Row -> Int -> Theme -> E.Value
-trendOption rows maxFloor theme =
-    let
-        p =
-            palette theme
-
-        names =
-            List.map (.state >> .name) rows
-
-        categories =
-            List.range 0 (Types.historyLen - 1)
-                |> List.map (\i -> String.fromInt (i - Types.historyLen + 1))
-
-        toSeries row =
-            E.object
-                [ ( "id", E.string row.state.name )
-                , ( "name", E.string row.state.name )
-                , ( "type", E.string "line" )
-                , ( "smooth", E.bool True )
-                , ( "showSymbol", E.bool False )
-                , ( "connectNulls", E.bool False )
-                , ( "lineStyle", E.object [ ( "width", E.float 2.5 ) ] )
-                , ( "emphasis", E.object [ ( "focus", E.string "series" ) ] )
-                , ( "endLabel", E.object [ ( "show", E.bool True ), ( "formatter", E.string "{a}" ), ( "fontSize", E.int 10 ) ] )
-                , ( "data", encodeSamples (rightAlign Types.historyLen row.history) )
-                ]
-    in
-    E.object
-        [ ( "__kind", E.string "trend" )
-        , ( "__replace", E.bool True )
-        , ( "animationDurationUpdate", E.int 150 )
-        , ( "animationEasingUpdate", E.string "linear" )
-        , ( "color", E.list E.string p.series )
-        , ( "grid", E.object [ ( "left", E.int 46 ), ( "right", E.int 72 ), ( "top", E.int 30 ), ( "bottom", E.int 24 ) ] )
-        , ( "tooltip"
-          , E.object
-                [ ( "trigger", E.string "axis" )
-                , ( "backgroundColor", E.string p.tooltipBg )
-                , ( "borderWidth", E.int 0 )
-                , ( "textStyle", E.object [ ( "color", E.string p.tooltipText ) ] )
-                ]
-          )
-        , ( "legend"
-          , E.object
-                [ ( "type", E.string "scroll" )
-                , ( "data", E.list E.string names )
-                , ( "top", E.int 0 )
-                , ( "textStyle", E.object [ ( "color", E.string p.subtext ) ] )
-                ]
-          )
-        , ( "xAxis"
-          , E.object
-                [ ( "type", E.string "category" )
-                , ( "data", E.list E.string categories )
-                , ( "boundaryGap", E.bool False )
-                , ( "axisTick", E.object [ ( "show", E.bool False ) ] )
-                , ( "axisLine", E.object [ ( "lineStyle", E.object [ ( "color", E.string p.axis ) ] ) ] )
-                , ( "axisLabel", E.object [ ( "show", E.bool False ) ] )
-                ]
-          )
-        , ( "yAxis", floorAxis p maxFloor )
-        , ( "series", E.list identity (List.map toSeries rows) )
-        ]
-
-
 floorAxis : Palette -> Int -> E.Value
 floorAxis p maxFloor =
     E.object
@@ -276,23 +229,3 @@ floorAxis p maxFloor =
         , ( "axisLabel", E.object [ ( "color", E.string p.subtext ) ] )
         , ( "splitLine", E.object [ ( "lineStyle", E.object [ ( "color", E.string p.split ) ] ) ] )
         ]
-
-
-{-| Right-align a history to `len` points, keeping the newest and front-padding with `Nothing`
-(gaps ECharts skips). Longer histories are trimmed to the last `len` samples.
--}
-rightAlign : Int -> List Int -> List (Maybe Int)
-rightAlign len history =
-    let
-        tail =
-            List.drop (max 0 (List.length history - len)) history
-
-        pad =
-            List.repeat (max 0 (len - List.length tail)) Nothing
-    in
-    pad ++ List.map Just tail
-
-
-encodeSamples : List (Maybe Int) -> E.Value
-encodeSamples =
-    E.list (Maybe.map E.int >> Maybe.withDefault E.null)

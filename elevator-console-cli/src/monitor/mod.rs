@@ -1,6 +1,4 @@
 mod app;
-mod git;
-mod k8s;
 mod selftest;
 mod sources;
 mod ui;
@@ -18,10 +16,9 @@ use ratatui::crossterm::event::{self, Event};
 
 use crate::api;
 use crate::BoxErr;
-use app::{App, DoorState, ElevatorState, HealthSnapshot, LogSource, StatsRow};
-use k8s::K8sSnapshot;
+use app::{App, DoorState, ElevatorState, HealthSnapshot};
 
-pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
+pub fn run(api_base: &str) -> Result<(), BoxErr> {
     if !std::io::stdout().is_terminal() {
         return Err(
             "`monitor` needs a real terminal (TTY); it can't run in a captured shell \
@@ -42,15 +39,8 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
     let health = Arc::new(Mutex::new(HealthSnapshot::default()));
     sources::spawn_health_poll(api::health_url(api_base), Arc::clone(&health));
 
-    let stats = Arc::new(Mutex::new(Vec::<StatsRow>::new()));
-    sources::spawn_stats_poll(api_base.to_string(), Arc::clone(&stats));
-
-    let (log_tx, log_rx) = mpsc::channel::<(LogSource, String)>();
-    sources::spawn_log_tail(LogSource::App, app_log.to_string(), log_tx.clone());
-    sources::spawn_log_tail(LogSource::Api, api_log.to_string(), log_tx);
-
-    let k8s_state = Arc::new(Mutex::new(K8sSnapshot::default()));
-    k8s::spawn_k8s_poll(Arc::clone(&k8s_state));
+    let backend_version = Arc::new(Mutex::new(None::<String>));
+    sources::spawn_version_poll(api_base.to_string(), Arc::clone(&backend_version));
 
     let config = Arc::new(Mutex::new(crate::api::ElevatorConfig::default()));
     sources::spawn_config_poll(api_base.to_string(), Arc::clone(&config));
@@ -61,12 +51,10 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
         &mut app,
         &state_rx,
         &door_rx,
-        &log_rx,
         &Shared {
             health: &health,
-            k8s: &k8s_state,
+            backend_version: &backend_version,
             config: &config,
-            stats: &stats,
         },
     );
     ratatui::restore();
@@ -76,9 +64,8 @@ pub fn run(api_base: &str, app_log: &str, api_log: &str) -> Result<(), BoxErr> {
 /// The background-polled shared state the event loop copies into `App` each tick.
 struct Shared<'a> {
     health: &'a Arc<Mutex<HealthSnapshot>>,
-    k8s: &'a Arc<Mutex<K8sSnapshot>>,
+    backend_version: &'a Arc<Mutex<Option<String>>>,
     config: &'a Arc<Mutex<crate::api::ElevatorConfig>>,
-    stats: &'a Arc<Mutex<Vec<StatsRow>>>,
 }
 
 fn event_loop(
@@ -86,7 +73,6 @@ fn event_loop(
     app: &mut App,
     state_rx: &mpsc::Receiver<ElevatorState>,
     door_rx: &mpsc::Receiver<DoorState>,
-    log_rx: &mpsc::Receiver<(LogSource, String)>,
     shared: &Shared,
 ) -> Result<(), BoxErr> {
     loop {
@@ -96,22 +82,15 @@ fn event_loop(
         while let Ok(door) = door_rx.try_recv() {
             app.record_door(door);
         }
-        while let Ok((source, line)) = log_rx.try_recv() {
-            app.push_log(source, line);
-        }
         if let Ok(h) = shared.health.lock() {
             app.health = h.clone();
         }
-        if let Ok(k) = shared.k8s.lock() {
-            app.k8s = k.clone();
+        if let Ok(v) = shared.backend_version.lock() {
+            app.backend_version = v.clone();
         }
         if let Ok(c) = shared.config.lock() {
             app.config = c.clone();
         }
-        if let Ok(s) = shared.stats.lock() {
-            app.stats = s.clone();
-        }
-        app.refresh_sim();
 
         terminal.draw(|frame| ui::draw(frame, app))?;
 

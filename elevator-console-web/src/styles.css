@@ -13,9 +13,14 @@
   --accent: #1976d2;
   --ok: #2e7d32;
   --bad: #c62828;
+  --warn: #f9a825;
   --up: #2e7d32;
   --down: #e64a19;
   --grid: #eceff1;
+
+  --done: #2e7d32;
+  --progress: #f9a825;
+  --pending: #b0bec5;
 
   --cab-active-fill: #1976d2;
   --cab-idle-fill: #90a4ae;
@@ -34,9 +39,14 @@
     --accent: #64b5f6;
     --ok: #81c784;
     --bad: #ef5350;
+    --warn: #ffca28;
     --up: #66bb6a;
     --down: #ff8a65;
     --grid: #2b3a41;
+
+    --done: #81c784;
+    --progress: #ffca28;
+    --pending: #546e7a;
 
     --cab-active-fill: #64b5f6;
     --cab-idle-fill: #78909c;
@@ -116,6 +126,11 @@ button.badge {
 .badge.bad {
   border-color: color-mix(in srgb, var(--bad) 45%, transparent);
   color: var(--bad);
+}
+
+.badge.warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
 }
 
 .warnbar {
@@ -266,116 +281,85 @@ echarts-panel {
   border: 2px solid var(--cab-idle-fill);
 }
 
-/* ---- stats tab (was stats.css) ---- */
-.stats {
+/* ---- sim tab ---- */
+.sim {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
+  align-items: flex-start;
 }
 
-.stats-legend {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.stats .swatch {
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
-}
-
-/* Two categorical series from the validated dataviz palette: accent blue + direction orange. */
-.swatch.mileage,
-.bar.mileage {
+.sim-run {
+  border: 0;
+  border-radius: 8px;
   background: var(--accent);
+  color: #fff;
+  padding: 0.6rem 1.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: filter 0.15s;
 }
 
-.swatch.served,
-.bar.served {
-  background: var(--down);
+.sim-run:hover {
+  filter: brightness(1.06);
 }
 
-.stale {
-  color: var(--bad);
-  font-variant: small-caps;
-  letter-spacing: 0.03em;
+.sim-status {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
-/* Wide content scrolls inside its own box instead of stretching the page. */
-.scroll {
-  overflow-x: auto;
-  min-width: 0;
+/* Progress split by status: done / progress / pending segments, widths set inline from the counts. */
+.sim-bar {
+  display: flex;
+  width: 100%;
+  height: 18px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--grid);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr);
-  min-width: 320px;
-  column-gap: 1rem;
-  row-gap: 0.4rem;
-  align-items: center;
+.sim-bar .seg {
+  height: 100%;
+  transition: width 0.5s ease;
 }
 
-.row {
-  display: contents;
+.sim-bar .seg.done {
+  background: var(--done);
 }
 
-.head .name,
-.head .col {
-  font-size: 0.72rem;
+.sim-bar .seg.progress {
+  background: var(--progress);
+}
+
+.sim-bar .seg.pending {
+  background: var(--pending);
+}
+
+.sim-line {
+  margin: 0;
+  font: 0.85rem/1.4 ui-monospace, monospace;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.3rem;
 }
 
-.head small {
-  text-transform: none;
+.sim-line.bad {
+  color: var(--bad);
+}
+
+.sim-meta {
+  margin: 0;
+  font: 0.8rem/1.4 ui-monospace, monospace;
   color: var(--muted);
 }
 
-.name {
+.sim-done {
+  margin: 0;
   font-weight: 600;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.col {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.bartrack {
-  flex: 1;
-  min-width: 0;
-  height: 14px;
-  background: var(--grid);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.bar {
-  display: block;
-  height: 100%;
-  border-radius: 4px;
-  min-width: 2px;
-  transition: width 0.4s ease;
-}
-
-.val {
-  flex: none;
-  min-width: 2.2ch;
-  text-align: right;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+  color: var(--ok);
 }
 
 .muted {
