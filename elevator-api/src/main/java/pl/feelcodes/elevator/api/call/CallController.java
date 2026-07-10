@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,15 +27,16 @@ class CallController {
         this.callStatusService = callStatusService;
     }
 
-    // The passenger is an optional field on the request body; blank/absent => anonymous call.
-    // (No authentication yet — a real login is planned to supply this instead.)
+    // Identity is proven, not claimed: the passenger comes from the validated Bearer JWT's subject.
+    // The security chain guarantees a token is present here, so `jwt` is never null. Any
+    // passengerId in the body is ignored.
     @PostMapping
-    public Mono<CallRequestDto> place(@Valid @RequestBody CallRequestDto dto) {
+    public Mono<CallRequestDto> place(@Valid @RequestBody CallRequestDto dto,
+                                      @AuthenticationPrincipal Jwt jwt) {
         CallRequestDto call = dto.withIdIfAbsent();
-        String passenger = call.passengerId() == null || call.passengerId().isBlank() ? null : call.passengerId();
+        String passenger = jwt.getSubject();
         log.info("[call place ] {} -> floor {} (id {}, passenger {})",
-                call.elevatorName(), call.floor(), call.id(),
-                passenger == null ? "anonymous" : passenger);
+                call.elevatorName(), call.floor(), call.id(), passenger);
         return callService.call(call.id(), call.elevatorName(), call.floor(), passenger)
                 .thenReturn(call);
     }

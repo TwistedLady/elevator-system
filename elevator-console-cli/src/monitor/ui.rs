@@ -2,12 +2,10 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Axis, Block, BorderType, Chart, Dataset, Gauge, GraphType, Paragraph, Tabs, Wrap,
-};
+use ratatui::widgets::{Axis, Block, BorderType, Chart, Dataset, GraphType, Paragraph, Tabs, Wrap};
 use ratatui::Frame;
 
-use super::app::{App, ElevatorState, StatsRow, View, TREND_WINDOW_SECS};
+use super::app::{App, ElevatorState, View, TREND_WINDOW_SECS};
 
 const PALETTE: [Color; 7] = [
     Color::Green,
@@ -29,17 +27,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     ])
     .split(frame.area());
 
-    draw_tabs(frame, app, chunks[0]);
+    draw_header(frame, app, chunks[0]);
     match app.view {
         View::Chart => draw_chart(frame, app, chunks[1]),
         View::Trend => draw_trend(frame, app, chunks[1]),
-        View::Call => draw_call(frame, app, chunks[1]),
         View::Sim => draw_sim(frame, app, chunks[1]),
-        View::Health => draw_health(frame, app, chunks[1]),
-        View::Logs => draw_logs(frame, app, chunks[1]),
-        View::K8s => draw_k8s(frame, app, chunks[1]),
-        View::Test => draw_test(frame, app, chunks[1]),
-        View::Stats => draw_stats(frame, app, chunks[1]),
     }
     draw_footer(frame, app, chunks[2]);
 }
@@ -51,37 +43,56 @@ fn retro_block(title: &str) -> Block<'_> {
         .title(Span::from(title).yellow().bold())
 }
 
-fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
-    let views = app.visible_views();
+/// Health badge text + colour: UP (green) / unknown (yellow) / anything else (red).
+fn health_badge(reachable: bool, overall: &str) -> (&'static str, Color) {
+    if reachable && overall.eq_ignore_ascii_case("UP") {
+        ("API UP", Color::Green)
+    } else if !reachable && overall == "?" {
+        ("API …", Color::Yellow)
+    } else {
+        ("API DOWN", Color::Red)
+    }
+}
+
+/// Version badge text + colour: match (green), mismatch (red), backend unknown yet (yellow).
+fn version_badge(console: &str, backend: Option<&str>) -> (String, Color) {
+    match backend {
+        None => (format!("v{console} · api …"), Color::Yellow),
+        Some(b) if b == console => (format!("v{console} = api {b}"), Color::Green),
+        Some(b) => (format!("v{console} ≠ api {b}"), Color::Red),
+    }
+}
+
+fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
+    let views = View::ALL;
     let titles: Vec<Line> = views.iter().map(|v| Line::from(v.title())).collect();
-    let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
-        "fast" => ("FAST", Color::Cyan),
-        "slow" => ("SLOW", Color::Magenta),
-        _ => ("MODE ?", Color::DarkGray),
-    };
-    let git = app.git.label();
-    let header = retro_block(" ▌ ELEVATOR CONTROL ▐ ").title_top(
-        Line::from(vec![
-            Span::from(if git.is_empty() {
-                String::new()
-            } else {
-                format!(" {git} ")
-            })
-            .dark_gray(),
-            Span::from(format!(" {mode_txt} "))
-                .fg(Color::Black)
-                .bg(mode_color)
-                .bold(),
-            Span::from(format!(" ⏱ {} ", app.now_clock())).cyan().bold(),
-        ])
-        .right_aligned(),
+
+    let (htxt, hcolor) = health_badge(app.health.reachable, &app.health.overall);
+    let (vtxt, vcolor) = version_badge(
+        crate::version::CONSOLE_VERSION,
+        app.backend_version.as_deref(),
     );
-    let clock = header;
+    let badges = Line::from(vec![
+        Span::from(format!(" {htxt} "))
+            .fg(Color::Black)
+            .bg(hcolor)
+            .bold(),
+        Span::from("  "),
+        Span::from(format!(" {vtxt} ")).fg(vcolor).bold(),
+    ])
+    .right_aligned();
+
+    let header = Block::bordered()
+        .border_type(BorderType::Double)
+        .border_style(Style::new().fg(Color::Cyan))
+        .title(Span::from(" 🛗 ELEVATOR CONSOLE ").cyan().bold())
+        .title_top(badges);
+
     let tabs = Tabs::new(titles)
         .select(views.iter().position(|v| *v == app.view).unwrap_or(0))
-        .block(clock)
+        .block(header)
         .style(Style::new().fg(Color::Green))
-        .highlight_style(Style::new().fg(Color::Black).bg(Color::Yellow).bold())
+        .highlight_style(Style::new().fg(Color::Black).bg(Color::Cyan).bold())
         .divider(Span::from("│").dark_gray());
     frame.render_widget(tabs, area);
 }
@@ -236,47 +247,13 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(chart, area);
 }
 
-fn draw_call(frame: &mut Frame, app: &App, area: Rect) {
-    let block = retro_block(" CALL ");
-    let mut lines: Vec<Line> = vec![
-        Line::from("Call one elevator to a floor.".white()),
-        Line::from("Type below:  <elevator> <floor>   e.g.  e3 7".dim()),
-        Line::from(""),
-    ];
-    if !app.message.is_empty() {
-        lines.push(Line::from(app.message.clone().cyan()));
-        lines.push(Line::from(""));
-    }
-    let fleet = app.fleet();
-    let known = if fleet.is_empty() {
-        "(none seen yet)".to_string()
-    } else {
-        fleet.join(", ")
-    };
-    lines.push(Line::from(vec![
-        Span::from("fleet (session): ").dark_gray(),
-        Span::from(known).green(),
-    ]));
-    lines.push(Line::from(vec![
-        Span::from("floors seen:     ").dark_gray(),
-        Span::from(format!("0..{}", app.seen_floor_max)).green(),
-    ]));
-
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-}
-
 fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block(" SIMULATOR ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let rows = Layout::vertical([
-        Constraint::Length(3),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -284,381 +261,90 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     ])
     .split(inner);
 
-    match &app.sim {
-        None => {
-            let p = Paragraph::new(vec![
-                Line::from("No simulation running.".dim()),
-                Line::from("Type how many calls to fire below, then press Enter.".dim()),
-            ]);
-            frame.render_widget(p, rows[0]);
-        }
-        Some(sim) => {
-            let sent = sim.sent();
-            let secs = sim.secs();
-            let rate = if secs > 0.0 { sent as f64 / secs } else { 0.0 };
-            let status = if sim.finished() {
-                "done ✓".green().bold()
-            } else {
-                "running…".yellow().bold()
-            };
-            let info = Paragraph::new(vec![
-                Line::from(vec![Span::from("status   ").white(), status]),
-                Line::from(
-                    format!(
-                        "{sent}/{} calls   {rate:.0} msg/s   {secs:.2}s   across {} elevators",
-                        sim.total, sim.elevators
-                    )
-                    .dark_gray(),
-                ),
-            ]);
-            frame.render_widget(info, rows[0]);
-
-            let sent_pct = (sim.ratio() * 100.0).round() as u16;
-            let sent_fill = if sim.finished() {
-                Color::Green
-            } else {
-                Color::Cyan
-            };
-            frame.render_widget(
-                Gauge::default()
-                    .gauge_style(Style::new().fg(sent_fill).bg(Color::Black).bold())
-                    .ratio(sim.ratio())
-                    .label(format!("sent  {sent}/{}  ({sent_pct}%)", sim.total)),
-                rows[1],
-            );
-
-            let total = sim.checked.max(1);
-            let done = sim.done();
-            let prog = sim.in_progress();
-            let pending = sim.pending();
-            frame.render_widget(
-                Paragraph::new(
-                    format!(
-                        "call status (API):  DONE {done}  ·  PROGRESS {prog}  ·  pending {pending}   / {}",
-                        sim.checked
-                    )
-                    .dark_gray(),
-                ),
-                rows[2],
-            );
-
-            let bar_w = rows[3].width as usize;
-            let done_w = (bar_w as u64 * done / total) as usize;
-            let prog_w = (bar_w as u64 * prog / total) as usize;
-            let rest_w = bar_w.saturating_sub(done_w + prog_w);
-            let bar = Line::from(vec![
-                Span::styled("█".repeat(done_w), Style::new().fg(Color::Green)),
-                Span::styled("█".repeat(prog_w), Style::new().fg(Color::Yellow)),
-                Span::styled("░".repeat(rest_w), Style::new().fg(Color::DarkGray)),
-            ]);
-            frame.render_widget(Paragraph::new(bar), rows[3]);
-        }
-    }
-}
-
-fn draw_health(frame: &mut Frame, app: &App, area: Rect) {
-    let block = retro_block(" ACTUATOR · /actuator/health ");
-    let mut lines: Vec<Line> = Vec::new();
-
-    if !app.health.reachable {
-        lines.push(Line::from(
-            "api unreachable — is elevator-api running on :8080?".red(),
-        ));
-    }
-
-    let ostyle = status_style(&app.health.overall);
-    lines.push(Line::from(vec![
-        Span::from("overall   ").white(),
-        Span::styled(format!("{} ", status_icon(&app.health.overall)), ostyle),
-        Span::styled(app.health.overall.clone(), ostyle.bold()),
-    ]));
-    lines.push(Line::from(""));
-
-    for c in &app.health.components {
-        let st = status_style(&c.status);
-        lines.push(Line::from(vec![
-            Span::styled(format!("{} ", status_icon(&c.status)), st),
-            Span::from(format!("{:<14}", c.name)).white(),
-            Span::styled(format!("{:<6}", c.status), st),
-            Span::from(c.detail.clone()).dark_gray(),
-        ]));
-    }
-
-    frame.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-fn draw_logs(frame: &mut Frame, app: &App, area: Rect) {
-    let matched: Vec<&String> = match &app.log_re {
-        Some(re) => app.logs().iter().filter(|l| re.is_match(l)).collect(),
-        None => app.logs().iter().collect(),
-    };
-
-    let filter_note = if app.log_filter.is_empty() {
-        String::new()
-    } else {
-        format!(" · /{}/", app.log_filter)
-    };
-    let title = format!(
-        " LOGS · {}   {} lines{}   (←/→ source) ",
-        app.log_source.label(),
-        matched.len(),
-        filter_note
-    );
-    let block = retro_block(&title);
-
-    let inner_w = area.width.saturating_sub(2).max(1) as usize;
-    let visible = area.height.saturating_sub(2) as usize;
-
-    let mut rows: Vec<Line> = Vec::new();
-    for l in matched.iter().rev() {
-        let mut wrapped = wrap_log_line(l, inner_w);
-        wrapped.append(&mut rows);
-        rows = wrapped;
-        if rows.len() >= visible {
-            break;
-        }
-    }
-    let start = rows.len().saturating_sub(visible);
-    let shown: Vec<Line> = rows.split_off(start);
-
-    frame.render_widget(Paragraph::new(shown).block(block), area);
-}
-
-fn draw_k8s(frame: &mut Frame, app: &App, area: Rect) {
-    let block = retro_block(" KUBERNETES · elevator (kind) ");
-    let mut lines: Vec<Line> = Vec::new();
-
-    let (mode_txt, mode_color) = match app.k8s.mode.as_str() {
-        "fast" => ("FAST  (~instant moves)", Color::Cyan),
-        "slow" => ("SLOW  (CPU-burning moves)", Color::Magenta),
-        other => (other, Color::DarkGray),
-    };
-    lines.push(Line::from(vec![
-        Span::from("mode  ").white(),
-        Span::styled(
-            format!(" {mode_txt} "),
-            Style::new().fg(Color::Black).bg(mode_color).bold(),
-        ),
-    ]));
-    lines.push(Line::from(""));
-
-    if !app.k8s.reachable {
-        lines.push(Line::from(
-            format!("kubectl unavailable — {}", app.k8s.note).red(),
-        ));
+    let Some(sim) = &app.sim else {
         frame.render_widget(
-            Paragraph::new(lines)
-                .block(block)
-                .wrap(Wrap { trim: false }),
-            area,
+            Paragraph::new(Line::from(vec![
+                Span::from("Press ").dim(),
+                Span::from(" R ").fg(Color::Black).bg(Color::Cyan).bold(),
+                Span::from(" to run a 10,000-call simulation").dim(),
+            ])),
+            rows[0],
         );
         return;
-    }
+    };
 
-    lines.push(Line::from(
-        format!(
-            "  {:<34}{:<10}{:<8}{}",
-            "POD", "STATUS", "READY", "RESTARTS"
-        )
-        .dark_gray(),
-    ));
-    for p in &app.k8s.pods {
-        let st = match p.status.as_str() {
-            "Running" => Style::new().fg(Color::Green),
-            "Pending" | "ContainerCreating" => Style::new().fg(Color::Yellow),
-            _ => Style::new().fg(Color::Red),
-        };
-        let ready_color = if p.ready == "true" {
-            Color::Green
-        } else {
-            Color::Yellow
-        };
-        lines.push(Line::from(vec![
-            Span::from(format!("  {:<34}", p.name)).white(),
-            Span::styled(format!("{:<10}", p.status), st),
-            Span::from(format!("{:<8}", p.ready)).fg(ready_color),
-            Span::from(p.restarts.clone()).dark_gray(),
-        ]));
-    }
-
-    frame.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-fn draw_test(frame: &mut Frame, app: &App, area: Rect) {
-    let block = retro_block(" INTEGRATION TEST · console itest ");
-    let mut lines: Vec<Line> = Vec::new();
-
-    if app.test_running.load(std::sync::atomic::Ordering::Relaxed) {
-        lines.push(Line::from(
-            "⏳ running… sending orders, polling the api, cross-checking app+api logs".yellow(),
-        ));
-        lines.push(Line::from(""));
-    }
-
-    match &app.test_report {
-        None => {
-            lines.push(Line::from("no test run yet.".white()));
-            lines.push(Line::from("press  r  to run the integration test.".dim()));
-        }
-        Some(r) => {
-            let verdict = r["verdict"].as_str().unwrap_or("?");
-            let vstyle = if verdict == "PASS" {
-                Style::new().fg(Color::Black).bg(Color::Green).bold()
-            } else {
-                Style::new().fg(Color::Black).bg(Color::Red).bold()
-            };
-            lines.push(Line::from(vec![
-                Span::from("verdict   ").white(),
-                Span::styled(format!(" {verdict} "), vstyle),
-                Span::from(format!(
-                    "   run {}  ·  mode {}",
-                    r["run_id"],
-                    r["mode"].as_str().unwrap_or("?")
-                ))
-                .dark_gray(),
-            ]));
-            lines.push(Line::from(""));
-
-            let lm = &r["latency_ms"];
-            let kv = |k: &str, v: String| {
-                Line::from(vec![
-                    Span::from(format!("{k:<22}")).dark_gray(),
-                    Span::from(v).green(),
-                ])
-            };
-            lines.push(kv("requests", format!("{}", r["requests"])));
-            lines.push(kv("done", format!("{}", r["done"])));
-            lines.push(Line::from(vec![
-                Span::from(format!("{:<22}", "lost")).dark_gray(),
-                Span::styled(
-                    format!("{}", r["lost"]),
-                    if r["lost"].as_u64() == Some(0) {
-                        Style::new().fg(Color::Green)
-                    } else {
-                        Style::new().fg(Color::Red).bold()
-                    },
-                ),
-            ]));
-            lines.push(kv(
-                "latency p50/p95/max",
-                format!("{} / {} / {} ms", lm["p50"], lm["p95"], lm["max"]),
-            ));
-            lines.push(kv(
-                "throughput",
-                format!(
-                    "{:.2}/s",
-                    r["throughput_done_per_s"].as_f64().unwrap_or(0.0)
-                ),
-            ));
-            lines.push(kv(
-                "api confirmed DONE",
-                format!("{}", r["api_confirmed_done"]),
-            ));
-            lines.push(kv(
-                "app moves observed",
-                format!("{}", r["app_moves_observed"]),
-            ));
-            lines.push(Line::from(""));
-
-            lines.push(Line::from("checks".dark_gray()));
-            if let Some(checks) = r["checks"].as_array() {
-                for c in checks {
-                    let ok = c["ok"].as_bool().unwrap_or(false);
-                    let st = if ok {
-                        Style::new().fg(Color::Green)
-                    } else {
-                        Style::new().fg(Color::Red)
-                    };
-                    lines.push(Line::from(vec![
-                        Span::styled(format!(" {} ", if ok { "PASS" } else { "FAIL" }), st.bold()),
-                        Span::from(format!("  {}", c["check"].as_str().unwrap_or(""))).white(),
-                    ]));
-                }
-            }
-        }
-    }
-
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-}
-
-fn draw_stats(frame: &mut Frame, app: &App, area: Rect) {
-    let block = retro_block(" SPARK BI · mileage + orders served ");
-
-    let rows: Vec<&StatsRow> = app
-        .stats
-        .iter()
-        .filter(|r| app.elevator_matches(&r.name))
-        .collect();
-
-    if rows.is_empty() {
-        let msg = if app.stats.is_empty() {
-            if app.health.reachable {
-                Line::from("no stats yet — waiting for Spark BI (mileage / served)…".dim())
-            } else {
-                Line::from("⏳  no stats yet — elevator-api unreachable on :8080".yellow())
-            }
-        } else {
-            Line::from(format!("no elevators match /{}/", app.elevator_filter).dim())
-        };
-        frame.render_widget(Paragraph::new(msg).block(block), area);
+    if let Some(err) = sim.error() {
+        frame.render_widget(Paragraph::new(Line::from(err.red())), rows[0]);
         return;
     }
 
-    let max_mileage = rows.iter().map(|r| r.mileage).max().unwrap_or(0).max(1);
-    let max_served = rows.iter().map(|r| r.served).max().unwrap_or(0).max(1);
+    let run_id = sim.run_id();
+    let (done, prog, pending) = (sim.done(), sim.in_progress(), sim.pending());
 
-    let inner_w = area.width.saturating_sub(2) as usize;
-    // Layout per line:  name(6) mileage#(6) bar | served#(5) bar  — split the leftover between bars.
-    let bar_w = inner_w.saturating_sub(6 + 6 + 3 + 5 + 1).max(4) / 2;
+    let status = if sim.complete() {
+        Line::from("✓ simulation complete".green().bold())
+    } else if run_id.is_empty() {
+        Line::from("starting…".yellow().bold())
+    } else {
+        Line::from("running…".yellow().bold())
+    };
+    frame.render_widget(Paragraph::new(status), rows[0]);
 
-    let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from(vec![
-        Span::from(format!("{:<6}", "CAR")).dark_gray(),
-        Span::from(format!("{:>6} ", "MILE")).dark_gray(),
-        Span::from(format!("{:<bar_w$}", "floors travelled")).dark_gray(),
-        Span::from(" │ ").dark_gray(),
-        Span::from(format!("{:>5} ", "SRVD")).dark_gray(),
-        Span::from("orders served".to_string()).dark_gray(),
-    ]));
+    let (done_w, prog_w, rest_w) = split_bar(done, prog, pending, rows[1].width as usize);
+    let bar = Line::from(vec![
+        Span::styled("█".repeat(done_w), Style::new().fg(Color::Green)),
+        Span::styled("█".repeat(prog_w), Style::new().fg(Color::Yellow)),
+        Span::styled("░".repeat(rest_w), Style::new().fg(Color::DarkGray)),
+    ]);
+    frame.render_widget(Paragraph::new(bar), rows[1]);
 
-    for r in &rows {
-        lines.push(Line::from(vec![
-            Span::from(format!("{:<6}", r.name)).cyan(),
-            Span::from(format!("{:>6} ", r.mileage)).white(),
-            Span::styled(
-                bar(r.mileage, max_mileage, bar_w),
-                Style::new().fg(Color::Green),
-            ),
-            Span::from(" │ ").dark_gray(),
-            Span::from(format!("{:>5} ", r.served)).white(),
-            Span::styled(
-                bar(r.served, max_served, bar_w),
-                Style::new().fg(Color::Cyan),
-            ),
-        ]));
-    }
+    let counts = format!(
+        "run {} · size {} · calls {} · done {done} · progress {prog} · pending {pending}",
+        if run_id.is_empty() { "…" } else { &run_id },
+        sim.size(),
+        sim.calls(),
+    );
+    frame.render_widget(Paragraph::new(counts.dark_gray()), rows[2]);
 
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    let meta = format!(
+        "orders {} · first {} · last {}",
+        sim.orders(),
+        hms(sim.first_call()),
+        hms(sim.last_done()),
+    );
+    frame.render_widget(Paragraph::new(meta.dark_gray()), rows[3]);
 }
 
-/// A proportional bar `width` cells wide, filled to `value/max`. Pure — unit-tested.
-fn bar(value: i64, max: i64, width: usize) -> String {
-    if max <= 0 || value <= 0 {
-        return String::new();
+/// Reduce an ISO-8601 instant (e.g. `2026-07-10T10:00:05Z`) to just `10:00:05` for a compact line;
+/// `—` when the timestamp is absent.
+fn hms(iso: Option<String>) -> String {
+    match iso {
+        Some(s) => s
+            .split('T')
+            .nth(1)
+            .map(|t| t.chars().take(8).collect())
+            .unwrap_or(s),
+        None => "—".to_string(),
     }
-    let filled = ((value as f64 / max as f64) * width as f64).round() as usize;
-    "█".repeat(filled.min(width))
+}
+
+/// Split a `width`-cell bar into (done, progress, pending) segment widths, proportional to the
+/// counts. Pure — unit-tested. When nothing is counted yet the whole bar is pending.
+fn split_bar(done: u64, progress: u64, pending: u64, width: usize) -> (usize, usize, usize) {
+    let total = done + progress + pending;
+    if total == 0 || width == 0 {
+        return (0, 0, width);
+    }
+    let done_w = (width as u64 * done / total) as usize;
+    let prog_w = (width as u64 * progress / total) as usize;
+    let rest_w = width.saturating_sub(done_w + prog_w);
+    (done_w, prog_w, rest_w)
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
     let content = match app.view {
-        View::Chart | View::Trend | View::Stats => {
+        View::Chart | View::Trend => {
             let mut spans = vec![
                 Span::from("filter ▸ ").green().bold(),
                 Span::from(app.elevator_filter.clone()).white(),
@@ -670,65 +356,10 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::from("   Enter: clear · Tab: switch · Esc: quit").dark_gray());
             Line::from(spans)
         }
-        View::Call => {
-            let mut spans = vec![
-                Span::from("call ▸ ").green().bold(),
-                Span::from(app.call_input.clone()).white(),
-                Span::from("█").green(),
-                Span::from("   <elevator> <floor> · Enter: send").dark_gray(),
-            ];
-            if !app.message.is_empty() {
-                spans.push(Span::from(format!("   {}", app.message)).cyan());
-            }
-            Line::from(spans)
-        }
         View::Sim => {
             let mut spans = vec![
-                Span::from("sim ▸ ").green().bold(),
-                Span::from(app.sim_input.clone()).white(),
-                Span::from("█").green(),
-                Span::from("   number of calls · Enter: run").dark_gray(),
-            ];
-            if !app.message.is_empty() {
-                spans.push(Span::from(format!("   {}", app.message)).cyan());
-            }
-            Line::from(spans)
-        }
-        View::Logs => {
-            let mut spans = vec![
-                Span::from("filter ▸ ").green().bold(),
-                Span::from(app.log_filter.clone()).white(),
-                Span::from("█").green(),
-            ];
-            if app.log_re_err {
-                spans.push(Span::from("  invalid regex").red());
-            }
-            spans.push(Span::from("   Enter: clear · ←/→: source · Esc: quit").dark_gray());
-            Line::from(spans)
-        }
-        View::Health => Line::from("Tab/Shift-Tab: switch view   ·   Esc: quit".dim()),
-        View::K8s => {
-            let mut spans = vec![
-                Span::from("change configmap ▸ ").green().bold(),
-                Span::from("f").fg(Color::Black).bg(Color::Cyan).bold(),
-                Span::from(": fast  ").dark_gray(),
-                Span::from("s").fg(Color::Black).bg(Color::Magenta).bold(),
-                Span::from(": slow   ").dark_gray(),
-                Span::from("r").fg(Color::Black).bg(Color::Yellow).bold(),
-                Span::from(": restart").dark_gray(),
-                Span::from("   (configmap swap / rollout — via kubectl)").dark_gray(),
-            ];
-            if !app.message.is_empty() {
-                spans.push(Span::from(format!("   {}", app.message)).cyan());
-            }
-            Line::from(spans)
-        }
-        View::Test => {
-            let mut spans = vec![
-                Span::from("integration test ▸ ").green().bold(),
-                Span::from("r").fg(Color::Black).bg(Color::Green).bold(),
-                Span::from(": run").dark_gray(),
-                Span::from("   (sends calls, polls api, cross-checks app+api logs)").dark_gray(),
+                Span::from("R").fg(Color::Black).bg(Color::Cyan).bold(),
+                Span::from(": run 10k simulation · Tab: switch · Esc: quit").dark_gray(),
             ];
             if !app.message.is_empty() {
                 spans.push(Span::from(format!("   {}", app.message)).cyan());
@@ -749,73 +380,6 @@ fn waiting_line(app: &App) -> Line<'static> {
         Line::from("⏳  waiting for backend — elevator-api unreachable on :8080".yellow())
     } else {
         Line::from("waiting for elevator state…".dim())
-    }
-}
-
-fn log_style(s: &str) -> Style {
-    let upper = s.to_ascii_uppercase();
-    if upper.contains("ERROR") {
-        Style::new().fg(Color::Red)
-    } else if upper.contains("WARN") {
-        Style::new().fg(Color::Yellow)
-    } else {
-        Style::new().fg(Color::Gray)
-    }
-}
-
-fn wrap_log_line(s: &str, width: usize) -> Vec<Line<'static>> {
-    let text = shorten_thread(s);
-    let style = log_style(&text);
-    let chars: Vec<char> = text.chars().collect();
-    if chars.is_empty() {
-        return vec![Line::from("")];
-    }
-    chars
-        .chunks(width.max(1))
-        .map(|chunk| Line::styled(chunk.iter().collect::<String>(), style))
-        .collect()
-}
-
-fn shorten_thread(s: &str) -> String {
-    let (Some(open), Some(close)) = (s.find('['), s.find(']')) else {
-        return s.to_string();
-    };
-    if close <= open + 1 {
-        return s.to_string();
-    }
-    let short = abbreviate(&s[open + 1..close]);
-    format!("{}[{}]{}", &s[..open], short, &s[close + 1..])
-}
-
-fn abbreviate(name: &str) -> String {
-    let mut out = String::new();
-    let mut chars = name.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c.is_alphabetic() {
-            out.push(c);
-            while chars.peek().is_some_and(|n| n.is_alphabetic()) {
-                chars.next();
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-fn status_icon(status: &str) -> &'static str {
-    match status.to_ascii_uppercase().as_str() {
-        "UP" => "●",
-        "DOWN" => "✖",
-        _ => "?",
-    }
-}
-
-fn status_style(status: &str) -> Style {
-    match status.to_ascii_uppercase().as_str() {
-        "UP" => Style::new().fg(Color::Green),
-        "DOWN" => Style::new().fg(Color::Red),
-        _ => Style::new().fg(Color::Yellow),
     }
 }
 
@@ -853,24 +417,41 @@ fn center(s: &str, w: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::bar;
+    use super::*;
 
     #[test]
-    fn bar_scales_value_against_max() {
-        assert_eq!(bar(10, 10, 20).chars().count(), 20);
-        assert_eq!(bar(5, 10, 20).chars().count(), 10);
-        assert_eq!(bar(0, 10, 20), "");
+    fn health_badge_maps_states_to_colours() {
+        assert_eq!(health_badge(true, "UP"), ("API UP", Color::Green));
+        assert_eq!(health_badge(false, "?"), ("API …", Color::Yellow));
+        assert_eq!(health_badge(false, "DOWN"), ("API DOWN", Color::Red));
+        assert_eq!(health_badge(true, "DOWN"), ("API DOWN", Color::Red));
     }
 
     #[test]
-    fn bar_is_empty_and_safe_for_nonpositive_max() {
-        assert_eq!(bar(5, 0, 20), "");
-        assert_eq!(bar(-3, 10, 20), "");
+    fn version_badge_flags_match_and_mismatch() {
+        assert_eq!(
+            version_badge("1.2.3", Some("1.2.3")),
+            ("v1.2.3 = api 1.2.3".to_string(), Color::Green)
+        );
+        assert_eq!(
+            version_badge("1.2.3", Some("1.2.4")),
+            ("v1.2.3 ≠ api 1.2.4".to_string(), Color::Red)
+        );
+        assert_eq!(version_badge("1.2.3", None).1, Color::Yellow);
     }
 
     #[test]
-    fn bar_never_exceeds_width() {
-        // value > max shouldn't overflow the bar width.
-        assert_eq!(bar(30, 10, 8).chars().count(), 8);
+    fn split_bar_is_proportional_and_fills_width() {
+        let (d, p, r) = split_bar(50, 30, 20, 100);
+        assert_eq!((d, p, r), (50, 30, 20));
+        // segments always sum to the full width
+        let (d, p, r) = split_bar(1, 1, 1, 10);
+        assert_eq!(d + p + r, 10);
+    }
+
+    #[test]
+    fn split_bar_all_pending_when_nothing_counted() {
+        assert_eq!(split_bar(0, 0, 0, 20), (0, 0, 20));
+        assert_eq!(split_bar(0, 0, 0, 0), (0, 0, 0));
     }
 }

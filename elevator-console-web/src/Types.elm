@@ -4,11 +4,10 @@ module Types exposing
     , Direction(..)
     , ElevatorState
     , Health(..)
-    , MileageStat
     , Motion(..)
-    , OrdersServedStat
     , Row
-    , Stream(..)
+    , SimProgress
+    , SimulateResult
     , Tab(..)
     , Theme(..)
     , backendLabel
@@ -18,11 +17,10 @@ module Types exposing
     , healthDecoder
     , healthLabel
     , historyLen
-    , mileageDecoder
     , motionLabel
     , naturalKey
-    , servedDecoder
-    , tabId
+    , simProgressDecoder
+    , simulateResultDecoder
     , versionDecoder
     )
 
@@ -58,14 +56,7 @@ type alias Row =
     }
 
 
-{-| SSE connection state, reflected in the "stream" badge. -}
-type Stream
-    = Connecting
-    | Live
-    | Offline
-
-
-{-| /actuator/health status, reflected in the "api" badge. -}
+{-| /actuator/health status, reflected in the health badge. -}
 type Health
     = HealthUnknown
     | HealthUp
@@ -82,7 +73,7 @@ type BackendVersion
 type Tab
     = ChartTab
     | TrendTab
-    | StatsTab
+    | SimTab
 
 
 type Theme
@@ -97,16 +88,23 @@ type alias Config =
     }
 
 
-{-| Spark BI outcomes, per elevator (GET /api/mileage, /api/served). -}
-type alias MileageStat =
-    { name : String
-    , floorsTravelled : Int
+{-| The response from POST /api/simulate — the run id and how many calls it fired. -}
+type alias SimulateResult =
+    { runId : String
+    , count : Int
+    , ids : List String
     }
 
 
-type alias OrdersServedStat =
-    { name : String
-    , ordersServed : Int
+{-| The rolled-up view of a run from GET /api/simulate/progress. `firstCall`/`lastDone` are absent
+until there is data. The progress bar is derived: done = doneCalls, progress = calls - doneCalls,
+pending = simSize - calls (simSize is known from the simulate response). -}
+type alias SimProgress =
+    { calls : Int
+    , orders : Int
+    , doneCalls : Int
+    , firstCall : Maybe String
+    , lastDone : Maybe String
     }
 
 
@@ -144,7 +142,7 @@ healthLabel : Health -> String
 healthLabel health =
     case health of
         HealthUnknown ->
-            "unknown"
+            "…"
 
         HealthUp ->
             "UP"
@@ -174,20 +172,6 @@ naturalKey name =
     ( String.filter (not << Char.isDigit) name
     , String.toInt (String.filter Char.isDigit name) |> Maybe.withDefault 0
     )
-
-
-{-| Stable id per tab, used as the Keyed chart key so switching tabs remounts a fresh chart. -}
-tabId : Tab -> String
-tabId tab =
-    case tab of
-        ChartTab ->
-            "chart"
-
-        TrendTab ->
-            "trend"
-
-        StatsTab ->
-            "stats"
 
 
 
@@ -257,15 +241,19 @@ versionDecoder =
     Decode.field "version" Decode.string
 
 
-mileageDecoder : Decoder MileageStat
-mileageDecoder =
-    Decode.map2 MileageStat
-        (Decode.field "elevatorName" Decode.string)
-        (Decode.field "floorsTravelled" Decode.int)
+simulateResultDecoder : Decoder SimulateResult
+simulateResultDecoder =
+    Decode.map3 SimulateResult
+        (Decode.field "runId" Decode.string)
+        (Decode.field "count" Decode.int)
+        (Decode.field "ids" (Decode.list Decode.string))
 
 
-servedDecoder : Decoder OrdersServedStat
-servedDecoder =
-    Decode.map2 OrdersServedStat
-        (Decode.field "elevatorName" Decode.string)
-        (Decode.field "ordersServed" Decode.int)
+simProgressDecoder : Decoder SimProgress
+simProgressDecoder =
+    Decode.map5 SimProgress
+        (Decode.field "calls" Decode.int)
+        (Decode.field "orders" Decode.int)
+        (Decode.field "doneCalls" Decode.int)
+        (Decode.maybe (Decode.field "firstCall" Decode.string))
+        (Decode.maybe (Decode.field "lastDone" Decode.string))

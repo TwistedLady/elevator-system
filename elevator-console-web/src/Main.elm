@@ -1,8 +1,9 @@
 module Main exposing (main)
 
-{-| Elevator web console — a read-only browser monitor for the elevator system. Talks to the
-elevator-api only (SSE live stream + REST config/health/version/BI). Three tabs: Chart (cabs at
-their floors), Trend (floor over time), Stats (Spark BI outcomes).
+{-| Elevator web console — a read-only browser monitor. Talks to the elevator-api only (SSE live
+stream + REST config/health/version + the simulate endpoints). A thin orchestrator: it owns the
+top-level model, tab switching and subscriptions, and delegates each tab to its own module
+(Chart / Trend / Sim) and the header to Header.
 -}
 
 import Api
@@ -10,17 +11,18 @@ import Browser
 import Chart
 import Dict exposing (Dict)
 import Filter
+import Header
 import History
-import Html exposing (Html, button, div, h1, header, i, input, main_, section, span, strong, text)
-import Html.Attributes exposing (attribute, class, classList, placeholder, property, title, type_, value)
+import Html exposing (Html, button, div, input, main_, p, section, text)
+import Html.Attributes exposing (attribute, class, classList, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Html.Keyed as Keyed
 import Http
 import Json.Decode as Decode exposing (Value)
 import Log
 import Ports
-import Stats
+import Sim
 import Time
+import Trend
 import Types
     exposing
         ( BackendVersion(..)
@@ -28,7 +30,6 @@ import Types
         , ElevatorState
         , Health(..)
         , Row
-        , Stream(..)
         , Tab(..)
         , Theme(..)
         , naturalKey
@@ -58,7 +59,6 @@ type alias Flags =
 type alias Model =
     { elevators : Dict String ElevatorState
     , histories : Dict String (List Int)
-    , stream : Stream
     , config : Config
     , health : Health
     , webVersion : String
@@ -66,7 +66,7 @@ type alias Model =
     , tab : Tab
     , filter : String
     , theme : Theme
-    , stats : Stats.Data
+    , sim : Sim.Model
     }
 
 
@@ -74,7 +74,6 @@ init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { elevators = Dict.empty
       , histories = Dict.empty
-      , stream = Connecting
       , config = { maxFloor = 0, biEnabled = True }
       , health = HealthUnknown
       , webVersion = flags.version
@@ -87,7 +86,7 @@ init flags =
 
             else
                 Light
-      , stats = Stats.empty
+      , sim = Sim.init
       }
     , Cmd.batch
         [ Ports.connectStream ()
@@ -111,22 +110,20 @@ type Msg
     | GotConfig (Result Http.Error Config)
     | GotHealth (Result Http.Error Health)
     | GotVersion (Result Http.Error String)
-    | GotStats (Result Http.Error ( List Types.MileageStat, List Types.OrdersServedStat ))
     | PollHealth Time.Posix
     | PollConfig Time.Posix
-    | PollStats Time.Posix
     | SelectTab Tab
     | SetFilter String
     | ClearFilter
     | RefreshHealth
     | RefreshVersion
+    | SimMsg Sim.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         StreamFrame value ->
-            -- Fold one frame into the live snapshot + rolling history; drop malformed frames.
             case Decode.decodeValue Types.elevatorStateDecoder value of
                 Ok state ->
                     ( ingest state model, Cmd.none )
@@ -135,10 +132,10 @@ update msg model =
                     ( model, Log.warn ("dropped an unparseable SSE frame: " ++ Decode.errorToString error) )
 
         StreamOpened ->
-            ( { model | stream = Live }, Log.info "SSE stream open" )
+            ( model, Log.info "SSE stream open" )
 
         StreamErrored ->
-            ( { model | stream = Offline }, Log.warn "SSE stream dropped — awaiting auto-reconnect" )
+            ( model, Log.warn "SSE stream dropped — awaiting auto-reconnect" )
 
         ThemeChanged dark ->
             ( { model
@@ -153,16 +150,7 @@ update msg model =
             )
 
         GotConfig (Ok config) ->
-            -- If BI got turned off while the Stats tab is open, fall back to Chart.
-            let
-                tab =
-                    if not config.biEnabled && model.tab == StatsTab then
-                        ChartTab
-
-                    else
-                        model.tab
-            in
-            ( { model | config = config, tab = tab }, Cmd.none )
+            ( { model | config = config }, Cmd.none )
 
         GotConfig (Err _) ->
             ( model, Log.debug "config fetch failed — keeping last known limits" )
@@ -179,38 +167,14 @@ update msg model =
         GotVersion (Err _) ->
             ( { model | backendVersion = Unreachable }, Log.warn "backend version unreachable" )
 
-        GotStats (Ok ( mileage, served )) ->
-            ( { model | stats = { mileage = mileage, served = served, loaded = True, failed = False } }
-            , Cmd.none
-            )
-
-        GotStats (Err _) ->
-            let
-                stats =
-                    model.stats
-            in
-            ( { model | stats = { stats | loaded = True, failed = True } }
-            , Log.warn "Spark BI stats poll failed — keeping last known values"
-            )
-
         PollHealth _ ->
             ( model, Api.getHealth GotHealth )
 
         PollConfig _ ->
             ( model, Api.getConfig GotConfig )
 
-        PollStats _ ->
-            ( model, Api.getStats GotStats )
-
         SelectTab tab ->
-            -- Fetch BI immediately on entering Stats; the subscription keeps it fresh after.
-            ( { model | tab = tab }
-            , if tab == StatsTab then
-                Api.getStats GotStats
-
-              else
-                Cmd.none
-            )
+            ( { model | tab = tab }, Cmd.none )
 
         SetFilter query ->
             ( { model | filter = query }, Cmd.none )
@@ -223,6 +187,13 @@ update msg model =
 
         RefreshVersion ->
             ( model, Api.getVersion GotVersion )
+
+        SimMsg subMsg ->
+            let
+                ( sim, cmd ) =
+                    Sim.update subMsg model.sim
+            in
+            ( { model | sim = sim }, Cmd.map SimMsg cmd )
 
 
 ingest : ElevatorState -> Model -> Model
@@ -253,11 +224,7 @@ subscriptions model =
         , Ports.themeChanged ThemeChanged
         , Time.every 15000 PollHealth
         , Time.every 10000 PollConfig
-        , if model.config.biEnabled && model.tab == StatsTab then
-            Time.every 4000 PollStats
-
-          else
-            Sub.none
+        , Sub.map SimMsg (Sim.subscriptions model.sim)
         ]
 
 
@@ -268,8 +235,14 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div [ class "app" ]
-        [ topbar model
-        , warnbar model
+        [ Header.view
+            { webVersion = model.webVersion
+            , backendVersion = model.backendVersion
+            , health = model.health
+            , refreshHealth = RefreshHealth
+            , refreshVersion = RefreshVersion
+            }
+        , Header.warnbar model.webVersion model.backendVersion
         , main_ []
             [ tabbar model
             , section [ class "panel" ] [ panel model ]
@@ -277,107 +250,19 @@ view model =
         ]
 
 
-topbar : Model -> Html Msg
-topbar model =
-    header [ class "topbar" ]
-        [ h1 [] [ text "🛗 Elevator web console" ]
-        , div [ class "badges" ]
-            [ streamBadge model.stream
-            , healthBadge model.health
-            , versionBadge model
-            ]
-        ]
-
-
-streamBadge : Stream -> Html Msg
-streamBadge stream =
-    let
-        live =
-            stream == Live
-    in
-    span [ class "badge", classList [ ( "ok", live ), ( "bad", not live ) ] ]
-        [ i [ class "dot" ] []
-        , text
-            ("stream "
-                ++ (if live then
-                        "live"
-
-                    else
-                        "offline"
-                   )
-            )
-        ]
-
-
-healthBadge : Health -> Html Msg
-healthBadge health =
-    let
-        up =
-            health == HealthUp
-    in
-    button
-        [ type_ "button"
-        , class "badge"
-        , classList [ ( "ok", up ), ( "bad", not up ) ]
-        , onClick RefreshHealth
-        , title "click to refresh"
-        ]
-        [ i [ class "dot" ] [], text ("api " ++ Types.healthLabel health) ]
-
-
-versionBadge : Model -> Html Msg
-versionBadge model =
-    button
-        [ type_ "button"
-        , class "badge"
-        , classList [ ( "ok", versionMatch model ), ( "bad", versionMismatch model ) ]
-        , onClick RefreshVersion
-        , title "web console version vs backend version — click to recheck"
-        ]
-        [ text
-            ("v"
-                ++ model.webVersion
-                ++ (if versionMatch model then
-                        " = "
-
-                    else
-                        " ≠ "
-                   )
-                ++ "api "
-                ++ Types.backendLabel model.backendVersion
-            )
-        ]
-
-
-warnbar : Model -> Html Msg
-warnbar model =
-    if versionMismatch model then
-        div [ class "warnbar", attribute "role" "alert" ]
-            [ text "⚠ Version mismatch — web console "
-            , strong [] [ text ("v" ++ model.webVersion) ]
-            , text ", backend "
-            , strong [] [ text ("v" ++ Types.backendLabel model.backendVersion) ]
-            , text ". Run matching builds."
-            ]
-
-    else
-        text ""
-
-
 tabbar : Model -> Html Msg
 tabbar model =
     div [ class "tabbar" ]
         [ div [ class "tabs", attribute "role" "tablist" ]
-            (tabButton model ChartTab "Chart"
-                :: tabButton model TrendTab "Trend"
-                :: (if model.config.biEnabled then
-                        [ tabButton model StatsTab "Stats" ]
+            [ tabButton model ChartTab "CHART"
+            , tabButton model TrendTab "TREND"
+            , tabButton model SimTab "SIM"
+            ]
+        , if model.tab == SimTab then
+            text ""
 
-                    else
-                        []
-                   )
-            )
-        , filterBox model.filter
+          else
+            filterBox model.filter
         ]
 
 
@@ -424,11 +309,20 @@ filterBox filter =
 
 panel : Model -> Html Msg
 panel model =
-    if model.tab == StatsTab then
-        -- Stats owns its own polling + empty/filter states; it does not depend on SSE state.
-        Stats.view model.filter model.stats
+    case model.tab of
+        SimTab ->
+            Html.map SimMsg (Sim.view model.sim)
 
-    else if model.config.maxFloor == 0 then
+        ChartTab ->
+            chartPanel model Chart.view
+
+        TrendTab ->
+            chartPanel model Trend.view
+
+
+chartPanel : Model -> (List Row -> Int -> Theme -> Html Msg) -> Html Msg
+chartPanel model render =
+    if model.config.maxFloor == 0 then
         emptyMsg "Loading configuration…"
 
     else if List.isEmpty (rows model) then
@@ -438,46 +332,12 @@ panel model =
         emptyMsg ("No elevator matches “" ++ model.filter ++ "”.")
 
     else
-        chartView model
-
-
-chartView : Model -> Html Msg
-chartView model =
-    let
-        option =
-            case model.tab of
-                TrendTab ->
-                    Chart.trendOption (filteredRows model) model.config.maxFloor model.theme
-
-                _ ->
-                    Chart.positionOption (filteredRows model) model.config.maxFloor model.theme
-    in
-    div []
-        [ -- Keyed by tab so switching Chart↔Trend remounts a fresh ECharts instance (scatter vs line).
-          Keyed.node "div"
-            [ class "chart-area" ]
-            [ ( Types.tabId model.tab, Html.node "echarts-panel" [ property "option" option ] [] ) ]
-        , if model.tab == ChartTab then
-            chartLegend
-
-          else
-            text ""
-        ]
-
-
-chartLegend : Html Msg
-chartLegend =
-    div [ class "chart-legend" ]
-        [ span [ class "key" ] [ i [ class "swatch moving" ] [], text "moving" ]
-        , span [ class "key" ] [ i [ class "swatch idle" ] [], text "idle" ]
-        , span [ class "key" ] [ text "▲ up" ]
-        , span [ class "key" ] [ text "▼ down" ]
-        ]
+        render (filteredRows model) model.config.maxFloor model.theme
 
 
 emptyMsg : String -> Html Msg
 emptyMsg message =
-    Html.p [ class "empty" ] [ text message ]
+    p [ class "empty" ] [ text message ]
 
 
 
@@ -499,23 +359,3 @@ rows model =
 filteredRows : Model -> List Row
 filteredRows model =
     List.filter (\row -> Filter.matches model.filter row.state.name) (rows model)
-
-
-versionMatch : Model -> Bool
-versionMatch model =
-    case model.backendVersion of
-        Version v ->
-            v == model.webVersion
-
-        _ ->
-            False
-
-
-versionMismatch : Model -> Bool
-versionMismatch model =
-    case model.backendVersion of
-        Version v ->
-            v /= model.webVersion
-
-        _ ->
-            False

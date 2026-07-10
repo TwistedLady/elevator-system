@@ -1,61 +1,17 @@
 # CLAUDE.md — Elevator System
 
-Guidance for AI agents (and humans) working in this repo. Keep it short and true.
-If this file and the code disagree, **trust the code** and fix this file.
+Guidance for AI agents (and humans) working in this repo. Keep it short and true. If this file and
+the code disagree, **trust the code** and fix this file.
 
-## What this is
-
-An event-sourced elevator simulator, built as a lab for distributed programming on the JVM.
-Scala 3 domain + Apache Pekko (cluster sharding, event sourcing, projections), a Spring WebFlux
-HTTP edge, Postgres (R2DBC journal + CQRS read model), Kafka as the call / state bus, and a
-Rust (ratatui) terminal console.
-
-## Modules
-
-| Module | Lang | Role |
-|---|---|---|
-| `elevator-common` | Scala | Shared library, split into small submodules (below) |
-| `elevator-app` | Scala / Pekko | The brain: sharded, event-sourced actors + Postgres projections |
-| `elevator-api` | Java / WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, health |
-| `elevator-console-cli` | Rust / ratatui | Terminal dashboard + call sender |
-| `elevator-console-web` | Elm | Read-only browser monitor (Chart + Trend + Stats tabs), talks to the api only |
-| `elevator-bi` | Scala 2.12 / Spark | **Standalone** (not in the reactor): one Spark **batch** job → a single **Parquet** file (read by the api via DuckDB) — **mileage** from `elevator-state`, **orders-served** (DONE counts) from `order_status`. Build: `mvn -f elevator-bi/pom.xml package` |
-
-`elevator-common` submodules keep a clean layering:
-`core` (pure domain) → `events` → `logic` (decide/evolve, Pekko-free) → `protocol` (message ADTs, Pekko-free)
-→ `strategy` (`NextFloorStrategy` movement, `GroupCallsStrategy` grouping) → `dto`, `serializable`.
-The app actors are **thin shells** that wire the pure `logic`.
-
-## How it flows (one call)
-
-A **Call** = a user action (`id, elevatorName, floor`, optional `passengerId`). There is **no auth
-yet** (see [README.md](README.md#auth-none-yet)): `passengerId` is an optional, unverified field on the
-`POST /api/call` body; absent/blank → anonymous. The app groups same-floor
-calls into one living **Order** (`order id = f(elevator, floor)`; later same-floor calls attach
-until it is done) — one stop. The Order counts distinct riders vs. anonymous presses. Four actors,
-one per elevator:
-
-`POST /api/call` → api produces to Kafka `elevator-calls` → app `CallConsumer` (batches, dedups by
-call `id`) → `Coordinator` (owns call status: persist `CallReceived`, forward) → `Manager` (owns
-call↔order: group via `GroupCallsStrategy`, persist `OrderCreated`, assign) → `Controller`
-(event-sourced scheduler; self-driven loop, no timer — engine paces it; next move via
-`NextFloorStrategy`) → `Operator` (stateless, applies one move) → Controller publishes state to
-Kafka `elevator-state` and marks reached orders done → `Manager.MarkDone` → `Coordinator.MarkDone`.
-
-Four Kafka topics: `elevator-calls` (api → app), and three state feeds (app → api/console/BI):
-`elevator-state`, `elevator-order-state`, `elevator-call-state`. Status query: `GET /api/call/{id}`
-reads the `call_status` read table. Full detail: [README.md](README.md#architecture).
-
-> **The Rust console is HTTP-only.** It reaches the system **only** via the elevator-api HTTP edge
-> (`POST /api/call`, `GET /api/elevator`, `GET /api/elevator/stream` SSE) plus infra (`kubectl`/`git`).
-> It does **not** talk to Kafka.
+What the system *is* — modules, data flow, endpoints, actors, architecture — lives in
+**[README.md](README.md)**. This file holds only the working rules README doesn't cover.
 
 ## Hard rules (do not break without an explicit ask)
 
-- **Never edit `pom.xml`** (artifactId / name / modules) to fix IDE or naming issues. Fix those on
-  the IntelliJ side. Module id must stay `pl.feelcodes.elevator:elevator`. **Never hand-edit
-  version numbers anywhere** — the version is `${revision}` (root `pom.xml`) mirrored to `VERSION`
-  and all modules, bumped automatically by release-please. See [README.md](README.md#versioning).
+- **Never edit `pom.xml`** (artifactId / name / modules) to fix IDE or naming issues — fix those on
+  the IntelliJ side. Module id stays `pl.feelcodes.elevator:elevator`. **Never hand-edit version
+  numbers** — the version is `${revision}` (root `pom.xml`), mirrored to `VERSION` + all modules and
+  bumped automatically by release-please ([README.md](README.md#versioning)).
 - **Don't add code comments without asking.** Approved comments stay short and meaningful; strip
   comments when refactoring.
 - **Run the test suite after every code change**, before reporting done. Don't wait to be asked.
@@ -80,44 +36,41 @@ reads the `call_status` read table. Full detail: [README.md](README.md#architect
 
 ## Workflow
 
-Think of every session as an isolated **developer**: **one session = one branch = one dir**.
+Every session is an isolated **developer**: **one session = one branch = one dir**.
 
-- `main` is the trunk — **never developed on directly.**
-- Each task = its own **git worktree + branch**, a sibling of `elevator-system/`:
-  `git worktree add ../elevator-<task> -b <task> main`. **One topic per session**; if it would grow
-  past two topics, split into separate sessions.
-- A session works **only in its own dir** — it never reads another session's dir, only the shared
-  `main`. Commit **freely and in small commits**.
-- **Definition of done (every task):** push → open PR → merge → **delete the branch** → **update the
-  docs**. Nothing is left behind: the dir ends clean, back on `main`.
-- **Kanban** (`../kanban.md`) has three parts: **Current** (one table per active session, newest on
-  top — caption = task, columns = subtasks, cells = 🟩/🟨/⬜), **To-do** (bugs, ideas), and
-  **Changelog** (one entry per commit, entry # = commit #, plain words, newest first).
-- **Knowledge split:** domain/project facts live in the single `README.md` (usage + architecture +
-  CI/CD) — update it after each PR. The base-dir `../.knowledge/` is a symlink to the agent's own
-  memory (what it knows across sessions).
+- `main` is the trunk — **never developed on directly.** Each task = its own **git worktree +
+  branch**, a sibling of `elevator-system/`: `git worktree add ../elevator-<task> -b <task> main`.
+  **One topic per session.**
+- A session works **only in its own dir** — it reads only the shared `main`, never another session's
+  dir. Commit **freely and in small commits**.
+- **Definition of done:** push → open PR → merge → **delete the branch** → **update the docs**. The
+  dir ends clean, back on `main`.
+- **Kanban** (`../kanban.md`), three parts: **Current** (one table per active session, newest on top,
+  cells 🟩/🟨/⬜), **To-do** (bugs, ideas), **Changelog** (one entry per commit, newest first).
+- **Knowledge split:** domain/project facts live in **[README.md](README.md)** (update after each
+  PR). The base-dir `../.knowledge/` is a symlink to the agent's own memory (across sessions).
 - **IntelliJ / Maven module naming:** the user marks the Maven project himself in one IntelliJ
   window — do not automate renaming, and never edit `pom.xml`.
 
 ## Known gotchas / open issues
 
-Real hazards to be aware of (fix deliberately, on their own branch):
-
-- **Engine is a real-time cost, isolated.** `Engine.burn()` is `Thread.sleep(cost)` — `cost` is the
-  move's travel time (`SlowEngine` 2s, `FastEngine` 100ms), modelling the physical action and pacing
-  the Controller's self-driven loop. It blocks, so `Operator` entities run on the dedicated
-  `elevator-blocking-dispatcher` (application.conf) — never the default one. Keep that isolation.
+- **Engine is a real-time cost, isolated.** `Engine.burn()` is `Thread.sleep(cost)` — the move's
+  travel time (`SlowEngine` 2s, `FastEngine` 100ms), pacing the Controller's self-driven loop. It
+  blocks, so `Operator` entities run on the dedicated `elevator-blocking-dispatcher`
+  (application.conf) — never the default one. Keep that isolation.
 - **API Kafka state consumer replays the whole topic on restart (by design).** `ElevatorStateConsumer`
-  uses `auto.offset.reset=earliest` with **no offset commit** (`enable.auto.commit=false`), so every
-  start rebuilds the full per-elevator view — needed because it's a fanout (each api replica must see
-  all elevators). The group id is per-pod (`elevator-api-monitor-<POD_NAME>`) so replicas don't split
-  partitions and, with no committed offsets, empty groups don't leak.
-- **Huge sims bloat the journal** → slow recovery → "Kafka stream failed", app stops consuming.
-  Wipe + reseed to recover (Kafka has no volume, so a demo restart also empties the live chart —
-  reseed via the compose `--profile seed`).
+  uses `auto.offset.reset=earliest` with no offset commit (`enable.auto.commit=false`), so every
+  start rebuilds the full per-elevator view — a fanout, so each api replica sees all elevators. The
+  group id is per-pod (`elevator-api-monitor-<POD_NAME>`) so replicas don't split partitions and
+  empty groups don't leak.
+- **Huge sims bloat the journal** → slow recovery → "Kafka stream failed", app stops consuming. Wipe
+  + reseed to recover (Kafka has no volume, so a demo restart also empties the chart — reseed via the
+  compose `--profile seed`).
 - **`DefaultScalaModule` is registered in the pure-Java api** and a custom `ObjectMapper` bean
   overrides Boot's auto-config. Leftover — safe to remove.
-- **Rust console has unit tests now** (`cargo test` in `elevator-console-cli`, run by CI). Keep it that
-  way: when adding pure Rust functions, add a test alongside them.
-- **Docs drift.** Re-verify docs/comments after a refactor — code is the source of truth. The docs
-  are one file: [`README.md`](README.md) (usage + architecture + CI/CD).
+- **Rust console has unit tests** (`cargo test`, run by CI). Keep it that way: add a test alongside
+  new pure Rust functions.
+- **Auth signing key is in-process** — multiple `api` replicas reject each other's JWTs; mount a
+  fixed key as a Secret before scaling past one replica ([README.md](README.md#auth)).
+- **Docs drift.** Re-verify docs after a refactor — code is the source of truth. The docs are one
+  file: [`README.md`](README.md).

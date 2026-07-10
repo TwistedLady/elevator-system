@@ -96,6 +96,7 @@
 
     <modules>
         <module>elevator-common</module>
+        <module>elevator-sim</module>
         <module>elevator-app</module>
         <module>elevator-api</module>
         <module>elevator-console-cli</module>

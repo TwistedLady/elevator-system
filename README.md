@@ -6,11 +6,11 @@ An event-sourced elevator simulator — a lab for distributed patterns on (and o
 - **Apache Pekko** — typed actors, cluster sharding, event sourcing + projections
 - **PostgreSQL / R2DBC** — durable event journal + CQRS read-model
 - **Apache Kafka** — the call / state bus
-- **Spring WebFlux** — the HTTP edge + health probes
+- **Spring WebFlux** — the HTTP edge, JWT auth + health probes
 - **Rust (ratatui)** + **Elm** — terminal and browser consoles, both HTTP-only clients of the API
 
-**Call vs Order.** A **call** is a button press (`id, elevatorName, floor`, optional `passengerId`).
-The app groups same-floor calls into one living **order** — a stop, `id = f(elevator, floor)`; later
+**Call vs Order.** A **call** is a button press (`id, elevatorName, floor`, `passengerId`). The app
+groups same-floor calls into one living **order** — a stop, `id = f(elevator, floor)`; later
 same-floor calls attach until it's done. Reaching a floor serves every order there at once.
 
 If a doc and the code disagree, **trust the code** and fix this file.
@@ -39,30 +39,57 @@ docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
 
 ## Watch it live
 
-Two read-only consoles, both talking to the system **only over HTTP** (never Kafka):
+Two consoles, both talking to the system **only over HTTP** (never Kafka), each with the same three
+tabs — **Chart · Trend · Sim**:
 
-- **Rust TUI** (`elevator-console-cli`) — tabs: chart · trend · call · sim · health · logs · k8s.
-  `cd elevator-console-cli && cargo run -- monitor` (or `watch` to stream to stdout). The k8s tab
-  hot-swaps the engine (`f`/`s`) and rolls pods via `kubectl`; the sim tab fires N random calls.
-- **Elm browser** (`elevator-console-web`) — Chart / Trend / Stats tabs on ECharts, live over SSE.
-  `cd elevator-console-web && npm install && npm start` (proxies `/api` to `localhost:8080`).
+- **Rust TUI** — `cd elevator-console-cli && cargo run -- monitor` (or `watch` to stream to stdout).
+- **Elm browser** — `cd elevator-console-web && npm install && npm start` (proxies `/api` to `:8080`).
 
-Headless helpers on the CLI: `selftest` (health + state → pass/fail), `itest --count 20` (fire
-calls, poll each to DONE, cross-check `kubectl` logs), `simulate --count 10000` (bulk load).
+The **Sim** tab triggers a server-side run: `POST /api/simulate` has the `elevator-sim` engine fire a
+burst of 100 random calls, then the console polls `/api/simulate/progress` for the bar. CLI headless
+helpers: `selftest` (health + state → pass/fail), `itest --count 20` (fire calls, poll each to DONE,
+cross-check `kubectl` logs).
+
+## Auth
+
+Passenger identity is **proven, not claimed**. `POST /api/call` requires a valid **Bearer JWT**; the
+api sets `passengerId` = the token's `sub` (a body `passengerId` is ignored). No/invalid token →
+**401**. Enforcement lives **only in `elevator-api`**; the app / Kafka layer is untouched. Read
+endpoints (state streams, `/api/config`, `/api/version`, `/actuator/health`) stay open.
+
+`POST /api/token` is a **dev issuer** — a stand-in for a real login. It signs a short-lived RS256
+token for any `subject` once the shared `X-Client-Secret` matches; `GET /oauth2/jwks` publishes the
+public key. It vouches for a claimed subject, it does not authenticate a human (real OIDC/passkeys is
+future work). Tunables under `elevator.auth.*` (`issuer`, `audience`, `token-ttl-seconds` = 300,
+`client-secret` = `ELEVATOR_CLIENT_SECRET`).
+
+```bash
+JWT=$(curl -sk -X POST https://localhost:8080/api/token \
+  -H 'content-type: application/json' -H 'X-Client-Secret: dev-secret' \
+  -d '{"subject":"rider-0"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+curl -sk -X POST https://localhost:8080/api/call \
+  -H 'content-type: application/json' -H "Authorization: Bearer $JWT" \
+  -d '{"elevatorName":"e1","floor":3}'
+```
+
+> **Single-replica caveat.** The signing key is generated in-process, so multiple `api` replicas
+> reject each other's tokens. For a multi-replica cluster, mount a fixed key as a Secret.
 
 ## Endpoints
 
-Default port **8080**.
+Default port **8080**. `POST /api/call` needs a Bearer JWT; everything else is open.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/call` | Body `{"elevatorName":"e1","floor":5}` → publishes a call. `id` optional (auto UUID). Optional unverified `passengerId` (no auth yet). |
-| `GET` | `/api/elevator` | Latest state of every known elevator. |
-| `GET` | `/api/elevator/{name}` | Latest state JSON, or `404`. |
+| `POST` | `/api/call` | **JWT required.** Body `{"elevatorName":"e1","floor":5}` → publishes a call. `id` optional (auto UUID). `passengerId` = token `sub`. |
+| `POST` | `/api/token` | Dev issuer: `{"subject":…}` + `X-Client-Secret` header → signed JWT. |
+| `GET` | `/oauth2/jwks` | Public signing key (JWKS). |
+| `GET` | `/api/elevator`, `/api/elevator/{name}` | Latest state — all, or one (`404`). |
 | `GET` | `/api/elevator/stream` | **SSE** live state stream. |
 | `GET` | `/api/call/{id}` | Call lifecycle `PROGRESS → DONE`, or `404`. |
-| `GET` | `/api/config` | Fleet + max floor (consoles fetch it — no hardcoded limits). |
-| `GET` | `/api/version` | Running version. |
+| `POST` | `/api/simulate` | `elevator-sim` fires a burst of 100 random calls → `{runId, count, ids}`. |
+| `GET` | `/api/simulate/progress?runId=&size=` | Run rollup `{simSize, calls, orders, doneCalls, firstCall, lastDone}`. |
+| `GET` | `/api/config`, `/api/version` | Fleet + max floor · running version. |
 | `GET` | `/api/mileage`, `/api/served` | BI stats (only when BI is on, else `404`). |
 | `GET` | `/actuator/health` | Health incl. Kafka readiness. |
 
@@ -70,16 +97,17 @@ Default port **8080**.
 
 ## Architecture
 
-Six modules. `elevator-common` keeps a clean layering; app actors are **thin shells** wiring the
-pure logic: `core (domain + engine) → events → logic (decide/evolve) → protocol → strategy → dto`.
+Modules. `elevator-common` keeps a clean, Pekko-free layering; app actors are **thin shells** wiring
+the pure logic: `core (domain + engine) → events → logic (decide/evolve) → protocol → strategy → dto`.
 
 | Module | Stack | Role |
 |---|---|---|
-| `elevator-common` | Scala 3 | Shared library, small Pekko-free submodules (layering above). |
+| `elevator-common` | Scala 3 | Shared library, the small submodules above. |
 | `elevator-app` | Pekko | The brain: event-sourced actors + R2DBC journal + projections. |
-| `elevator-api` | Spring WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads. No actors. |
-| `elevator-console-cli` | Rust (ratatui) | Terminal dashboard + call sender. |
-| `elevator-console-web` | Elm | Read-only browser monitor. |
+| `elevator-api` | Spring WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, JWT auth. No actors. |
+| `elevator-sim` | Scala 3 | Load-simulator engine — the server-side burst behind `POST /api/simulate`. |
+| `elevator-console-cli` | Rust (ratatui) | Terminal console: Chart/Trend/Sim tabs, call sender + simulate trigger. |
+| `elevator-console-web` | Elm | Browser console: Chart/Trend/Sim tabs. |
 | `elevator-bi` | Scala 2.12 / Spark | **Standalone** batch job → Parquet, read by the api via DuckDB. |
 
 ```mermaid
@@ -93,7 +121,7 @@ flowchart LR
   bi["elevator-bi<br/>(Spark)"]
   pg[("Postgres")]
 
-  console -->|"POST /api/call · GET /api/…"| api
+  console -->|"POST /api/call (JWT) · GET /api/…"| api
   api -->|produce| calls --> app
   app -->|produce| state
   app -->|produce| ostate --> bi
@@ -133,7 +161,7 @@ sequenceDiagram
     participant Ct as Controller
     participant Op as Operator
 
-    C->>API: POST /api/call {id, e1, floor}
+    C->>API: POST /api/call {id, e1, floor} (Bearer JWT)
     API->>CC: produce CallDto → Kafka elevator-calls (batched)
     Note over CC: checks processed_calls — skip if seen, else forward then mark id
     CC->>Co: Handle([call])  ·  persist CallReceived → call_status = PROGRESS
@@ -208,12 +236,8 @@ to the stateless Operator and to the dedup table — so each needs a guard:
 **Three groupings — don't confuse them:** ingress dedup (`CallConsumer` + `processed_calls`, keyed by
 call **id**, drops Kafka redeliveries) · same-floor grouping (`Manager` + `GroupCallsStrategy`, keyed
 by **floor**) · passenger tally (`Manager` per order, keyed by **person** — `passengers` vs.
-`anonymous`). The Coordinator itself is **not** idempotent; dedup lives at ingress and in the UPSERT.
-
-## Auth (none yet)
-
-**There is no authentication.** Every endpoint is open. `passengerId` on `POST /api/call` is an
-optional, **unverified** claim (absent/blank → anonymous) — a placeholder for a future login.
+`anonymous`, riding on `OrderStateDto`). The Coordinator itself is **not** idempotent; dedup lives at
+ingress and in the UPSERT.
 
 ---
 
@@ -225,12 +249,13 @@ hot-reloads the tunables in-process — **no pod restart** (~5s poll).
 - **Call validation** — the api rejects `400` on a bad floor (`ELEVATOR_MAXFLOOR`, 15) or unknown
   elevator (`ELEVATOR_ELEVATORS`, e1..e10). The api owns the limits; the app never validates. A
   missing ConfigMap makes the api fail to start.
-- **Engine fast / slow** — `ELEVATOR_ENGINE`. **BI on / off** — `ELEVATOR_BI_ENABLED`.
+- **Engine fast / slow** — `ELEVATOR_ENGINE`, hot-swapped on the next move (`kubectl edit configmap
+  elevator-config`). **BI on / off** — `ELEVATOR_BI_ENABLED`.
 
 ## Test
 
 ```bash
-./mvnw test          # unit: logic, strategy, event evolution, actor recovery, serialization
+./mvnw test          # unit: logic, strategy, event evolution, actor recovery, serialization, auth
 ./mvnw verify        # + Testcontainers IT (boots Spring + Kafka + Postgres)
 ```
 
@@ -265,7 +290,6 @@ pod spawns 2 executors, does one pass, and exits. It reads `elevator-state` (Kaf
 `order_status` (JDBC, `status='DONE'`) for orders-served, joins to one row per elevator, and atomically
 overwrites `elevators.parquet` on a shared `hostPath` — the api reads it via DuckDB. It's **standalone**
 (own pom, outside the reactor) and pinned to **Scala 2.12** because Spark has no Scala 3 build.
-`kubectl create job --from=cronjob/elevator-stats stats-now` triggers a run immediately.
 
 **Install the console via apt** — the Rust console ships as a signed `.deb` from a local apt repo:
 
@@ -299,16 +323,16 @@ hand; **release-please** bumps it from commit messages. Because the repo squash-
 title** is what it reads (a CI check enforces Conventional Commits): `fix:` → patch, `feat:` /
 `feat!:` → minor, `chore:` / `docs:` / `refactor:` → no release on their own (pre-1.0).
 
-release-please keeps a **release PR** open that bumps `VERSION` + every module version + the
-changelog. Merge it → it tags `vX.Y.Z` → `cd.yml` publishes and deploys. `ci.yml` fails if any module
-version ≠ `VERSION`; `cd.yml` refuses a mismatched tag. Helm `Chart.yaml` version is packaging
-metadata, deliberately **not** in lockstep.
+release-please keeps a **release PR** open that bumps `VERSION` + every module version (via
+`x-release-please-version` markers) + the changelog. Merge it → it tags `vX.Y.Z` → `cd.yml` publishes
+and deploys. `ci.yml` fails if any module version ≠ `VERSION`; `cd.yml` refuses a mismatched tag. Helm
+`Chart.yaml` version is packaging metadata, deliberately **not** in lockstep.
 
 ## Build notes
 
 - Maven multi-module, Java 21 — `./mvnw package`. The Rust console is a separate `cargo` build behind
   `-Pconsole` (opt-in). The Elm console builds with a project-local Node via `frontend-maven-plugin`
-  (no global Node needed; `-Dnpm.skip=true` to skip it).
+  (`-Dnpm.skip=true` to skip it).
 - `elevator-bi` is outside the reactor: `./mvnw -f elevator-bi/pom.xml package`.
 - **Docs → PDF:** `./mvnw -Ppdf package` renders this README (Mermaid diagrams included) to
   `target/README.pdf` via `scripts/md-to-pdf.sh`. Opt-in — it needs `pandoc`, Node (`npx`), and a
@@ -320,4 +344,4 @@ metadata, deliberately **not** in lockstep.
 
 Source map: actors in `elevator-app/.../actors/`; protocol/events/logic/strategy in the matching
 `elevator-common-*` submodules; ingress dedup in `elevator-app/.../inbound/`; projections in
-`.../readside/`; the move gate in `SuspendManager.scala` (gated in `Controller.scala`).
+`.../readside/`; the move gate in `SuspendManager.scala`; JWT auth in `elevator-api/.../auth/`.

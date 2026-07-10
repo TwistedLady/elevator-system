@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -7,10 +5,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::app::{
-    merge_stats, DoorState, ElevatorState, HealthComp, HealthSnapshot, LogSource, MileageRow,
-    ServedRow, StatsRow, MAX_LOG_LINES,
-};
+use super::app::{DoorState, ElevatorState, HealthComp, HealthSnapshot};
 
 #[derive(PartialEq)]
 enum Loop {
@@ -166,6 +161,22 @@ pub fn spawn_config_poll(api_base: String, shared: Arc<Mutex<crate::api::Elevato
     });
 }
 
+/// Poll `GET /api/version` so the header can show the backend build and flag a console↔api mismatch.
+/// Keeps the last good value; `None` until the first successful fetch.
+pub fn spawn_version_poll(api_base: String, shared: Arc<Mutex<Option<String>>>) {
+    std::thread::spawn(move || {
+        let agent = crate::api::agent();
+        loop {
+            if let Ok(v) = crate::api::get_version(&agent, &api_base) {
+                if let Ok(mut g) = shared.lock() {
+                    *g = Some(v);
+                }
+            }
+            std::thread::sleep(Duration::from_secs(5));
+        }
+    });
+}
+
 pub fn spawn_health_poll(health_url: String, shared: Arc<Mutex<HealthSnapshot>>) {
     std::thread::spawn(move || {
         let agent = crate::api::agent();
@@ -226,79 +237,6 @@ fn compact(v: &Value) -> String {
         Value::String(s) => s.clone(),
         other => other.to_string(),
     }
-}
-
-/// Poll the Spark BI outcomes over HTTP every ~3s: `GET /api/mileage` (floors travelled) and
-/// `GET /api/served` (orders served), merge them per elevator, and publish into `shared` for the
-/// Stats view. Read-only — the console never writes here. Unreachable/absent endpoints leave the
-/// last good snapshot in place (empty until the first successful fetch), which the UI renders as a
-/// graceful "no stats yet" placeholder.
-pub fn spawn_stats_poll(api_base: String, shared: Arc<Mutex<Vec<StatsRow>>>) {
-    std::thread::spawn(move || {
-        let agent = crate::api::agent();
-        let mileage_url = format!("{api_base}/api/mileage");
-        let served_url = format!("{api_base}/api/served");
-        loop {
-            let mileage = fetch_json::<MileageRow>(&agent, &mileage_url);
-            let served = fetch_json::<ServedRow>(&agent, &served_url);
-            if let (Some(mileage), Some(served)) = (mileage, served) {
-                let rows = merge_stats(mileage, served);
-                if let Ok(mut s) = shared.lock() {
-                    *s = rows;
-                }
-            }
-            std::thread::sleep(Duration::from_secs(3));
-        }
-    });
-}
-
-fn fetch_json<T: serde::de::DeserializeOwned>(agent: &ureq::Agent, url: &str) -> Option<Vec<T>> {
-    let body = agent.get(url).call().ok()?.into_string().ok()?;
-    serde_json::from_str::<Vec<T>>(&body).ok()
-}
-
-pub fn spawn_log_tail(source: LogSource, path: String, tx: Sender<(LogSource, String)>) {
-    std::thread::spawn(move || loop {
-        let Ok(file) = File::open(&path) else {
-            std::thread::sleep(Duration::from_secs(1));
-            continue;
-        };
-        let mut reader = BufReader::new(file);
-        let mut line = String::new();
-
-        let mut recent: VecDeque<String> = VecDeque::new();
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => {
-                    if recent.len() >= MAX_LOG_LINES {
-                        recent.pop_front();
-                    }
-                    recent.push_back(line.trim_end().to_string());
-                }
-                Err(_) => break,
-            }
-        }
-        for l in recent {
-            if tx.send((source, l)).is_err() {
-                return;
-            }
-        }
-
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => std::thread::sleep(Duration::from_millis(300)),
-                Ok(_) => {
-                    if tx.send((source, line.trim_end().to_string())).is_err() {
-                        return;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
 }
 #[cfg(test)]
 mod tests {
