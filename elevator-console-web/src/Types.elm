@@ -4,11 +4,10 @@ module Types exposing
     , Direction(..)
     , ElevatorState
     , Health(..)
-    , MileageStat
     , Motion(..)
-    , OrdersServedStat
     , Row
-    , Stream(..)
+    , SimStatus
+    , SimulateResult
     , Tab(..)
     , Theme(..)
     , backendLabel
@@ -18,11 +17,10 @@ module Types exposing
     , healthDecoder
     , healthLabel
     , historyLen
-    , mileageDecoder
     , motionLabel
     , naturalKey
-    , servedDecoder
-    , tabId
+    , simStatusDecoder
+    , simulateResultDecoder
     , versionDecoder
     )
 
@@ -58,14 +56,7 @@ type alias Row =
     }
 
 
-{-| SSE connection state, reflected in the "stream" badge. -}
-type Stream
-    = Connecting
-    | Live
-    | Offline
-
-
-{-| /actuator/health status, reflected in the "api" badge. -}
+{-| /actuator/health status, reflected in the health badge. -}
 type Health
     = HealthUnknown
     | HealthUp
@@ -82,7 +73,7 @@ type BackendVersion
 type Tab
     = ChartTab
     | TrendTab
-    | StatsTab
+    | SimTab
 
 
 type Theme
@@ -97,16 +88,20 @@ type alias Config =
     }
 
 
-{-| Spark BI outcomes, per elevator (GET /api/mileage, /api/served). -}
-type alias MileageStat =
-    { name : String
-    , floorsTravelled : Int
+{-| The 202-ish response from POST /api/simulate — the run id plus the call ids to poll. -}
+type alias SimulateResult =
+    { runId : String
+    , count : Int
+    , ids : List String
     }
 
 
-type alias OrdersServedStat =
-    { name : String
-    , ordersServed : Int
+{-| The rollup from POST /api/simulate/status; done + progress + pending == total. -}
+type alias SimStatus =
+    { total : Int
+    , done : Int
+    , progress : Int
+    , pending : Int
     }
 
 
@@ -144,7 +139,7 @@ healthLabel : Health -> String
 healthLabel health =
     case health of
         HealthUnknown ->
-            "unknown"
+            "…"
 
         HealthUp ->
             "UP"
@@ -174,20 +169,6 @@ naturalKey name =
     ( String.filter (not << Char.isDigit) name
     , String.toInt (String.filter Char.isDigit name) |> Maybe.withDefault 0
     )
-
-
-{-| Stable id per tab, used as the Keyed chart key so switching tabs remounts a fresh chart. -}
-tabId : Tab -> String
-tabId tab =
-    case tab of
-        ChartTab ->
-            "chart"
-
-        TrendTab ->
-            "trend"
-
-        StatsTab ->
-            "stats"
 
 
 
@@ -257,15 +238,18 @@ versionDecoder =
     Decode.field "version" Decode.string
 
 
-mileageDecoder : Decoder MileageStat
-mileageDecoder =
-    Decode.map2 MileageStat
-        (Decode.field "elevatorName" Decode.string)
-        (Decode.field "floorsTravelled" Decode.int)
+simulateResultDecoder : Decoder SimulateResult
+simulateResultDecoder =
+    Decode.map3 SimulateResult
+        (Decode.field "runId" Decode.string)
+        (Decode.field "count" Decode.int)
+        (Decode.field "ids" (Decode.list Decode.string))
 
 
-servedDecoder : Decoder OrdersServedStat
-servedDecoder =
-    Decode.map2 OrdersServedStat
-        (Decode.field "elevatorName" Decode.string)
-        (Decode.field "ordersServed" Decode.int)
+simStatusDecoder : Decoder SimStatus
+simStatusDecoder =
+    Decode.map4 SimStatus
+        (Decode.field "total" Decode.int)
+        (Decode.field "done" Decode.int)
+        (Decode.field "progress" Decode.int)
+        (Decode.field "pending" Decode.int)
