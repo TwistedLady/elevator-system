@@ -16,11 +16,11 @@ resource "kind_cluster" "elevator" {
     node {
       role = "control-plane"
       # kind maps the api NodePort (30080) to the host so the console reaches the api at
-      # localhost:8080 with no port-forward (see console-api-nodeport). Uncomment if you use it.
-      # extra_port_mappings {
-      #   container_port = 30080
-      #   host_port      = 8080
-      # }
+      # localhost:8080 with no port-forward (values-dev.yaml sets the api Service to NodePort 30080).
+      extra_port_mappings {
+        container_port = 30080
+        host_port      = 8080
+      }
     }
   }
 }
