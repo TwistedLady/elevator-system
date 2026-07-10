@@ -32,9 +32,5 @@ spec:
             - { name: ELEVATOR_API, value: {{ .Values.apiUrl | quote }} }
           args:
             - "simulate"
-            - "--elevator-count"
-            - {{ .Values.elevatorCount | quote }}
-            - "--max-floor"
-            - {{ .Values.maxFloor | quote }}
             - "--count"
             - {{ .Values.count | quote }}
