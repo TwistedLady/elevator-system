@@ -6,7 +6,7 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Coordinator, Manager}
+import pl.feelcodes.elevator.app.actors.{Coordinator, Manager, PassengerManager}
 import pl.feelcodes.elevator.common.core.domain.{Call, Floor}
 import pl.feelcodes.elevator.common.events.CoordinatorEvents
 
@@ -22,6 +22,7 @@ object CoordinatorRecoveryTests {
         |    "pl.feelcodes.elevator.common.events.CoordinatorEvents$Event"       = jackson-cbor
         |    "pl.feelcodes.elevator.common.logic.CoordinatorLogic$State"         = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.ManagerProtocol$Command"     = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.PassengerProtocol$Command"   = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -39,11 +40,14 @@ final class CoordinatorRecoveryTests
   private val managerProbe = createTestProbe[Manager.Command]()
   private val managerProvider =
     (name: String) => TestEntityRef(Manager.TypeKey, name, managerProbe.ref)
+  private val passengerProbe = createTestProbe[PassengerManager.Command]()
+  private val passengerProvider =
+    (id: String) => TestEntityRef(PassengerManager.TypeKey, id, passengerProbe.ref)
 
   private def newTestKit() =
     EventSourcedBehaviorTestKit[Coordinator.Command, CoordinatorEvents.Event, Coordinator.State](
       system,
-      Coordinator("lift-a", managerProvider, _ => ())
+      Coordinator("lift-a", managerProvider, passengerProvider, _ => ())
     )
 
   "The Coordinator" should {
@@ -64,6 +68,28 @@ final class CoordinatorRecoveryTests
 
       val forwarded = managerProbe.expectMessageType[Manager.Combine]
       forwarded.calls shouldBe List(Call("c1", Floor(3)), Call("c2", Floor(3)), Call("c3", Floor(5)))
+    }
+
+    "route an identified passenger's call through the PassengerManager, not the Manager" in {
+      val esTestKit = newTestKit()
+
+      esTestKit.runCommand(Coordinator.Handle(List(Call("c1", Floor(3), Some("alice")))))
+
+      val routed = passengerProbe.expectMessageType[PassengerManager.Route]
+      routed.elevatorName shouldBe "lift-a"
+      routed.call shouldBe Call("c1", Floor(3), Some("alice"))
+      managerProbe.expectNoMessage()
+    }
+
+    "split a mixed batch: anonymous calls to the Manager, identified calls to the PassengerManager" in {
+      val esTestKit = newTestKit()
+
+      esTestKit.runCommand(Coordinator.Handle(List(
+        Call("c1", Floor(3)),
+        Call("c2", Floor(4), Some("alice")))))
+
+      managerProbe.expectMessageType[Manager.Combine].calls shouldBe List(Call("c1", Floor(3)))
+      passengerProbe.expectMessageType[PassengerManager.Route].call shouldBe Call("c2", Floor(4), Some("alice"))
     }
 
     "record a call's order assignment" in {

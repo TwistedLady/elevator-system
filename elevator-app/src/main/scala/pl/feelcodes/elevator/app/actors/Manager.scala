@@ -21,6 +21,7 @@ object Manager:
   def apply(elevatorName: String,
             coordinatorProvider: String => EntityRef[Coordinator.Command],
             controllerProvider: String => EntityRef[Controller.Command],
+            passengerManagerProvider: String => EntityRef[PassengerManager.Command],
             publish: OrderStateDto => Unit): Behavior[Command] =
     EventSourcedBehavior[Command, ManagerEvents.Event, State](
       persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
@@ -52,6 +53,7 @@ object Manager:
                 Effect.persist(OrderDone(orderId)).thenRun { _ =>
                   publish(OrderStateDto(order.id, elevatorName, order.floor.num, "DONE", order.callIds, order.passengerCount, order.anonymousCount))
                   order.callIds.foreach(callId => coordinatorProvider(elevatorName) ! Coordinator.MarkDone(callId))
+                  order.passengers.foreach(pid => passengerManagerProvider(pid) ! PassengerManager.Free(pid))
                 }
               case None => Effect.none
       ,

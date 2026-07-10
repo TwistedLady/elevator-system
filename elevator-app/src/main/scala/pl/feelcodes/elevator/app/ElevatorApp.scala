@@ -45,6 +45,7 @@ object ElevatorApp extends App {
         val controllerProvider = sharding.entityRefFor(Controller.TypeKey, _)
         val managerProvider = sharding.entityRefFor(Manager.TypeKey, _)
         val coordinatorProvider = sharding.entityRefFor(Coordinator.TypeKey, _)
+        val passengerManagerProvider = sharding.entityRefFor(PassengerManager.TypeKey, _)
         val doormanProvider = sharding.entityRefFor(Doorman.TypeKey, _)
 
         val suspendManager = ClusterSingleton(ctx.system)
@@ -79,10 +80,13 @@ object ElevatorApp extends App {
           Controller(e.entityId, operatorProvider, managerProvider, suspendManager, doormanProvider, publishers.elevator.publish)
         })
         sharding.init(Entity(Manager.TypeKey) { e =>
-          Manager(e.entityId, coordinatorProvider, controllerProvider, publishers.order.publish)
+          Manager(e.entityId, coordinatorProvider, controllerProvider, passengerManagerProvider, publishers.order.publish)
         })
         sharding.init(Entity(Coordinator.TypeKey) { e =>
-          Coordinator(e.entityId, managerProvider, publishers.call.publish)
+          Coordinator(e.entityId, managerProvider, passengerManagerProvider, publishers.call.publish)
+        })
+        sharding.init(Entity(PassengerManager.TypeKey) { e =>
+          PassengerManager(e.entityId, managerProvider)
         })
 
         val dedup = CallDedup(ctx.system.settings.config)

@@ -5,10 +5,11 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.serialization.{SerializationExtension, Serializers}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Doorman, Manager, Operator}
+import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Doorman, Manager, Operator, PassengerManager}
 import pl.feelcodes.elevator.common.core.domain.*
 import pl.feelcodes.elevator.common.protocol.CoordinatorProtocol.{Handle, AssignOrder}
 import pl.feelcodes.elevator.common.protocol.ManagerProtocol.Combine
+import pl.feelcodes.elevator.common.protocol.PassengerProtocol.{Route, Free}
 
 final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
@@ -24,6 +25,7 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
       |    "pl.feelcodes.elevator.common.protocol.OperatorProtocol$Command"    = jackson-cbor
       |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
       |    "pl.feelcodes.elevator.common.protocol.DoormanProtocol$Command"     = jackson-cbor
+      |    "pl.feelcodes.elevator.common.protocol.PassengerProtocol$Command"   = jackson-cbor
       |  }
       |}
       |""".stripMargin
@@ -79,6 +81,13 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
 
   test("Manager.MarkDone round-trips"):
     assert(roundTrip(Manager.MarkDone("o-1")) == Manager.MarkDone("o-1"))
+
+  test("PassengerManager.Route round-trips"):
+    val msg = Route("lift-a", Call("c1", Floor(3), Some("alice")))
+    assert(roundTrip(msg) == msg)
+
+  test("PassengerManager.Free round-trips"):
+    assert(roundTrip(Free("alice")) == Free("alice"))
 
   test("Doorman.Serve round-trips"):
     val msg = Doorman.Serve("lift-a", Floor(4))

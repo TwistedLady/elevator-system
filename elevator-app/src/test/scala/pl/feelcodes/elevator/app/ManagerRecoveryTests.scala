@@ -8,7 +8,7 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Manager}
+import pl.feelcodes.elevator.app.actors.{Controller, Coordinator, Manager, PassengerManager}
 import pl.feelcodes.elevator.common.core.domain.{Call, Floor}
 import pl.feelcodes.elevator.common.events.ManagerEvents
 
@@ -25,6 +25,7 @@ object ManagerRecoveryTests {
         |    "pl.feelcodes.elevator.common.logic.ManagerLogic$State"             = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.ControllerProtocol$Command"  = jackson-cbor
         |    "pl.feelcodes.elevator.common.protocol.CoordinatorProtocol$Command" = jackson-cbor
+        |    "pl.feelcodes.elevator.common.protocol.PassengerProtocol$Command"   = jackson-cbor
         |  }
         |}
         |""".stripMargin
@@ -42,20 +43,23 @@ final class ManagerRecoveryTests
   private def newTestKit() =
     val coordinatorProbe = createTestProbe[Coordinator.Command]()
     val controllerProbe = createTestProbe[Controller.Command]()
+    val passengerProbe = createTestProbe[PassengerManager.Command]()
     val coordinatorProvider =
       (name: String) => TestEntityRef(Coordinator.TypeKey, name, coordinatorProbe.ref)
     val controllerProvider =
       (name: String) => TestEntityRef(Controller.TypeKey, name, controllerProbe.ref)
+    val passengerProvider =
+      (id: String) => TestEntityRef(PassengerManager.TypeKey, id, passengerProbe.ref)
     val kit = EventSourcedBehaviorTestKit[Manager.Command, ManagerEvents.Event, Manager.State](
       system,
-      Manager("lift-a", coordinatorProvider, controllerProvider, _ => ())
+      Manager("lift-a", coordinatorProvider, controllerProvider, passengerProvider, _ => ())
     )
-    (kit, coordinatorProbe, controllerProbe)
+    (kit, coordinatorProbe, controllerProbe, passengerProbe)
 
   "The Manager" should {
 
     "group calls into orders, assign each call, and hand the orders to the Controller" in {
-      val (esTestKit, coordinatorProbe, controllerProbe) = newTestKit()
+      val (esTestKit, coordinatorProbe, controllerProbe, _) = newTestKit()
 
       val r = esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)), Call("c2", Floor(3)))))
 
@@ -73,7 +77,7 @@ final class ManagerRecoveryTests
     }
 
     "mark an order done and tell the Coordinator each of its calls is done" in {
-      val (esTestKit, coordinatorProbe, _) = newTestKit()
+      val (esTestKit, coordinatorProbe, _, _) = newTestKit()
       esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)))))
       coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
       val orderId = esTestKit.getState().orders.keys.head
@@ -82,8 +86,19 @@ final class ManagerRecoveryTests
       coordinatorProbe.expectMessage(Coordinator.MarkDone("c1"))
     }
 
+    "free each identified passenger when their order is done" in {
+      val (esTestKit, coordinatorProbe, _, passengerProbe) = newTestKit()
+      esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3), Some("alice")))))
+      coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
+      val orderId = esTestKit.getState().orders.keys.head
+
+      esTestKit.runCommand(Manager.MarkDone(orderId))
+      coordinatorProbe.expectMessage(Coordinator.MarkDone("c1"))
+      passengerProbe.expectMessage(PassengerManager.Free("alice"))
+    }
+
     "attach a later call to the existing floor order and mark both calls done" in {
-      val (esTestKit, coordinatorProbe, controllerProbe) = newTestKit()
+      val (esTestKit, coordinatorProbe, controllerProbe, _) = newTestKit()
       esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)))))
       coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
       controllerProbe.expectMessageType[Controller.Process]
