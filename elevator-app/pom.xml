@@ -184,6 +184,12 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.scalatestplus</groupId>
+            <artifactId>scalacheck-1-18_${scala.binary.version}</artifactId>
+            <version>${scalatestplus.scalacheck.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.apache.pekko</groupId>
             <artifactId>pekko-actor-testkit-typed_${scala.binary.version}</artifactId>
             <scope>test</scope>

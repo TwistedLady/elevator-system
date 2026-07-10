@@ -39,5 +39,11 @@
             <version>${scalatest.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.scalatestplus</groupId>
+            <artifactId>scalacheck-1-18_${scala.binary.version}</artifactId>
+            <version>${scalatestplus.scalacheck.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
