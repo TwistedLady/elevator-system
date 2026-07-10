@@ -279,6 +279,39 @@
                 <module>elevator-bi</module>
             </modules>
         </profile>
+
+        <!-- Opt in to rendering README.md (Mermaid diagrams included) to target/README.pdf:
+             `mvn -Ppdf package`. Kept out of the default build because it needs pandoc + Node
+             (npx mermaid-cli) + a Chromium on the machine, which a plain `mvn` build must not
+             require. A pure Maven PDF plugin can't draw Mermaid — it runs no browser — so this
+             drives scripts/md-to-pdf.sh instead. -->
+        <profile>
+            <id>pdf</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>render-readme-pdf</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.basedir}/scripts/md-to-pdf.sh</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/README.md</argument>
+                                        <argument>${project.basedir}/target/README.pdf</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
 </project>
