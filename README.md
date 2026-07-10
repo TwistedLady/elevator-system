@@ -143,8 +143,8 @@ to Kafka.
 
 | Actor | State | Contract |
 |---|---|---|
-| **Coordinator** | `Map[CallId, Floor]` | owns **call status**. `Handle` → `[evt]CallReceived` `[pub]`PROGRESS → Manager; `AssignOrder` → `[evt]CallAssigned`; `MarkDone` → `[evt]CallDone` `[pub]`DONE |
-| **Manager** | `Map[OrderId, Order]` | owns **call ↔ order**. `Combine` → `[evt]OrderCreated\|Extended` `[pub]`PROGRESS → Coordinator + Controller; `MarkDone` → `[evt]OrderDone` `[pub]`DONE |
+| **Coordinator** | `Map[CallId, Floor]` | owns **call status**. `Handle` → `[evt]CallReceived` `[pub]`PROGRESS → PassengerManager (identified) / Manager (anonymous); `AssignOrder` → `[evt]CallAssigned`; `MarkDone` → `[evt]CallDone` `[pub]`DONE |
+| **Manager** | `Map[OrderId, Order]` | owns **call ↔ order**. `Combine` → `[evt]OrderCreated\|Extended` `[pub]`PROGRESS → Coordinator + Controller; `MarkDone` → `[evt]OrderDone` `[pub]`DONE + frees each passenger |
 | **Controller** | `waiting · state · Set[Order]` | owns **movement**. `Process` → `[evt]OrderAccepted`; `ChooseNext` → `[evt]WaitingSet(true)` → Operator; `MarkExecuted` → `[evt]WaitingSet(false)+StateUpdated` `[pub]`elevator |
 | **Operator** | — (stateless) | one move. `Move` → no event → `Controller.MarkExecuted` |
 
@@ -158,6 +158,7 @@ sequenceDiagram
     participant API as elevator-api
     participant CC as CallConsumer
     participant Co as Coordinator
+    participant Pm as PassengerManager
     participant Mg as Manager
     participant Ct as Controller
     participant Op as Operator
@@ -166,7 +167,9 @@ sequenceDiagram
     API->>CC: produce CallDto → Kafka elevator-calls (batched)
     Note over CC: checks processed_calls — skip if seen, else forward then mark id
     CC->>Co: Handle([call])  ·  persist CallReceived → call_status = PROGRESS
-    Co->>Mg: Combine([call])
+    Co->>Pm: Route(e1, call)  (identified passenger; anonymous calls skip to Manager)
+    Note over Pm: free → forward & mark busy · busy → freeze the call
+    Pm->>Mg: Combine([call])
     Note over Mg: group by floor → Order f(elevator,floor)<br/>OrderCreated/Extended → order_status = PROGRESS
     Mg->>Co: AssignOrder(callId, orderId)
     Mg->>Ct: Process(orders)
@@ -177,6 +180,7 @@ sequenceDiagram
         Note over Ct: persist WaitingSet(false)+StateUpdated<br/>drop orders at newState.floor · publish state
         Ct->>Mg: MarkDone(orderId) per floor reached → OrderDone → DONE
         Mg->>Co: MarkDone(callId) per call → CallDone → DONE
+        Mg->>Pm: Free(passengerId) per passenger → release next frozen call
     end
     C->>API: GET /api/call/{id} → DONE
 ```
@@ -191,6 +195,23 @@ The Controller picks the next move with a pure **SCAN** (`NextFloorStrategy.defa
 same way while a target is ahead, else reverse, else stop. `GroupCallsStrategy` does the same-floor
 grouping. `Engine.cost` busy-spins to simulate travel — **the system's only pacing** (`SlowEngine`
 2s realistic, `FastEngine` 100ms for tests/demo). Only the app layer touches `core.engine`.
+
+### The passenger gate — one lift per passenger
+
+A passenger can be inside only one lift at a time, so calls that identify a passenger pass through a
+`PassengerManager` **entity keyed by `passengerId`** (every other write actor is keyed by
+`elevatorName`; this is the one keyed by person). It sits between the Coordinator and the Manager and
+enforces the invariant by **ordering the calls**, not by rejecting them:
+
+- **free** → forward the call to that lift's Manager and mark the passenger **busy**;
+- **busy** → **freeze** the call in a FIFO queue — no order is built, so no other lift picks the
+  passenger up while their current travel runs;
+- **freed** (the Manager's `OrderDone` frees each of the order's passengers) → release the **next**
+  frozen call to its lift, which becomes the next travel. Empty queue → the passenger is free again.
+
+Because the entity is single-writer per passenger cluster-wide, this holds with multiple app replicas.
+Anonymous calls (no `passengerId`) carry no identity, so they skip the gate. The frozen queue is
+event-sourced: a consumed call is gone from Kafka, so it must survive a restart.
 
 Before each move the Controller **asks** a `SuspendManager` cluster **singleton** whether the car may
 proceed (you can't block inside an event-sourced actor, so the answer returns as a command). Default
@@ -348,4 +369,5 @@ and deploys. `ci.yml` fails if any module version ≠ `VERSION`; `cd.yml` refuse
 
 Source map: actors in `elevator-app/.../actors/`; protocol/events/logic/strategy in the matching
 `elevator-common-*` submodules; ingress dedup in `elevator-app/.../inbound/`; projections in
-`.../readside/`; the move gate in `SuspendManager.scala`; JWT auth in `elevator-api/.../auth/`.
+`.../readside/`; the move gate in `SuspendManager.scala`; the passenger gate in
+`PassengerManager.scala`; JWT auth in `elevator-api/.../auth/`.

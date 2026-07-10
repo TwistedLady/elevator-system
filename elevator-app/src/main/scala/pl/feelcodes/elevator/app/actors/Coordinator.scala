@@ -20,6 +20,7 @@ object Coordinator:
 
   def apply(elevatorName: String,
             managerProvider: String => EntityRef[Manager.Command],
+            passengerManagerProvider: String => EntityRef[PassengerManager.Command],
             publish: CallStateDto => Unit): Behavior[Command] =
     EventSourcedBehavior[Command, CoordinatorEvents.Event, State](
       persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
@@ -29,7 +30,9 @@ object Coordinator:
           case Handle(calls) =>
             Effect.persist(calls.map(c => CallReceived(c.id, c.floor.num))).thenRun { _ =>
               calls.foreach(c => publish(CallStateDto(c.id, elevatorName, c.floor.num, "PROGRESS")))
-              managerProvider(elevatorName) ! Manager.Combine(calls)
+              val (identified, anonymous) = calls.partition(_.passengerId.isDefined)
+              if anonymous.nonEmpty then managerProvider(elevatorName) ! Manager.Combine(anonymous)
+              identified.foreach(c => passengerManagerProvider(c.passengerId.get) ! PassengerManager.Route(elevatorName, c))
             }
 
           case AssignOrder(callId, orderId) =>
