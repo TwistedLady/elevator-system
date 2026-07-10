@@ -53,14 +53,17 @@ impl Default for HealthSnapshot {
     }
 }
 
-/// A server-side simulation in flight: a background thread POSTs `/api/simulate`, stores the run id
-/// and ids, then polls `/api/simulate/status` ~1s and updates the counts. The UI only reads it.
+/// A server-side simulation in flight: a background thread POSTs `/api/simulate`, then polls
+/// `/api/simulate/progress` every couple of seconds and stores the rolled-up summary. The UI only
+/// reads it; the progress bar is derived from size/calls/doneCalls.
 pub struct SimRun {
     pub run_id: Arc<Mutex<String>>,
-    pub total: Arc<AtomicU64>,
-    pub status_done: Arc<AtomicU64>,
-    pub status_progress: Arc<AtomicU64>,
-    pub status_pending: Arc<AtomicU64>,
+    pub size: Arc<AtomicU64>,
+    pub calls: Arc<AtomicU64>,
+    pub orders: Arc<AtomicU64>,
+    pub done_calls: Arc<AtomicU64>,
+    pub first_call: Arc<Mutex<Option<String>>>,
+    pub last_done: Arc<Mutex<Option<String>>>,
     pub complete: Arc<AtomicBool>,
     pub error: Arc<Mutex<Option<String>>>,
 }
@@ -69,10 +72,12 @@ impl SimRun {
     fn new() -> Self {
         Self {
             run_id: Arc::new(Mutex::new(String::new())),
-            total: Arc::new(AtomicU64::new(0)),
-            status_done: Arc::new(AtomicU64::new(0)),
-            status_progress: Arc::new(AtomicU64::new(0)),
-            status_pending: Arc::new(AtomicU64::new(0)),
+            size: Arc::new(AtomicU64::new(0)),
+            calls: Arc::new(AtomicU64::new(0)),
+            orders: Arc::new(AtomicU64::new(0)),
+            done_calls: Arc::new(AtomicU64::new(0)),
+            first_call: Arc::new(Mutex::new(None)),
+            last_done: Arc::new(Mutex::new(None)),
             complete: Arc::new(AtomicBool::new(false)),
             error: Arc::new(Mutex::new(None)),
         }
@@ -82,16 +87,36 @@ impl SimRun {
         self.run_id.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
+    pub fn size(&self) -> u64 {
+        self.size.load(Ordering::Relaxed)
+    }
+
+    pub fn calls(&self) -> u64 {
+        self.calls.load(Ordering::Relaxed)
+    }
+
+    pub fn orders(&self) -> u64 {
+        self.orders.load(Ordering::Relaxed)
+    }
+
     pub fn done(&self) -> u64 {
-        self.status_done.load(Ordering::Relaxed)
+        self.done_calls.load(Ordering::Relaxed)
     }
 
     pub fn in_progress(&self) -> u64 {
-        self.status_progress.load(Ordering::Relaxed)
+        self.calls().saturating_sub(self.done())
     }
 
     pub fn pending(&self) -> u64 {
-        self.status_pending.load(Ordering::Relaxed)
+        self.size().saturating_sub(self.calls())
+    }
+
+    pub fn first_call(&self) -> Option<String> {
+        self.first_call.lock().ok().and_then(|g| g.clone())
+    }
+
+    pub fn last_done(&self) -> Option<String> {
+        self.last_done.lock().ok().and_then(|g| g.clone())
     }
 
     pub fn complete(&self) -> bool {
@@ -235,10 +260,12 @@ impl App {
         let run = SimRun::new();
         let api_base = self.api_base.clone();
         let run_id = Arc::clone(&run.run_id);
-        let total = Arc::clone(&run.total);
-        let done = Arc::clone(&run.status_done);
-        let progress = Arc::clone(&run.status_progress);
-        let pending = Arc::clone(&run.status_pending);
+        let size = Arc::clone(&run.size);
+        let calls = Arc::clone(&run.calls);
+        let orders = Arc::clone(&run.orders);
+        let done_calls = Arc::clone(&run.done_calls);
+        let first_call = Arc::clone(&run.first_call);
+        let last_done = Arc::clone(&run.last_done);
         let complete = Arc::clone(&run.complete);
         let error = Arc::clone(&run.error);
         std::thread::spawn(move || {
@@ -246,11 +273,20 @@ impl App {
             match crate::api::post_simulate(&agent, &api_base, SIM_COUNT) {
                 Ok(resp) => {
                     if let Ok(mut g) = run_id.lock() {
-                        *g = resp.run_id;
+                        *g = resp.run_id.clone();
                     }
-                    total.store(resp.count, Ordering::Relaxed);
-                    poll_sim(
-                        &agent, &api_base, &resp.ids, &total, &done, &progress, &pending, &complete,
+                    size.store(resp.count, Ordering::Relaxed);
+                    poll_progress(
+                        &agent,
+                        &api_base,
+                        &resp.run_id,
+                        resp.count,
+                        &calls,
+                        &orders,
+                        &done_calls,
+                        &first_call,
+                        &last_done,
+                        &complete,
                     );
                 }
                 Err(e) => {
@@ -312,29 +348,36 @@ impl App {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn poll_sim(
+fn poll_progress(
     agent: &ureq::Agent,
     api_base: &str,
-    ids: &[String],
-    total: &AtomicU64,
-    done: &AtomicU64,
-    progress: &AtomicU64,
-    pending: &AtomicU64,
+    run_id: &str,
+    size: u64,
+    calls: &AtomicU64,
+    orders: &AtomicU64,
+    done_calls: &AtomicU64,
+    first_call: &Mutex<Option<String>>,
+    last_done: &Mutex<Option<String>>,
     complete: &AtomicBool,
 ) {
     let deadline = Instant::now() + Duration::from_secs(1800);
     while Instant::now() < deadline {
-        if let Ok(s) = crate::api::post_simulate_status(agent, api_base, ids) {
-            total.store(s.total, Ordering::Relaxed);
-            done.store(s.done, Ordering::Relaxed);
-            progress.store(s.progress, Ordering::Relaxed);
-            pending.store(s.pending, Ordering::Relaxed);
-            if s.progress == 0 && s.pending == 0 {
+        if let Ok(p) = crate::api::get_progress(agent, api_base, run_id, size) {
+            calls.store(p.calls, Ordering::Relaxed);
+            orders.store(p.orders, Ordering::Relaxed);
+            done_calls.store(p.done_calls, Ordering::Relaxed);
+            if let Ok(mut g) = first_call.lock() {
+                *g = p.first_call;
+            }
+            if let Ok(mut g) = last_done.lock() {
+                *g = p.last_done;
+            }
+            if size > 0 && p.done_calls >= size {
                 complete.store(true, Ordering::Relaxed);
                 return;
             }
         }
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_secs(2));
     }
 }
 

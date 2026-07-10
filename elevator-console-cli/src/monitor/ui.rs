@@ -256,6 +256,7 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
+        Constraint::Length(1),
         Constraint::Min(0),
     ])
     .split(inner);
@@ -289,20 +290,42 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     };
     frame.render_widget(Paragraph::new(status), rows[0]);
 
-    let summary = if run_id.is_empty() {
-        format!("done {done} · progress {prog} · pending {pending}")
-    } else {
-        format!("run {run_id} · done {done} · progress {prog} · pending {pending}")
-    };
-    frame.render_widget(Paragraph::new(summary.dark_gray()), rows[1]);
-
-    let (done_w, prog_w, rest_w) = split_bar(done, prog, pending, rows[2].width as usize);
+    let (done_w, prog_w, rest_w) = split_bar(done, prog, pending, rows[1].width as usize);
     let bar = Line::from(vec![
         Span::styled("█".repeat(done_w), Style::new().fg(Color::Green)),
         Span::styled("█".repeat(prog_w), Style::new().fg(Color::Yellow)),
         Span::styled("░".repeat(rest_w), Style::new().fg(Color::DarkGray)),
     ]);
-    frame.render_widget(Paragraph::new(bar), rows[2]);
+    frame.render_widget(Paragraph::new(bar), rows[1]);
+
+    let counts = format!(
+        "run {} · size {} · calls {} · done {done} · progress {prog} · pending {pending}",
+        if run_id.is_empty() { "…" } else { &run_id },
+        sim.size(),
+        sim.calls(),
+    );
+    frame.render_widget(Paragraph::new(counts.dark_gray()), rows[2]);
+
+    let meta = format!(
+        "orders {} · first {} · last {}",
+        sim.orders(),
+        hms(sim.first_call()),
+        hms(sim.last_done()),
+    );
+    frame.render_widget(Paragraph::new(meta.dark_gray()), rows[3]);
+}
+
+/// Reduce an ISO-8601 instant (e.g. `2026-07-10T10:00:05Z`) to just `10:00:05` for a compact line;
+/// `—` when the timestamp is absent.
+fn hms(iso: Option<String>) -> String {
+    match iso {
+        Some(s) => s
+            .split('T')
+            .nth(1)
+            .map(|t| t.chars().take(8).collect())
+            .unwrap_or(s),
+        None => "—".to_string(),
+    }
 }
 
 /// Split a `width`-cell bar into (done, progress, pending) segment widths, proportional to the

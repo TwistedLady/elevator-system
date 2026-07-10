@@ -146,15 +146,6 @@ pub struct SimulateResponse {
     pub ids: Vec<String>,
 }
 
-/// A batched status roll-up for a set of simulated calls: `done + progress + pending == total`.
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct SimStatus {
-    pub total: u64,
-    pub done: u64,
-    pub progress: u64,
-    pub pending: u64,
-}
-
 /// Kick off a server-side simulation of `count` calls. The api caps and defaults the count itself.
 pub fn post_simulate(
     agent: &ureq::Agent,
@@ -166,23 +157,28 @@ pub fn post_simulate(
     Ok(serde_json::from_str(&body)?)
 }
 
-#[derive(Serialize)]
-struct IdsPayload<'a> {
-    ids: &'a [String],
+/// A rolled-up view of one simulation run — the source for the Sim progress bar. `simSize` is
+/// echoed by the api but the console already knows it from the simulate response, so it is ignored.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SimProgress {
+    pub calls: u64,
+    pub orders: u64,
+    #[serde(rename = "doneCalls")]
+    pub done_calls: u64,
+    #[serde(rename = "firstCall")]
+    pub first_call: Option<String>,
+    #[serde(rename = "lastDone")]
+    pub last_done: Option<String>,
 }
 
-/// Poll the aggregate status of a running simulation by its call ids.
-pub fn post_simulate_status(
+/// Poll a run's rolled-up progress: `GET /api/simulate/progress?runId=..&size=..`.
+pub fn get_progress(
     agent: &ureq::Agent,
     api_base: &str,
-    ids: &[String],
-) -> Result<SimStatus, BoxErr> {
-    let url = format!("{api_base}/api/simulate/status");
-    let payload = serde_json::to_string(&IdsPayload { ids })?;
-    let body = agent
-        .post(&url)
-        .set("Content-Type", "application/json")
-        .send_string(&payload)?
-        .into_string()?;
+    run_id: &str,
+    size: u64,
+) -> Result<SimProgress, BoxErr> {
+    let url = format!("{api_base}/api/simulate/progress?runId={run_id}&size={size}");
+    let body = agent.get(&url).call()?.into_string()?;
     Ok(serde_json::from_str(&body)?)
 }
