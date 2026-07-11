@@ -96,7 +96,10 @@ final class ControllerRecoveryTests
 
       // only when the reveal timer fires (the gate is still holding the car) does it publish suspended
       esTestKit.runCommand(Controller.RevealSuspended)
-      published.asScala.exists(_.suspended) shouldBe true
+      val held = published.asScala.filter(_.suspended).toList
+      held should not be empty
+      // a held car is stopped — never Moving-with-suspended
+      all(held.map(_.motion)) shouldBe "Stopped"
     }
 
     "keep an outstanding (unserved) request after a crash" in {

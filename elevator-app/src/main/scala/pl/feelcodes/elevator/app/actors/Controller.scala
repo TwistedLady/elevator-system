@@ -53,6 +53,13 @@ object Controller:
           s.elevatorState.direction.toString, s.elevatorState.motion.toString,
           s.elevatorState.floor.num, suspended))
 
+      // A car held on the gate is physically stopped (it hasn't issued the next move yet), so
+      // publish Stopped — never Moving-with-suspended, which would flash [↑] and S together.
+      def publishHeld(s: State): Unit =
+        publish(ElevatorStateDto(s.elevatorName,
+          s.elevatorState.direction.toString, Motion.Stopped.toString,
+          s.elevatorState.floor.num, suspended = true))
+
       EventSourcedBehavior[Command, Event, State](
         persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
         emptyState = ControllerLogic.State.initial(elevatorName),
@@ -82,7 +89,7 @@ object Controller:
               else Effect.none
 
             case RevealSuspended =>
-              Effect.none.thenRun(s => if s.waiting then publishState(s, suspended = true))
+              Effect.none.thenRun(s => if s.waiting then publishHeld(s))
 
             case MoveDecision(allowed) =>
               timers.cancel("suspend-reveal")
