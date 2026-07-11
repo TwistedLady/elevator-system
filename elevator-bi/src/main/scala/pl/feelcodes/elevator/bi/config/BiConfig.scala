@@ -15,6 +15,8 @@ final case class BiConfig(
     callStatusTable: String,
     parquetPath: String,
     conflictsParquetPath: String,
+    callLatencyParquetPath: String,
+    callLatencySummaryParquetPath: String,
     intervalSeconds: Int,
     runOnce: Boolean
 )
@@ -33,6 +35,8 @@ object BiConfig {
     callStatusTable      = env("ELEVATOR_BI_CALL_STATUS_TABLE", "call_status"),
     parquetPath          = env("ELEVATOR_BI_PARQUET_PATH", "file:///data/elevators.parquet"),
     conflictsParquetPath = env("ELEVATOR_BI_CONFLICTS_PARQUET_PATH", "file:///data/passenger-conflicts.parquet"),
+    callLatencyParquetPath        = env("ELEVATOR_BI_CALL_LATENCY_PARQUET_PATH", "file:///data/call-latency.parquet"),
+    callLatencySummaryParquetPath = env("ELEVATOR_BI_CALL_LATENCY_SUMMARY_PARQUET_PATH", "file:///data/call-latency-summary.parquet"),
     intervalSeconds      = env("ELEVATOR_BI_INTERVAL", "30").toInt,
     runOnce              = env("ELEVATOR_BI_RUN_ONCE", "false").toBoolean
   )

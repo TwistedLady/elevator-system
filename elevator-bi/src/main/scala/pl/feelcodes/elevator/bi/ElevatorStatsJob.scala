@@ -49,11 +49,27 @@ object ElevatorStatsJob {
     ParquetSink.write(stats, cfg)
     log.info(s"stats: wrote ${stats.count()} elevator rows to ${cfg.parquetPath}")
 
-    refreshConflicts(spark, cfg, orderStatus)
+    val callStatus = readCallStatus(spark, cfg)
+    refreshConflicts(spark, cfg, callStatus, orderStatus)
+    refreshCallLatency(cfg, callStatus)
   }
 
-  private def refreshConflicts(spark: SparkSession, cfg: BiConfig, orderStatus: DataFrame): Unit = {
-    val windows = PassengerConflicts.windows(readCalls(spark, cfg), readCallStatus(spark, cfg), orderStatus)
+  private def refreshCallLatency(cfg: BiConfig, callStatus: DataFrame): Unit = {
+    val perCall = CallLatency.perCall(callStatus).cache()
+    try {
+      perCall.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.callLatencyParquetPath + ".staging")
+      ParquetSink.replace(cfg.callLatencyParquetPath)
+
+      val summary = CallLatency.summary(perCall)
+      summary.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.callLatencySummaryParquetPath + ".staging")
+      ParquetSink.replace(cfg.callLatencySummaryParquetPath)
+
+      log.info(s"call-latency: ${perCall.count()} completed call(s) -> ${cfg.callLatencyParquetPath} (+summary)")
+    } finally perCall.unpersist()
+  }
+
+  private def refreshConflicts(spark: SparkSession, cfg: BiConfig, callStatus: DataFrame, orderStatus: DataFrame): Unit = {
+    val windows = PassengerConflicts.windows(readCalls(spark, cfg), callStatus, orderStatus)
     val conflicts = PassengerConflicts.detect(windows)
     conflicts.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.conflictsParquetPath + ".staging")
     ParquetSink.replace(cfg.conflictsParquetPath)
