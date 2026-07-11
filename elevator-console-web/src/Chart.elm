@@ -5,6 +5,7 @@ shared palette + floor axis reused by the Trend tab. The `__kind` hint is read b
 formatter) and ignored by ECharts.
 -}
 
+import Dict exposing (Dict)
 import Html exposing (Html, div, i, span, text)
 import Html.Attributes exposing (class, property)
 import Html.Keyed as Keyed
@@ -19,6 +20,8 @@ type alias Palette =
     , split : String
     , moving : String
     , idle : String
+    , suspended : String
+    , door : String
     , tooltipBg : String
     , tooltipText : String
     , series : List String
@@ -35,6 +38,8 @@ palette theme =
             , split = "#2b3a41"
             , moving = "#64b5f6"
             , idle = "#78909c"
+            , suspended = "#ffb74d"
+            , door = "#4dd0e1"
             , tooltipBg = "#263238"
             , tooltipText = "#eceff1"
             , series = seriesDark
@@ -47,6 +52,8 @@ palette theme =
             , split = "#eceff1"
             , moving = "#1976d2"
             , idle = "#90a4ae"
+            , suspended = "#fb8c00"
+            , door = "#00acc1"
             , tooltipBg = "#37474f"
             , tooltipText = "#ffffff"
             , series = seriesLight
@@ -74,12 +81,12 @@ chevron direction =
             "▼"
 
 
-view : List Row -> Int -> Theme -> Html msg
-view rows maxFloor theme =
+view : List Row -> Dict String Bool -> Int -> Theme -> Html msg
+view rows doors maxFloor theme =
     div []
         [ Keyed.node "div"
             [ class "chart-area" ]
-            [ ( "chart", Html.node "echarts-panel" [ property "option" (positionOption rows maxFloor theme) ] [] ) ]
+            [ ( "chart", Html.node "echarts-panel" [ property "option" (positionOption rows doors maxFloor theme) ] [] ) ]
         , legend
         ]
 
@@ -89,6 +96,8 @@ legend =
     div [ class "chart-legend" ]
         [ span [ class "key" ] [ i [ class "swatch moving" ] [], text "moving" ]
         , span [ class "key" ] [ i [ class "swatch idle" ] [], text "idle" ]
+        , span [ class "key" ] [ i [ class "swatch suspended" ] [], text "suspended" ]
+        , span [ class "key" ] [ i [ class "swatch door" ] [], text "door open" ]
         , span [ class "key" ] [ text "▲ up" ]
         , span [ class "key" ] [ text "▼ down" ]
         ]
@@ -97,8 +106,8 @@ legend =
 {-| Each elevator is a cab (rounded rect) parked at its floor; the cab glides when its floor changes
 (ECharts animates the position update). Colour = moving/idle.
 -}
-positionOption : List Row -> Int -> Theme -> E.Value
-positionOption rows maxFloor theme =
+positionOption : List Row -> Dict String Bool -> Int -> Theme -> E.Value
+positionOption rows doors maxFloor theme =
     let
         p =
             palette theme
@@ -111,31 +120,82 @@ positionOption rows maxFloor theme =
                 moving =
                     row.state.motion == Moving
 
-                itemStyle =
-                    if moving then
-                        E.object
-                            [ ( "color", E.string p.moving )
-                            , ( "borderRadius", E.int 5 )
-                            , ( "borderWidth", E.int 0 )
-                            , ( "shadowBlur", E.int 12 )
-                            , ( "shadowColor", E.string p.moving )
-                            ]
+                suspended =
+                    row.state.suspended
+
+                doorOpen =
+                    Dict.get row.state.name doors |> Maybe.withDefault False
+
+                fill =
+                    if suspended then
+                        p.suspended
+
+                    else if moving then
+                        p.moving
 
                     else
-                        E.object
-                            [ ( "color", E.string "transparent" )
-                            , ( "borderRadius", E.int 5 )
-                            , ( "borderColor", E.string p.idle )
-                            , ( "borderWidth", E.int 2 )
-                            , ( "shadowBlur", E.int 0 )
-                            ]
+                        "transparent"
+
+                borderColor =
+                    if doorOpen then
+                        p.door
+
+                    else if suspended then
+                        p.suspended
+
+                    else
+                        p.idle
+
+                borderWidth =
+                    if doorOpen then
+                        3
+
+                    else if moving || suspended then
+                        0
+
+                    else
+                        2
+
+                shadowBlur =
+                    if moving || suspended then
+                        12
+
+                    else
+                        0
+
+                shadowColor =
+                    if suspended then
+                        p.suspended
+
+                    else
+                        p.moving
+
+                itemStyle =
+                    E.object
+                        [ ( "color", E.string fill )
+                        , ( "borderRadius", E.int 5 )
+                        , ( "borderColor", E.string borderColor )
+                        , ( "borderWidth", E.int borderWidth )
+                        , ( "shadowBlur", E.int shadowBlur )
+                        , ( "shadowColor", E.string shadowColor )
+                        ]
 
                 labelText =
-                    if moving then
+                    if suspended then
+                        "S " ++ String.fromInt row.state.floor
+
+                    else if moving then
                         chevron row.state.direction ++ " " ++ String.fromInt row.state.floor
 
                     else
                         String.fromInt row.state.floor
+
+                labelColor =
+                    if moving || suspended then
+                        "#ffffff"
+
+                    else
+                        p.subtext
 
                 tip =
                     "<b>"
@@ -146,6 +206,18 @@ positionOption rows maxFloor theme =
                         ++ directionLabel row.state.direction
                         ++ " · "
                         ++ motionLabel row.state.motion
+                        ++ (if suspended then
+                                " · suspended"
+
+                            else
+                                ""
+                           )
+                        ++ (if doorOpen then
+                                " · door open"
+
+                            else
+                                ""
+                           )
             in
             E.object
                 [ ( "value", E.list E.int [ index, row.state.floor ] )
@@ -153,15 +225,7 @@ positionOption rows maxFloor theme =
                 , ( "label"
                   , E.object
                         [ ( "formatter", E.string labelText )
-                        , ( "color"
-                          , E.string
-                                (if moving then
-                                    "#ffffff"
-
-                                 else
-                                    p.subtext
-                                )
-                          )
+                        , ( "color", E.string labelColor )
                         ]
                   )
                 , ( "tip", E.string tip )
