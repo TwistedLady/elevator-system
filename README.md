@@ -30,11 +30,12 @@ The **Sim** tab triggers a server-side run via `POST /api/simulate` (see below).
 
 ## Endpoints
 
-Port **8080**. `POST /api/call` needs a Bearer JWT; everything else is open.
+Port **8080**. `POST /api/call` and `POST /api/board` need a Bearer JWT; everything else is open.
 
 | Method · Path | Purpose |
 |---|---|
 | `POST /api/call` | **JWT required.** `{"elevatorName":"e1","floor":5}` → a call. `passengerId` = token `sub` (body value ignored). |
+| `POST /api/board` | **JWT required.** `{"elevatorName":"e1","floor":5}` → the passenger (`sub`) stepped in; closes the open door. |
 | `POST /api/token` | Dev issuer: `{"subject":…}` + `X-Client-Secret` → signed RS256 JWT. `GET /oauth2/jwks` publishes the key. |
 | `GET /api/elevator[/{name}]` | Latest state — all, or one (`404`). `/stream` is an SSE live feed. |
 | `GET /api/call/{id}` | Call lifecycle `PROGRESS → DONE`, or `404`. |
@@ -72,8 +73,8 @@ flowchart LR
   app -->|journal + projections| pg[("Postgres")] -->|R2DBC reads| api
 ```
 
-Topics are keyed by `elevatorName`: `elevator-calls` (api → app) and app → out `elevator-state` (api/consoles/BI)
-plus `elevator-order-state` / `elevator-call-state` (BI only).
+Topics are keyed by `elevatorName`: `elevator-calls` + `elevator-board` (api → app) and app → out `elevator-state`
+(api/consoles/BI) plus `elevator-order-state` / `elevator-call-state` (BI only).
 
 ### The actors
 
@@ -106,14 +107,15 @@ loop couldn't. Actors speak only domain types; `CallConsumer` maps `CallDto → 
   allow. If another car is already on the same floor it **holds** the second asker's reply for `SuspendDwell`
   (3s) then releases it — a soft stagger, no livelock. Ask timeout `dwell + 2s`; on failure → `MoveRetry`.
 - **Waiting on a real user action** — on a served arrival the Controller hands off to a `Doorman` entity that
-  **opens the door and waits for the passenger to actually board**, not a fixed dwell. A `Boarded` message
-  closes at once; a no-show is bounded by a `BoardTimeout` (`door-dwell`). Either way `Closed` loops back as
+  **opens the door and waits for the passenger to actually board**, not a fixed dwell. The boarding signal is a
+  real ingress mirroring calls: `POST /api/board {elevatorName, floor}` (passenger JWT → subject) → `BoardService`
+  produces a `BoardDto` to the `elevator-board` topic → `BoardConsumer` delivers `Doorman.Boarded`. That closes
+  the door at once; a no-show is bounded by a `BoardTimeout` (`door-dwell`). Either way `Closed` loops back as
   `Controller.DoorClosed` to resume. The wait is a **timer-backed state**, not a blocked thread, so the Doorman
-  stays free to receive the boarding message (no `elevator-blocking-dispatcher`). This is the reference pattern
-  for a Pekko actor waiting on an external action: model the wait as a state, turn the action into a message at
-  the edge, always pair it with a timeout. `BoardingLab` (`elevator-app/.../lab/BoardingLab.scala`) runs it
-  in-process (real `Doorman`, `Simulator` playing boarders vs no-shows) — live doors just wait out the timeout
-  until a real `Boarded` source is wired:
+  stays free to receive the message (no `elevator-blocking-dispatcher`). This is the reference pattern for a
+  Pekko actor waiting on an external action: model the wait as a state, turn the action into a message at the
+  edge, always pair it with a timeout. `BoardingLab` (`elevator-app/.../lab/BoardingLab.scala`) runs the same
+  handshake in-process (real `Doorman`, `Simulator` playing boarders vs no-shows):
   ```bash
   ./mvnw -q -pl elevator-app -am -DskipTests package
   java -cp elevator-app/target/elevator-app-*.jar pl.feelcodes.elevator.app.lab.BoardingLab 7
