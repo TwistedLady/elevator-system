@@ -1,0 +1,99 @@
+name: APT repo (GitHub Pages)
+
+# Publishes a signed APT repository to the gh-pages branch so the Rust console is installable and
+# upgradable with apt: `apt update && apt install elevator-console-cli`. Runs on each console tag
+# (elevator-console-cli-v*) and can be triggered by hand to (re)bootstrap the repo.
+#
+# One-time setup by a maintainer:
+#   1. Add repo secret APT_GPG_PRIVATE_KEY  (ASCII-armored private key; see docs/apt.md).
+#      Optionally APT_GPG_PASSPHRASE if the key has one.
+#   2. Settings -> Pages -> Source: "Deploy from a branch" -> branch: gh-pages, folder: / (root).
+
+on:
+  push:
+    tags: ["elevator-console-cli-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apt-repo
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build .deb, index, sign, publish to Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: elevator-console-cli
+
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils
+
+      - name: Build the .deb
+        working-directory: elevator-console-cli
+        run: |
+          cargo install cargo-deb --locked
+          cargo build --release
+          cargo deb --no-build
+
+      # Bring the already-published repo (old .deb versions) so apt can still upgrade across releases.
+      - name: Fetch existing repo from gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Assemble + sign the flat APT repo
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APT_GPG_PRIVATE_KEY:-}" ]; then
+            echo "::error::APT_GPG_PRIVATE_KEY secret is not set — add it (see docs/apt.md), then re-run."
+            exit 1
+          fi
+          SITE=site/apt
+          mkdir -p "$SITE"
+          cp gh-pages/apt/*.deb "$SITE"/ 2>/dev/null || true          # keep old versions
+          cp elevator-console-cli/target/debian/*.deb "$SITE"/         # add the new one
+
+          cd "$SITE"
+          dpkg-scanpackages --multiversion . > Packages
+          gzip -9 -kf Packages
+          apt-ftparchive \
+            -o "APT::FTPArchive::Release::Origin=elevator-system" \
+            -o "APT::FTPArchive::Release::Label=elevator-console" \
+            -o "APT::FTPArchive::Release::Suite=stable" \
+            -o "APT::FTPArchive::Release::Codename=stable" \
+            -o "APT::FTPArchive::Release::Architectures=amd64" \
+            -o "APT::FTPArchive::Release::Components=main" \
+            release . > Release
+
+          export GNUPGHOME="$(mktemp -d)"
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYID="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')"
+          SIGN=(gpg --batch --yes --pinentry-mode loopback --local-user "$KEYID")
+          [ -n "${APT_GPG_PASSPHRASE:-}" ] && SIGN+=(--passphrase "$APT_GPG_PASSPHRASE")
+          "${SIGN[@]}" --armor --detach-sign -o Release.gpg Release
+          "${SIGN[@]}" --clearsign -o InRelease Release
+          gpg --armor --export "$KEYID" > elevator-console.gpg
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site
+          keep_files: false
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "apt: publish ${{ github.ref_name }}"

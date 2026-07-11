@@ -324,16 +324,27 @@ it is never a served window and never a false positive — the `PassengerManager
 keeps those apart. Result → `passenger-conflicts.parquet`; a clean run should be empty (logged at INFO,
 non-empty at WARN).
 
-**Install the console via apt** — the Rust console ships as a signed `.deb` from a local apt repo:
+**Install the console via apt** — the Rust console ships as a signed `.deb` from an apt repo hosted
+on GitHub Pages, so it installs and later upgrades with plain apt:
 
 ```bash
-cd elevator-console-cli && scripts/apt-repo.sh   # build .deb + sign + index target/apt-repo/ (idempotent)
-REPO=elevator-console-cli/target/apt-repo
-sudo install -m0644 "$REPO/elevator-console.gpg" /etc/apt/keyrings/elevator-console.gpg
-echo "deb [signed-by=/etc/apt/keyrings/elevator-console.gpg] file://$REPO ./" \
+sudo install -d -m0755 /etc/apt/keyrings
+curl -fsSL https://twistedlady.github.io/elevator-system/apt/elevator-console.gpg \
+  | sudo tee /etc/apt/keyrings/elevator-console.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/elevator-console.gpg] https://twistedlady.github.io/elevator-system/apt ./" \
   | sudo tee /etc/apt/sources.list.d/elevator-console.list
 sudo apt update && sudo apt install elevator-console-cli
+# later, to upgrade to a newer release:
+sudo apt update && sudo apt upgrade elevator-console-cli
 ```
+
+The repo is (re)published by the **APT repo** workflow (`.github/workflows/apt-repo.yml`) on every
+`elevator-console-cli-v*` tag — it builds the `.deb`, keeps the previously published versions,
+re-indexes, GPG-signs, and deploys to the `gh-pages` branch. It needs a one-time maintainer setup:
+the `APT_GPG_PRIVATE_KEY` repo secret (armored private key) and Pages enabled on `gh-pages`
+(see [Publishing the apt repo](#publishing-the-apt-repo)). Offline/local alternative:
+`cd elevator-console-cli && scripts/apt-repo.sh` builds the same repo under `target/apt-repo/` as a
+`file://` source.
 
 ---
 
@@ -348,6 +359,25 @@ Two GitHub Actions workflows; **Build & Test** gates **Release & Deploy** — a 
   `v*` tag: **publish** pushes `ghcr.io/<owner>/elevator-{app,api,console-web,bi}` (`:version` +
   `latest`) + a GitHub Release, then **deploy** runs `helm upgrade --install` (images pinned) on a
   self-hosted runner on the kind host (cloud runners can't reach local kind).
+- **APT repo** (`apt-repo.yml`, `elevator-console-cli-v*` tags + manual) — publishes the signed apt
+  repo to `gh-pages` (see [Publishing the apt repo](#publishing-the-apt-repo)).
+
+### Publishing the apt repo
+
+The `apt-repo.yml` workflow builds the console `.deb`, merges it with the versions already on
+`gh-pages`, re-indexes (`dpkg-scanpackages` + `apt-ftparchive`), GPG-signs the `Release`, and deploys
+to `gh-pages` — served by Pages at `https://<owner>.github.io/elevator-system/apt`. One-time setup:
+
+1. **Signing key** → add the armored **private** key as the `APT_GPG_PRIVATE_KEY` repo secret (and
+   `APT_GPG_PASSPHRASE` if it has one):
+   ```bash
+   gpg --armor --export-secret-keys apt@elevator-system.local | gh secret set APT_GPG_PRIVATE_KEY
+   ```
+2. **Enable Pages** → Settings → Pages → *Deploy from a branch* → `gh-pages` (root). The `gh-pages`
+   branch appears after the first workflow run, so run the workflow once first
+   (`gh workflow run "APT repo (GitHub Pages)"`), then enable Pages.
+
+Each later `elevator-console-cli-v*` release republishes automatically; clients just `apt upgrade`.
 
 ## Versioning
 
