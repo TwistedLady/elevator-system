@@ -265,7 +265,7 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
             Paragraph::new(Line::from(vec![
                 Span::from("Press ").dim(),
                 Span::from(" R ").fg(Color::Black).bg(Color::Cyan).bold(),
-                Span::from(" to run a 10,000-call simulation").dim(),
+                Span::from(" to run a simulation").dim(),
             ])),
             rows[0],
         );
@@ -354,7 +354,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         View::Sim => {
             let mut spans = vec![
                 Span::from("R").fg(Color::Black).bg(Color::Cyan).bold(),
-                Span::from(": run 10k simulation · Tab: switch · Esc: quit").dark_gray(),
+                Span::from(": run simulation · Tab: switch · Esc: quit").dark_gray(),
             ];
             if !app.message.is_empty() {
                 spans.push(Span::from(format!("   {}", app.message)).cyan());

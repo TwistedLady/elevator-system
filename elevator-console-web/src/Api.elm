@@ -31,7 +31,7 @@ getVersion toMsg =
         }
 
 
-{-| Kick off a run — no body, so the api uses its default count (10000). -}
+{-| Kick off a run — no body; the api fires its fixed scenario and returns the run id and ids. -}
 simulate : (Result Http.Error SimulateResult -> msg) -> Cmd msg
 simulate toMsg =
     Http.post

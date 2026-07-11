@@ -11,8 +11,6 @@ use serde::Deserialize;
 
 pub const TREND_WINDOW_SECS: f64 = 60.0;
 
-pub const SIM_COUNT: u64 = 10_000;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ElevatorState {
     #[serde(rename = "elevatorName")]
@@ -268,7 +266,7 @@ impl App {
         let error = Arc::clone(&run.error);
         std::thread::spawn(move || {
             let agent = crate::api::agent();
-            match crate::api::post_simulate(&agent, &api_base, SIM_COUNT) {
+            match crate::api::post_simulate(&agent, &api_base) {
                 Ok(resp) => {
                     if let Ok(mut g) = run_id.lock() {
                         *g = resp.run_id.clone();
@@ -295,7 +293,7 @@ impl App {
             }
         });
         self.sim = Some(run);
-        self.message = format!("starting a {SIM_COUNT}-call simulation…");
+        self.message = "starting a simulation…".to_string();
     }
 
     fn on_key_elevator_filter(&mut self, key: KeyEvent) {
