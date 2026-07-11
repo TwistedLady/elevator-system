@@ -31,10 +31,13 @@ object Controller:
             doormanProvider: String => EntityRef[Doorman.Command],
             publish: ElevatorStateDto => Unit): Behavior[Command] =
     Behaviors.setup { context =>
+      Behaviors.withTimers { timers =>
 
       given Timeout = SuspendDwell.duration + 2.seconds
+      val SuspendRevealDelay = 500.millis
 
       def requestMove(s: State): Unit =
+        timers.startSingleTimer("suspend-reveal", RevealSuspended, SuspendRevealDelay)
         context.ask(suspendManager, SuspendManager.MayMove(s.elevatorName, s.elevatorState, _)) {
           case Success(SuspendManager.Decision(allowed)) => MoveDecision(allowed)
           case Failure(_)                                => MoveRetry
@@ -75,17 +78,19 @@ object Controller:
 
             case ChooseNext(orders) =>
               if ControllerLogic.shouldAct(state, orders) then
-                Effect.persist(WaitingSet(true)).thenRun { s =>
-                  publishState(s, suspended = true)
-                  requestMove(s)
-                }
+                Effect.persist(WaitingSet(true)).thenRun(s => requestMove(s))
               else Effect.none
 
+            case RevealSuspended =>
+              Effect.none.thenRun(s => if s.waiting then publishState(s, suspended = true))
+
             case MoveDecision(allowed) =>
+              timers.cancel("suspend-reveal")
               if allowed then Effect.none.thenRun(s => issueMove(s))
               else Effect.persist(WaitingSet(false)).thenRun(s => publishState(s, suspended = false))
 
             case MoveRetry =>
+              timers.cancel("suspend-reveal")
               Effect.persist(WaitingSet(false)).thenRun(s => context.self ! ChooseNext(s.orders))
         ,
         eventHandler = ControllerLogic.evolve
@@ -98,4 +103,5 @@ object Controller:
         case _: ElevatorStateUpdated => Set("controller-state")
         case _                       => Set.empty
       }.withRetention(RetentionCriteria.snapshotEvery(numberOfEvents = 100, keepNSnapshots = 2))
+      }
     }

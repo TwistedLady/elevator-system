@@ -84,17 +84,19 @@ final class ControllerRecoveryTests
       esTestKit.getState() shouldBe before
     }
 
-    "publish a suspended state while waiting on the gate, and clear it when the gate denies" in {
+    "reveal suspended only when genuinely held on the gate, not on a normal move request" in {
       val published = new java.util.concurrent.ConcurrentLinkedQueue[ElevatorStateDto]()
       val (esTestKit, _, _, _) = newTestKit(publish = published.add)
       val order = orderAt("o-s", 3)
 
       esTestKit.runCommand(Controller.Process(Set(order)))
       esTestKit.runCommand(Controller.ChooseNext(Set(order)))
-      published.asScala.exists(_.suspended) shouldBe true
+      // asking the gate must NOT immediately mark the car suspended — that flashed [S] on normal moves
+      published.asScala.exists(_.suspended) shouldBe false
 
-      esTestKit.runCommand(Controller.MoveDecision(false))
-      published.asScala.exists(dto => !dto.suspended) shouldBe true
+      // only when the reveal timer fires (the gate is still holding the car) does it publish suspended
+      esTestKit.runCommand(Controller.RevealSuspended)
+      published.asScala.exists(_.suspended) shouldBe true
     }
 
     "keep an outstanding (unserved) request after a crash" in {
