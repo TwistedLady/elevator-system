@@ -17,7 +17,7 @@ data:
   ELEVATOR_PG_HOST: {{ .Values.global.postgres.host | quote }}
   ELEVATOR_PG_DATABASE: {{ .Values.global.postgres.database | quote }}
   ELEVATOR_PG_USER: {{ .Values.global.postgres.user | quote }}
-  ELEVATOR_STATS_PARQUET_PATH: "/data/elevators.parquet"
+  ELEVATOR_STATS_FACT_PATH: "/data/elevator-facts.parquet"
   SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
   SERVER_PORT: "8080"
   ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}

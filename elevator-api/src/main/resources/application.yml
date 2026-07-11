@@ -1,7 +1,8 @@
 # elevator-api config. Default profile is `test` (SPRING_PROFILES_ACTIVE=prod overrides). HTTPS on
 # 8080 only when a keystore is mounted (k8s), off for local. r2dbc = operational `elevator` DB;
 # order-validation limits come from a mounted ConfigMap (prod) or application-test.yml, never here.
-# `elevator.stats` is the Spark BI Parquet read-model; auth is passenger JWT on POST /api/call.
+# `elevator.stats.fact-path` is the single Spark BI Parquet fact table (DuckDB views compute
+# every stat over it); auth is passenger JWT on POST /api/call.
 server:
   ssl:
     enabled: ${ELEVATOR_TLS_ENABLED:false}
@@ -27,7 +28,7 @@ spring:
       group-id: elevator-api
 elevator:
   stats:
-    parquet-path: ${ELEVATOR_STATS_PARQUET_PATH:/data/elevators.parquet}
+    fact-path: ${ELEVATOR_STATS_FACT_PATH:/data/elevator-facts.parquet}
   call-topic: elevator-calls
   state-topic: elevator-state
   door-state-topic: elevator-door-state

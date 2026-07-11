@@ -1,16 +1,16 @@
 package pl.feelcodes.elevator.bi
 
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.{DataFrame, Dataset, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.slf4j.LoggerFactory
 import pl.feelcodes.elevator.bi.config.BiConfig
 import pl.feelcodes.elevator.bi.kafka.{CallSchema, ElevatorStateSchema}
 import pl.feelcodes.elevator.bi.sink.ParquetSink
 
-/** Spark batch BI job: re-scan the elevator-state topic + order_status each cycle,
-  * join to one row per elevator, overwrite elevators.parquet. The api reads that
-  * file via DuckDB — no analytics DB. Loops to stay fresh; the fleet is tiny so a
-  * full re-scan is cheap.
+/** Spark batch BI job: re-scan the elevator-state topic + the order_status / call_status
+  * read models each cycle and overwrite one detailed fact table ([[FactTable]]). The api
+  * reads that single file via DuckDB and computes every stat as a view — no analytics DB.
+  * Loops to stay fresh; the model is small so a full re-scan is cheap.
   */
 object ElevatorStatsJob {
 
@@ -28,13 +28,13 @@ object ElevatorStatsJob {
 
   def run(spark: SparkSession, cfg: BiConfig): Unit = {
     if (cfg.runOnce) {
-      log.info(s"stats: single pass -> ${cfg.parquetPath} (run-once; external scheduler owns cadence)")
+      log.info(s"bi: single pass -> ${cfg.factPath} (run-once; external scheduler owns cadence)")
       refreshOnce(spark, cfg)
       return
     }
 
     sys.addShutdownHook { running = false }
-    log.info(s"stats: refreshing ${cfg.parquetPath} every ${cfg.intervalSeconds}s")
+    log.info(s"bi: refreshing ${cfg.factPath} every ${cfg.intervalSeconds}s")
     while (running) {
       refreshOnce(spark, cfg)
       sleepInterruptibly(cfg.intervalSeconds)
@@ -43,39 +43,17 @@ object ElevatorStatsJob {
 
   def refreshOnce(spark: SparkSession, cfg: BiConfig): Unit = {
     val orderStatus = readOrderStatus(spark, cfg)
-    val mileage = ElevatorStats.mileage(readStateEvents(spark, cfg), spark)
-    val served  = OrdersServed.tally(orderStatus)
-    val stats   = ElevatorStats.join(mileage, served, spark)
-    ParquetSink.write(stats, cfg)
-    log.info(s"stats: wrote ${stats.count()} elevator rows to ${cfg.parquetPath}")
+    val callStatus  = readCallStatus(spark, cfg)
+    val calls       = readCalls(spark, cfg)
+    val mileage     = ElevatorStats.mileage(readStateEvents(spark, cfg), spark)
 
-    val callStatus = readCallStatus(spark, cfg)
-    refreshConflicts(spark, cfg, callStatus, orderStatus)
-    refreshCallLatency(cfg, callStatus)
-  }
-
-  private def refreshCallLatency(cfg: BiConfig, callStatus: DataFrame): Unit = {
-    val perCall = CallLatency.perCall(callStatus).cache()
+    val facts = FactTable.build(mileage, orderStatus, callStatus, calls, spark).cache()
     try {
-      perCall.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.callLatencyParquetPath + ".staging")
-      ParquetSink.replace(cfg.callLatencyParquetPath)
-
-      val summary = CallLatency.summary(perCall)
-      summary.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.callLatencySummaryParquetPath + ".staging")
-      ParquetSink.replace(cfg.callLatencySummaryParquetPath)
-
-      log.info(s"call-latency: ${perCall.count()} completed call(s) -> ${cfg.callLatencyParquetPath} (+summary)")
-    } finally perCall.unpersist()
-  }
-
-  private def refreshConflicts(spark: SparkSession, cfg: BiConfig, callStatus: DataFrame, orderStatus: DataFrame): Unit = {
-    val windows = PassengerConflicts.windows(readCalls(spark, cfg), callStatus, orderStatus)
-    val conflicts = PassengerConflicts.detect(windows)
-    conflicts.coalesce(1).write.mode(SaveMode.Overwrite).parquet(cfg.conflictsParquetPath + ".staging")
-    ParquetSink.replace(cfg.conflictsParquetPath)
-    val count = conflicts.count()
-    if (count == 0) log.info("conflicts: OK — no passenger was served by two lifts at once")
-    else log.warn(s"conflicts: $count passenger double-booking(s) — a passenger overlapped on two lifts (see ${cfg.conflictsParquetPath})")
+      ParquetSink.write(facts, cfg.factPath)
+      val byGrain = facts.groupBy(col("grain")).count().collect()
+        .map(r => s"${r.getString(0)}=${r.getLong(1)}").sorted.mkString(", ")
+      log.info(s"bi: wrote ${facts.count()} fact rows [$byGrain] to ${cfg.factPath}")
+    } finally facts.unpersist()
   }
 
   private def readStateEvents(spark: SparkSession, cfg: BiConfig): Dataset[StateEvent] = {

@@ -92,6 +92,8 @@ Default port **8080**. `POST /api/call` needs a Bearer JWT; everything else is o
 | `GET` | `/api/simulate/progress?runId=&size=` | Run rollup `{simSize, calls, orders, doneCalls, firstCall, lastDone}`. |
 | `GET` | `/api/config`, `/api/version` | Fleet + max floor · running version. |
 | `GET` | `/api/mileage`, `/api/served` | BI stats (only when BI is on, else `404`). |
+| `GET` | `/api/latency`, `/api/latency/calls` | Call processing time: per-elevator + fleet summary (count/avg/min/max/p50/p95) · per-call detail. |
+| `GET` | `/api/conflicts` | Passenger double-bookings; empty = healthy. |
 | `GET` | `/actuator/health` | Health incl. Kafka readiness. |
 
 ---
@@ -109,7 +111,7 @@ the pure logic: `core (domain + engine) → events → logic (decide/evolve) →
 | `elevator-sim` | Scala 3 | Load-simulator engine — the server-side burst behind `POST /api/simulate`. |
 | `elevator-console-cli` | Rust (ratatui) | Terminal console: Chart/Trend/Sim tabs, call sender + simulate trigger. |
 | `elevator-console-web` | Elm | Browser console: Chart/Trend/Sim tabs. |
-| `elevator-bi` | Scala 2.12 / Spark | **Standalone** batch job → Parquet, read by the api via DuckDB. |
+| `elevator-bi` | Scala 2.12 / Spark | **Standalone** batch job → one Parquet fact table, read by the api via DuckDB. |
 
 ```mermaid
 flowchart LR
@@ -311,18 +313,28 @@ Kafka and Postgres each get their own PVC in the chart, so a pod restart keeps b
 `elevator-state` feed and the journal (unlike the volume-less demo compose above).
 
 **BI layer.** `elevator-bi` is a Spark **CronJob** (`bi.schedule`, default `*/15`); each tick a driver
-pod spawns 2 executors, does one pass, and exits. It reads `elevator-state` (Kafka) for mileage and
-`order_status` (JDBC, `status='DONE'`) for orders-served, joins to one row per elevator, and atomically
-overwrites `elevators.parquet` on a shared `hostPath` — the api reads it via DuckDB. It's **standalone**
-(own pom, outside the reactor) and pinned to **Scala 2.12** because Spark has no Scala 3 build.
+pod spawns 2 executors, does one pass, and exits. It writes **one detailed Parquet fact table**
+(`elevator-facts.parquet`) on a shared `hostPath` — the whole module is that single file, and the api
+computes every stat from it as **DuckDB views** (`BiViews`). It's **standalone** (own pom, outside the
+reactor) and pinned to **Scala 2.12** because Spark has no Scala 3 build.
 
-Each tick also runs an **audit stat** for the one-lift-per-passenger invariant (`PassengerConflicts`):
-`passengerId` lives only on the `elevator-calls` topic, so it rebuilds each served window by joining
-call → order → lift (`elevator-calls` → `call_status` → `order_status`) and self-joins per passenger to
-find windows that **overlap in time on two different lifts**. A **frozen** call has no `order_id` yet, so
-it is never a served window and never a false positive — the `PassengerManager` gate is exactly what
-keeps those apart. Result → `passenger-conflicts.parquet`; a clean run should be empty (logged at INFO,
-non-empty at WARN).
+The fact table is grain-tagged (`FactTable`), a nullable-superset "one big table":
+- `ELEVATOR` — one row per lift with `floors_travelled` (mileage). This is the one aggregate the job
+  pre-folds, because its source is the `elevator-state` topic (offset-ordered floor deltas), which the
+  api's DuckDB layer can't read; everything else the api derives itself.
+- `ORDER` — one row per order (a lift's leg of service, from `order_status`) with lifecycle timing.
+- `CALL` — one row per passenger call (from `call_status` joined to `elevator-calls` for `passengerId`),
+  carrying its own received→done timing **and** the served window of its assigned order, so
+  per-passenger conflict detection needs only CALL rows.
+
+The api's views compute: **served** (`v_elevator_stats`, completed ORDER rows joined to mileage);
+**call processing time** (`v_call` per completed call, `v_latency_summary` for count/avg/min/max/p50/p95
+per elevator + a fleet-wide `ALL` row — served with sub-second precision since the fast engine moves a
+floor in 100ms); and the **one-lift-per-passenger audit** (`v_conflicts`), which self-joins CALL served
+windows to find a passenger overlapping on two lifts. A **frozen** call has no `order_id`, so it is never
+a served window and never a false positive — the `PassengerManager` gate keeps those apart. Note the
+timestamps are `now()` written by the read-side projections, so durations include a little projection
+lag on top of true end-to-end time.
 
 **Install the console via apt** — the Rust console ships as a signed `.deb` from an apt repo hosted
 on GitHub Pages, so it installs and later upgrades with plain apt:

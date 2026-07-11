@@ -3,12 +3,11 @@ package pl.feelcodes.elevator.bi
 import org.apache.spark.sql.SparkSession
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
-import pl.feelcodes.elevator.bi.config.BiConfig
 import pl.feelcodes.elevator.bi.sink.ParquetSink
 
 import java.nio.file.Files
 
-/** Spark transform tests (ElevatorStats + ParquetSink) against a local Spark. */
+/** Mileage transform + generic ParquetSink round-trip against a local Spark. */
 class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   private var spark: SparkSession = _
@@ -30,15 +29,6 @@ class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
     rows.toSeq.toDS()
   }
 
-  private def orderStatus(rows: (String, String, Int, String)*) = {
-    val s = spark
-    import s.implicits._
-    rows.toSeq.toDF("tag", "elevator_name", "floor", "status")
-  }
-
-  private def statsMap(ds: org.apache.spark.sql.Dataset[StatsRow]): Map[String, (Long, Long)] =
-    ds.collect().map(r => r.elevatorName -> (r.floorsTravelled, r.ordersServed)).toMap
-
   test("batch mileage folds each elevator's events in offset order, independent of input order") {
     val ds = events(
       StateEvent("e1", 1, offset = 2),
@@ -49,34 +39,20 @@ class ElevatorStatsSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(result === Map("e1" -> 5L, "e2" -> 0L))
   }
 
-  test("join yields one row per elevator, zero-filling a metric missing on either side") {
-    val mileage = ElevatorStats.mileage(
-      events(StateEvent("e1", 0, 0), StateEvent("e1", 2, 1),
-             StateEvent("e2", 4, 0), StateEvent("e2", 6, 1)), spark)
-    val served = OrdersServed.tally(orderStatus(
-      ("t1", "e1", 2, "DONE"),
-      ("t2", "e3", 1, "DONE")))
-
-    assert(statsMap(ElevatorStats.join(mileage, served, spark)) === Map(
-      "e1" -> (2L, 1L),
-      "e2" -> (2L, 0L),
-      "e3" -> (0L, 1L)))
-  }
-
-  test("ParquetSink writes one row per elevator and each write replaces the last snapshot") {
+  test("ParquetSink writes to a dir and each write atomically replaces the last snapshot") {
     val s = spark
     import s.implicits._
-    val dir = Files.createTempDirectory("stats-parquet")
-    val cfg = BiConfig.fromEnv().copy(parquetPath = dir.resolve("elevators.parquet").toUri.toString)
+    val dir  = Files.createTempDirectory("fact-parquet")
+    val path = dir.resolve("elevator-facts.parquet").toUri.toString
 
-    def readBack(): Map[String, (Long, Long)] =
-      spark.read.parquet(cfg.parquetPath).as[StatsRow].collect()
-        .map(r => r.elevatorName -> (r.floorsTravelled, r.ordersServed)).toMap
+    def readBack(): Map[String, Long] =
+      spark.read.parquet(path).collect()
+        .map(r => r.getAs[String]("elevator_name") -> r.getAs[Long]("floors_travelled")).toMap
 
-    ParquetSink.write(Seq(StatsRow("e1", 10L, 2L), StatsRow("e2", 4L, 0L)).toDS(), cfg)
-    assert(readBack() === Map("e1" -> (10L, 2L), "e2" -> (4L, 0L)))
+    ParquetSink.write(Seq(("e1", 10L), ("e2", 4L)).toDF("elevator_name", "floors_travelled"), path)
+    assert(readBack() === Map("e1" -> 10L, "e2" -> 4L))
 
-    ParquetSink.write(Seq(StatsRow("e1", 12L, 3L)).toDS(), cfg)
-    assert(readBack() === Map("e1" -> (12L, 3L)))
+    ParquetSink.write(Seq(("e1", 12L)).toDF("elevator_name", "floors_travelled"), path)
+    assert(readBack() === Map("e1" -> 12L))
   }
 }
