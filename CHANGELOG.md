@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/TwistedLady/elevator-system/compare/v0.3.0...v0.3.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **ci:** export the apt signing key as a binary keyring ([#80](https://github.com/TwistedLady/elevator-system/issues/80)) ([cdc1e6b](https://github.com/TwistedLady/elevator-system/commit/cdc1e6b9cecf35aadb077ccfc7c024f55f68ba5b))
+
 ## [0.3.0](https://github.com/TwistedLady/elevator-system/compare/v0.2.1...v0.3.0) (2026-07-10)
 
 
