@@ -30,6 +30,7 @@ elevator:
   stats:
     fact-path: ${ELEVATOR_STATS_FACT_PATH:/data/elevator-facts.parquet}
   call-topic: elevator-calls
+  board-topic: elevator-board
   state-topic: elevator-state
   door-state-topic: elevator-door-state
   auth:
