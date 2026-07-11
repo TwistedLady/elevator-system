@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/TwistedLady/elevator-system/compare/v0.3.1...v0.4.0) (2026-07-11)
+
+
+### Features
+
+* **bi:** call processing-time stat via one fact table + /api/stats views ([#83](https://github.com/TwistedLady/elevator-system/issues/83)) ([606097b](https://github.com/TwistedLady/elevator-system/commit/606097bbf6ee7c5b11e409cc80bab89c1692c4a1))
+
 ## [0.3.1](https://github.com/TwistedLady/elevator-system/compare/v0.3.0...v0.3.1) (2026-07-11)
 
 
