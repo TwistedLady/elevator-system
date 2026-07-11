@@ -92,7 +92,7 @@ time — `Engine.cost` busy-sleeps (`SlowEngine` 2s, `FastEngine` 100ms), the sy
 Because `ChooseNext`/`WaitingSet` are persisted, a crash mid-move re-issues the move on recovery — a blocking
 loop couldn't. Actors speak only domain types; `CallConsumer` maps `CallDto → Call` at the edge.
 
-### The three patterns worth studying
+### The four patterns worth studying
 
 - **Scheduling** — the Controller picks the next stop with a pure **SCAN** (`NextFloorStrategy`): keep going
   while a target is ahead, else reverse, else stop. `GroupCallsStrategy` does the same-floor grouping.
@@ -105,6 +105,19 @@ loop couldn't. Actors speak only domain types; `CallConsumer` maps `CallDto → 
   can't block inside an event-sourced actor, so the answer returns as a command). Default policy: always
   allow. If another car is already on the same floor it **holds** the second asker's reply for `SuspendDwell`
   (3s) then releases it — a soft stagger, no livelock. Ask timeout `dwell + 2s`; on failure → `MoveRetry`.
+- **Waiting on a real user action** — on a served arrival the Controller hands off to a `Doorman` entity that
+  **opens the door and waits for the passenger to actually board**, not a fixed dwell. A `Boarded` message
+  closes at once; a no-show is bounded by a `BoardTimeout` (`door-dwell`). Either way `Closed` loops back as
+  `Controller.DoorClosed` to resume. The wait is a **timer-backed state**, not a blocked thread, so the Doorman
+  stays free to receive the boarding message (no `elevator-blocking-dispatcher`). This is the reference pattern
+  for a Pekko actor waiting on an external action: model the wait as a state, turn the action into a message at
+  the edge, always pair it with a timeout. `BoardingLab` (`elevator-app/.../lab/BoardingLab.scala`) runs it
+  in-process (real `Doorman`, `Simulator` playing boarders vs no-shows) — live doors just wait out the timeout
+  until a real `Boarded` source is wired:
+  ```bash
+  ./mvnw -q -pl elevator-app -am -DskipTests package
+  java -cp elevator-app/target/elevator-app-*.jar pl.feelcodes.elevator.app.lab.BoardingLab 7
+  ```
 
 **Crash recovery.** Two handoffs *leave* the journal, so each has a guard. The **Controller** re-asks the
 suspender and re-issues the move on `RecoveryCompleted` (the latch is still set → no duplicate; the only move
