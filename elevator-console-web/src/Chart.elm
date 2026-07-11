@@ -1,16 +1,16 @@
-module Chart exposing (Palette, floorAxis, palette, positionOption, view)
+module Chart exposing (Palette, cellGlyph, floorAxis, palette, view)
 
-{-| The CHART tab: each elevator is a cab parked at its floor (ECharts scatter). Also home to the
-shared palette + floor axis reused by the Trend tab. The `__kind` hint is read by main.js (tooltip
-formatter) and ignored by ECharts.
+{-| The CHART tab: a monospace "BUILDING" grid mirroring the Rust CLI. Rows are floors (top down),
+columns are elevators (natural-sorted); each occupied cell is a `[c1c2]` glyph — c1 is motion/suspend
+(S / ↑ / ↓ / space), c2 is the door (X closed, space open). Also home to the shared palette + floor
+axis reused by the Trend tab (ECharts).
 -}
 
 import Dict exposing (Dict)
-import Html exposing (Html, div, i, span, text)
-import Html.Attributes exposing (class, property)
-import Html.Keyed as Keyed
+import Html exposing (Html, div, span, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class)
 import Json.Encode as E
-import Types exposing (Direction(..), Motion(..), Row, Theme(..), directionLabel, motionLabel)
+import Types exposing (Direction(..), Motion(..), Row, Theme(..), naturalKey)
 
 
 type alias Palette =
@@ -71,213 +71,129 @@ seriesDark =
     [ "#64b5f6", "#ef5350", "#81c784", "#ffb74d", "#ba68c8", "#4dd0e1", "#dce775", "#a1887f", "#7986cb", "#4db6ac" ]
 
 
-chevron : Direction -> String
-chevron direction =
-    case direction of
-        Up ->
-            "▲"
-
-        Down ->
-            "▼"
-
-
+{-| The BUILDING grid. Floors run from `max(maxFloor, highest car)` down to `min(0, lowest car)`;
+one column per elevator (natural-sorted). Colours are semantic CSS classes so both themes work.
+-}
 view : List Row -> Dict String Bool -> Int -> Theme -> Html msg
-view rows doors maxFloor theme =
-    div []
-        [ Keyed.node "div"
-            [ class "chart-area" ]
-            [ ( "chart", Html.node "echarts-panel" [ property "option" (positionOption rows doors maxFloor theme) ] [] ) ]
+view rows doors maxFloor _ =
+    let
+        sorted =
+            List.sortBy (.state >> .name >> naturalKey) rows
+
+        floors =
+            List.map (.state >> .floor) sorted
+
+        top =
+            max maxFloor (List.maximum floors |> Maybe.withDefault 0)
+
+        bottom =
+            min 0 (List.minimum floors |> Maybe.withDefault 0)
+
+        floorRows =
+            List.range bottom top
+                |> List.reverse
+                |> List.map (floorRow sorted doors)
+    in
+    div [ class "building-wrap" ]
+        [ table [ class "building" ]
+            [ thead []
+                [ tr [] (th [ class "fl" ] [ text "Fl" ] :: List.map headCell sorted) ]
+            , tbody [] floorRows
+            ]
         , legend
         ]
+
+
+headCell : Row -> Html msg
+headCell row =
+    th [ class "car" ] [ text row.state.name ]
+
+
+floorRow : List Row -> Dict String Bool -> Int -> Html msg
+floorRow sorted doors floor =
+    tr []
+        (td [ class "fl" ] [ text (String.fromInt floor) ]
+            :: List.map (carCell doors floor) sorted
+        )
+
+
+carCell : Dict String Bool -> Int -> Row -> Html msg
+carCell doors floor row =
+    if row.state.floor == floor then
+        let
+            doorOpen =
+                Dict.get row.state.name doors |> Maybe.withDefault False
+
+            glyph =
+                cellGlyph row.state.suspended doorOpen row.state.motion row.state.direction
+
+            cls =
+                cellClass row.state.suspended doorOpen row.state.motion row.state.direction
+        in
+        td [ class ("cell " ++ cls) ] [ text glyph ]
+
+    else
+        td [ class "cell empty" ] [ text "·" ]
+
+
+{-| The `[c1c2]` glyph for an occupied cell. c1: `S` suspended, else `↑`/`↓` when moving, else space
+(stopped). c2: `X` when the door is closed, space when open. -}
+cellGlyph : Bool -> Bool -> Motion -> Direction -> String
+cellGlyph suspended doorOpen motion direction =
+    let
+        c1 =
+            if suspended then
+                "S"
+
+            else if motion == Moving then
+                case direction of
+                    Up ->
+                        "↑"
+
+                    Down ->
+                        "↓"
+
+            else
+                " "
+
+        c2 =
+            if doorOpen then
+                " "
+
+            else
+                "X"
+    in
+    "[" ++ c1 ++ c2 ++ "]"
+
+
+cellClass : Bool -> Bool -> Motion -> Direction -> String
+cellClass suspended doorOpen motion direction =
+    if suspended then
+        "suspended"
+
+    else if motion == Moving then
+        case direction of
+            Up ->
+                "up"
+
+            Down ->
+                "down"
+
+    else if doorOpen then
+        "open"
+
+    else
+        "idle"
 
 
 legend : Html msg
 legend =
     div [ class "chart-legend" ]
-        [ span [ class "key" ] [ i [ class "swatch moving" ] [], text "moving" ]
-        , span [ class "key" ] [ i [ class "swatch idle" ] [], text "idle" ]
-        , span [ class "key" ] [ i [ class "swatch suspended" ] [], text "suspended" ]
-        , span [ class "key" ] [ i [ class "swatch door" ] [], text "door open" ]
-        , span [ class "key" ] [ text "▲ up" ]
-        , span [ class "key" ] [ text "▼ down" ]
-        ]
-
-
-{-| Each elevator is a cab (rounded rect) parked at its floor; the cab glides when its floor changes
-(ECharts animates the position update). Colour = moving/idle.
--}
-positionOption : List Row -> Dict String Bool -> Int -> Theme -> E.Value
-positionOption rows doors maxFloor theme =
-    let
-        p =
-            palette theme
-
-        names =
-            List.map (.state >> .name) rows
-
-        toDatum index row =
-            let
-                moving =
-                    row.state.motion == Moving
-
-                suspended =
-                    row.state.suspended
-
-                doorOpen =
-                    Dict.get row.state.name doors |> Maybe.withDefault False
-
-                fill =
-                    if suspended then
-                        p.suspended
-
-                    else if moving then
-                        p.moving
-
-                    else
-                        "transparent"
-
-                borderColor =
-                    if doorOpen then
-                        p.door
-
-                    else if suspended then
-                        p.suspended
-
-                    else
-                        p.idle
-
-                borderWidth =
-                    if doorOpen then
-                        3
-
-                    else if moving || suspended then
-                        0
-
-                    else
-                        2
-
-                shadowBlur =
-                    if moving || suspended then
-                        12
-
-                    else
-                        0
-
-                shadowColor =
-                    if suspended then
-                        p.suspended
-
-                    else
-                        p.moving
-
-                itemStyle =
-                    E.object
-                        [ ( "color", E.string fill )
-                        , ( "borderRadius", E.int 5 )
-                        , ( "borderColor", E.string borderColor )
-                        , ( "borderWidth", E.int borderWidth )
-                        , ( "shadowBlur", E.int shadowBlur )
-                        , ( "shadowColor", E.string shadowColor )
-                        ]
-
-                labelText =
-                    if suspended then
-                        "S " ++ String.fromInt row.state.floor
-
-                    else if moving then
-                        chevron row.state.direction ++ " " ++ String.fromInt row.state.floor
-
-                    else
-                        String.fromInt row.state.floor
-
-                labelColor =
-                    if moving || suspended then
-                        "#ffffff"
-
-                    else
-                        p.subtext
-
-                tip =
-                    "<b>"
-                        ++ row.state.name
-                        ++ "</b><br/>floor "
-                        ++ String.fromInt row.state.floor
-                        ++ "<br/>"
-                        ++ directionLabel row.state.direction
-                        ++ " · "
-                        ++ motionLabel row.state.motion
-                        ++ (if suspended then
-                                " · suspended"
-
-                            else
-                                ""
-                           )
-                        ++ (if doorOpen then
-                                " · door open"
-
-                            else
-                                ""
-                           )
-            in
-            E.object
-                [ ( "value", E.list E.int [ index, row.state.floor ] )
-                , ( "itemStyle", itemStyle )
-                , ( "label"
-                  , E.object
-                        [ ( "formatter", E.string labelText )
-                        , ( "color", E.string labelColor )
-                        ]
-                  )
-                , ( "tip", E.string tip )
-                ]
-
-        data =
-            List.indexedMap toDatum rows
-    in
-    E.object
-        [ ( "__kind", E.string "position" )
-        , ( "animationDurationUpdate", E.int 100 )
-        , ( "animationEasingUpdate", E.string "linear" )
-        , ( "grid", E.object [ ( "left", E.int 46 ), ( "right", E.int 24 ), ( "top", E.int 24 ), ( "bottom", E.int 40 ) ] )
-        , ( "tooltip"
-          , E.object
-                [ ( "trigger", E.string "item" )
-                , ( "backgroundColor", E.string p.tooltipBg )
-                , ( "borderWidth", E.int 0 )
-                , ( "textStyle", E.object [ ( "color", E.string p.tooltipText ) ] )
-                ]
-          )
-        , ( "xAxis"
-          , E.object
-                [ ( "type", E.string "category" )
-                , ( "data", E.list E.string names )
-                , ( "axisTick", E.object [ ( "show", E.bool False ) ] )
-                , ( "axisLine", E.object [ ( "lineStyle", E.object [ ( "color", E.string p.axis ) ] ) ] )
-                , ( "axisLabel", E.object [ ( "color", E.string p.text ), ( "fontWeight", E.string "bold" ) ] )
-                ]
-          )
-        , ( "yAxis", floorAxis p maxFloor )
-        , ( "series"
-          , E.list identity
-                [ E.object
-                    [ ( "id", E.string "cabs" )
-                    , ( "type", E.string "scatter" )
-                    , ( "symbol", E.string "roundRect" )
-                    , ( "symbolSize", E.list E.int [ 46, 24 ] )
-                    , ( "data", E.list identity data )
-                    , ( "label"
-                      , E.object
-                            [ ( "show", E.bool True )
-                            , ( "color", E.string "#ffffff" )
-                            , ( "fontSize", E.int 11 )
-                            , ( "fontWeight", E.string "bold" )
-                            ]
-                      )
-                    , ( "emphasis", E.object [ ( "scale", E.float 1.15 ) ] )
-                    , ( "z", E.int 3 )
-                    ]
-                ]
-          )
+        [ span [ class "key" ] [ span [ class "glyph up" ] [ text "↑" ], text "up" ]
+        , span [ class "key" ] [ span [ class "glyph down" ] [ text "↓" ], text "down" ]
+        , span [ class "key" ] [ span [ class "glyph suspended" ] [ text "S" ], text "suspended" ]
+        , span [ class "key" ] [ text "X closed door" ]
+        , span [ class "key" ] [ text "space = open door" ]
         ]
 
 

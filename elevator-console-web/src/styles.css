@@ -26,6 +26,12 @@
   --cab-idle-fill: #90a4ae;
   --cab-suspended: #fb8c00;
   --cab-door: #00acc1;
+
+  --glyph-up: #2e7d32;
+  --glyph-down: #c2185b;
+  --glyph-suspended: #f57f17;
+  --glyph-open: #00acc1;
+  --glyph-idle: #90a4ae;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,6 +60,12 @@
     --cab-idle-fill: #78909c;
     --cab-suspended: #ffb74d;
     --cab-door: #4dd0e1;
+
+    --glyph-up: #66bb6a;
+    --glyph-down: #f06292;
+    --glyph-suspended: #ffca28;
+    --glyph-open: #4dd0e1;
+    --glyph-idle: #78909c;
   }
 }
 
@@ -232,31 +244,84 @@ echarts-panel {
   gap: 0.35rem;
 }
 
-.swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  display: inline-block;
+.chart-legend .glyph {
+  font: 700 0.95rem ui-monospace, monospace;
 }
 
-.swatch.moving {
-  background: var(--cab-active-fill);
-  box-shadow: 0 0 5px var(--cab-active-fill);
+.chart-legend .glyph.up {
+  color: var(--glyph-up);
 }
 
-.swatch.idle {
-  background: transparent;
-  border: 2px solid var(--cab-idle-fill);
+.chart-legend .glyph.down {
+  color: var(--glyph-down);
 }
 
-.swatch.suspended {
-  background: var(--cab-suspended);
-  box-shadow: 0 0 5px var(--cab-suspended);
+.chart-legend .glyph.suspended {
+  color: var(--glyph-suspended);
 }
 
-.swatch.door {
-  background: transparent;
-  border: 2px solid var(--cab-door);
+/* ---- BUILDING grid (Chart tab): monospace [c1c2] cells, one row per floor ---- */
+.building-wrap {
+  width: 100%;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
+
+.building {
+  border-collapse: collapse;
+  margin: 0 auto;
+  font: 1rem/1.5 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.building th,
+.building td {
+  padding: 1px 3px;
+  text-align: center;
+  white-space: pre;
+}
+
+.building th.fl,
+.building td.fl {
+  text-align: right;
+  padding-right: 0.7rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.building th.car {
+  color: var(--glyph-open);
+  font-weight: 700;
+  padding-bottom: 0.3rem;
+}
+
+.building td.cell {
+  font-weight: 700;
+}
+
+.building td.cell.up {
+  color: var(--glyph-up);
+}
+
+.building td.cell.down {
+  color: var(--glyph-down);
+}
+
+.building td.cell.suspended {
+  color: var(--glyph-suspended);
+}
+
+.building td.cell.open {
+  color: var(--glyph-open);
+}
+
+.building td.cell.idle {
+  color: var(--glyph-idle);
+  font-weight: 400;
+}
+
+.building td.cell.empty {
+  color: var(--muted);
+  opacity: 0.45;
 }
 
 /* ---- sim strip (persistent, under the tab bar) ---- */
