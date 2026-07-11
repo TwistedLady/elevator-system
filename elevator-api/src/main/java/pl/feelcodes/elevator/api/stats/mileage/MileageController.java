@@ -15,7 +15,7 @@ import reactor.core.publisher.Mono;
  * via DuckDB): each elevator's cumulative floors travelled.
  */
 @RestController
-@RequestMapping("/api/mileage")
+@RequestMapping("/api/stats/mileage")
 @ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 class MileageController {
 

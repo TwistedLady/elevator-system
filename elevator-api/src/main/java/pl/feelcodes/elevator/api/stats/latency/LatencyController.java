@@ -9,11 +9,11 @@ import reactor.core.publisher.Flux;
 
 /**
  * Read-only BI endpoint over the fact table (DuckDB views): how long the system takes to
- * process a passenger call (received -> done). {@code /api/latency} is the per-elevator +
- * fleet-wide summary; {@code /api/latency/calls} is the per-call detail.
+ * process a passenger call (received -> done). {@code /api/stats/latency} is the
+ * per-elevator + fleet-wide summary; {@code /api/stats/latency/calls} is the per-call detail.
  */
 @RestController
-@RequestMapping("/api/latency")
+@RequestMapping("/api/stats/latency")
 @ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 class LatencyController {
 

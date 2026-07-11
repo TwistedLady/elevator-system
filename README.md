@@ -91,9 +91,9 @@ Default port **8080**. `POST /api/call` needs a Bearer JWT; everything else is o
 | `POST` | `/api/simulate` | `elevator-sim` fires a burst of 100 random calls → `{runId, count, ids}`. |
 | `GET` | `/api/simulate/progress?runId=&size=` | Run rollup `{simSize, calls, orders, doneCalls, firstCall, lastDone}`. |
 | `GET` | `/api/config`, `/api/version` | Fleet + max floor · running version. |
-| `GET` | `/api/mileage`, `/api/served` | BI stats (only when BI is on, else `404`). |
-| `GET` | `/api/latency`, `/api/latency/calls` | Call processing time: per-elevator + fleet summary (count/avg/min/max/p50/p95) · per-call detail. |
-| `GET` | `/api/conflicts` | Passenger double-bookings; empty = healthy. |
+| `GET` | `/api/stats/mileage`, `/api/stats/served` | BI stats (all BI lives under `/api/stats`; only when BI is on, else `404`). |
+| `GET` | `/api/stats/latency`, `/api/stats/latency/calls` | Call processing time: per-elevator + fleet summary (count/avg/min/max/p50/p95) · per-call detail. |
+| `GET` | `/api/stats/conflicts` | Passenger double-bookings; empty = healthy. |
 | `GET` | `/actuator/health` | Health incl. Kafka readiness. |
 
 ---

@@ -13,7 +13,7 @@ import reactor.core.publisher.Flux;
  * healthy case (the one-lift-per-passenger invariant held).
  */
 @RestController
-@RequestMapping("/api/conflicts")
+@RequestMapping("/api/stats/conflicts")
 @ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 class ConflictController {
 
