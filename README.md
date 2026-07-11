@@ -1,423 +1,174 @@
 # Elevator System
 
-An event-sourced elevator simulator — a lab for distributed patterns on (and off) the JVM.
+An event-sourced elevator simulator — a **lab for distributed patterns** on (and off) the JVM.
+Read it to learn how the pieces fit; if a doc and the code disagree, **trust the code** and fix this file.
 
-- **Scala 3** — the pure domain (elevator, floors, scheduling)
-- **Apache Pekko** — typed actors, cluster sharding, event sourcing + projections
-- **PostgreSQL / R2DBC** — durable event journal + CQRS read-model
-- **Apache Kafka** — the call / state bus
-- **Spring WebFlux** — the HTTP edge, JWT auth + health probes
-- **Rust (ratatui)** + **Elm** — terminal and browser consoles, both HTTP-only clients of the API
+The **pure domain** (elevator, floors, scheduling) is **Scala 3**; **Apache Pekko** runs it as typed,
+cluster-sharded, event-sourced actors with projections over a **PostgreSQL / R2DBC** journal + CQRS
+read-model; **Kafka** is the call / state bus; **Spring WebFlux** is the HTTP edge (REST + SSE, JWT, health);
+and two consoles — **Rust (ratatui)** + **Elm** — are HTTP-only clients of the api.
 
-**Call vs Order.** A **call** is a button press (`id, elevatorName, floor`, `passengerId`). The app
-groups same-floor calls into one living **order** — a stop, `id = f(elevator, floor)`; later
-same-floor calls attach until it's done. Reaching a floor serves every order there at once.
+**One idea to hold onto — Call vs Order.** A **call** is a button press (`elevatorName, floor`, optional
+`passengerId`). The app groups same-floor calls into one living **order** — a stop with `id = f(elevator,
+floor)`; later same-floor calls attach until it's done. Reaching a floor serves every order there at once.
 
-If a doc and the code disagree, **trust the code** and fix this file.
-
----
-
-## Quick start (demo)
-
-The whole backend runs in containers — no host JVMs, no shell scripts. Needs Docker.
+## Run it
 
 ```bash
 docker compose -f docker-compose.demo.yml up --build         # kafka + postgres + app + api
-docker compose -f docker-compose.demo.yml --profile seed up  # …and seed a fleet of calls (one-shot)
-docker compose -f docker-compose.demo.yml logs -f app api    # follow the JVM logs
-docker compose -f docker-compose.demo.yml down               # stop (add -v to wipe data)
+docker compose -f docker-compose.demo.yml --profile seed up  # fire a fleet of calls (one-shot)
+docker compose -f docker-compose.demo.yml down               # stop (add -v to wipe volumes)
 ```
 
-Seed knobs (`--elevator-count`, `--max-floor`, `--count`) live in the `seed` service's `command:`.
-The demo compose gives Kafka no volume, so a restart wipes the live chart (the Postgres journal keeps
-the actors) — the `seed` profile fires a burst of calls after boot. The durable read-model survives a
-restart. (The kind chart differs: it puts Kafka on a PVC, so there a restart keeps the feed.)
+Watch it live — two consoles, each with **Chart · Trend · Sim** tabs, both talking to the api **only over
+HTTP** (never Kafka):
 
-```bash
-docker exec -i elevator-demo-postgres psql -U elevator -d elevator -c \
-  "SELECT elevator_name, floor, direction, motion FROM elevator_state_view;"
-```
-
-## Watch it live
-
-Two consoles, both talking to the system **only over HTTP** (never Kafka), each with the same three
-tabs — **Chart · Trend · Sim**:
-
-- **Rust TUI** — `cd elevator-console-cli && cargo run -- monitor` (or `watch` to stream to stdout).
+- **Rust TUI** — `cd elevator-console-cli && cargo run -- monitor` (`watch` streams to stdout).
 - **Elm browser** — `cd elevator-console-web && npm install && npm start` (proxies `/api` to `:8080`).
 
-The **Sim** tab triggers a server-side run: `POST /api/simulate` has the `elevator-sim` engine fire a
-burst of 100 random calls, then the console polls `/api/simulate/progress` for the bar. CLI headless
-helpers: `selftest` (health + state → pass/fail), `itest --count 20` (fire calls, poll each to DONE,
-cross-check `kubectl` logs).
-
-## Auth
-
-Passenger identity is **proven, not claimed**. `POST /api/call` requires a valid **Bearer JWT**; the
-api sets `passengerId` = the token's `sub` (a body `passengerId` is ignored). No/invalid token →
-**401**. Enforcement lives **only in `elevator-api`**; the app / Kafka layer is untouched. Read
-endpoints (state streams, `/api/config`, `/api/version`, `/actuator/health`) stay open.
-
-`POST /api/token` is a **dev issuer** — a stand-in for a real login. It signs a short-lived RS256
-token for any `subject` once the shared `X-Client-Secret` matches; `GET /oauth2/jwks` publishes the
-public key. It vouches for a claimed subject, it does not authenticate a human (real OIDC/passkeys is
-future work). Tunables under `elevator.auth.*` (`issuer`, `audience`, `token-ttl-seconds` = 300,
-`client-secret` = `ELEVATOR_CLIENT_SECRET`).
-
-```bash
-JWT=$(curl -sk -X POST https://localhost:8080/api/token \
-  -H 'content-type: application/json' -H 'X-Client-Secret: dev-secret' \
-  -d '{"subject":"rider-0"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
-curl -sk -X POST https://localhost:8080/api/call \
-  -H 'content-type: application/json' -H "Authorization: Bearer $JWT" \
-  -d '{"elevatorName":"e1","floor":3}'
-```
-
-> **Single-replica caveat.** The signing key is generated in-process, so multiple `api` replicas
-> reject each other's tokens. For a multi-replica cluster, mount a fixed key as a Secret.
+The **Sim** tab triggers a server-side run via `POST /api/simulate` (see below).
 
 ## Endpoints
 
-Default port **8080**. `POST /api/call` needs a Bearer JWT; everything else is open.
+Port **8080**. `POST /api/call` needs a Bearer JWT; everything else is open.
 
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/call` | **JWT required.** Body `{"elevatorName":"e1","floor":5}` → publishes a call. `id` optional (auto UUID). `passengerId` = token `sub`. |
-| `POST` | `/api/token` | Dev issuer: `{"subject":…}` + `X-Client-Secret` header → signed JWT. |
-| `GET` | `/oauth2/jwks` | Public signing key (JWKS). |
-| `GET` | `/api/elevator`, `/api/elevator/{name}` | Latest state — all, or one (`404`). |
-| `GET` | `/api/elevator/stream` | **SSE** live state stream. |
-| `GET` | `/api/call/{id}` | Call lifecycle `PROGRESS → DONE`, or `404`. |
-| `POST` | `/api/simulate` | `elevator-sim` fires a burst of 100 random calls → `{runId, count, ids}`. |
-| `GET` | `/api/simulate/progress?runId=&size=` | Run rollup `{simSize, calls, orders, doneCalls, firstCall, lastDone}`. |
-| `GET` | `/api/config`, `/api/version` | Fleet + max floor · running version. |
-| `GET` | `/api/stats/mileage`, `/api/stats/served` | BI stats (all BI lives under `/api/stats`; only when BI is on, else `404`). |
-| `GET` | `/api/stats/latency`, `/api/stats/latency/calls` | Call processing time: per-elevator + fleet summary (count/avg/min/max/p50/p95) · per-call detail. |
-| `GET` | `/api/stats/conflicts` | Passenger double-bookings; empty = healthy. |
-| `GET` | `/actuator/health` | Health incl. Kafka readiness. |
+| Method · Path | Purpose |
+|---|---|
+| `POST /api/call` | **JWT required.** `{"elevatorName":"e1","floor":5}` → a call. `passengerId` = token `sub` (body value ignored). |
+| `POST /api/token` | Dev issuer: `{"subject":…}` + `X-Client-Secret` → signed RS256 JWT. `GET /oauth2/jwks` publishes the key. |
+| `GET /api/elevator[/{name}]` | Latest state — all, or one (`404`). `/stream` is an SSE live feed. |
+| `GET /api/call/{id}` | Call lifecycle `PROGRESS → DONE`, or `404`. |
+| `POST /api/simulate` | Burst of 100 calls → `{runId, count, ids}`; `GET /api/simulate/progress?runId=` for the rollup. |
+| `GET /api/config`, `/api/version` | Fleet + max floor · running version. |
+| `GET /api/stats/…` | All BI under `/api/stats`: `/mileage` `/served` `/latency` (+`/calls`) `/conflicts` (`404` when BI is off). |
+| `GET /actuator/health` | Health incl. Kafka readiness. |
 
----
+**Auth.** Identity is proven, not claimed: `POST /api/call` sets `passengerId` from the token's `sub`;
+no/invalid token → **401**. Enforcement lives **only in `elevator-api`** — the app / Kafka layer is
+untouched. `POST /api/token` is a dev stand-in for a real login (RS256, `elevator.auth.*`: `token-ttl-seconds`
+300, `client-secret` = `ELEVATOR_CLIENT_SECRET`). The signing key is in-process, so multiple api replicas
+reject each other's tokens — mount a fixed key as a Secret before scaling past one.
 
-## Architecture
+## How it's built
 
-Modules. `elevator-common` keeps a clean, Pekko-free layering; app actors are **thin shells** wiring
-the pure logic: `core (domain + engine) → events → logic (decide/evolve) → protocol → strategy → dto`.
+`elevator-common` keeps a clean, Pekko-free layering (`core → events → logic (decide/evolve) → protocol →
+strategy → dto`); app actors are **thin shells** over that pure logic.
 
 | Module | Stack | Role |
 |---|---|---|
-| `elevator-common` | Scala 3 | Shared library, the small submodules above. |
+| `elevator-common` | Scala 3 | Shared pure library (the submodules above). |
 | `elevator-app` | Pekko | The brain: event-sourced actors + R2DBC journal + projections. |
-| `elevator-api` | Spring WebFlux | HTTP edge: REST + SSE, Kafka producer/consumer, R2DBC reads, JWT auth. No actors. |
-| `elevator-sim` | Scala 3 | Load-simulator engine — the server-side burst behind `POST /api/simulate`. |
-| `elevator-console-cli` | Rust (ratatui) | Terminal console: Chart/Trend/Sim tabs, call sender + simulate trigger. |
-| `elevator-console-web` | Elm | Browser console: Chart/Trend/Sim tabs. |
+| `elevator-api` | Spring WebFlux | HTTP edge: REST/SSE, Kafka in/out, R2DBC reads, JWT. No actors. |
+| `elevator-sim` | Scala 3 | Load engine behind `POST /api/simulate`. |
+| `elevator-console-cli` / `-web` | Rust / Elm | Terminal / browser consoles. |
 | `elevator-bi` | Scala 2.12 / Spark | **Standalone** batch job → one Parquet fact table, read by the api via DuckDB. |
 
 ```mermaid
 flowchart LR
-  console["consoles<br/>(Rust · Elm)"]
-  api["elevator-api<br/>(WebFlux)"]
-  app["elevator-app<br/>(Pekko)"]
-  calls[("Kafka<br/>elevator-calls")]
-  state[("Kafka<br/>elevator-state")]
-  ostate[("Kafka<br/>order/call-state")]
-  bi["elevator-bi<br/>(Spark)"]
-  pg[("Postgres")]
-
-  console -->|"POST /api/call (JWT) · GET /api/…"| api
-  api -->|produce| calls --> app
-  app -->|produce| state
-  app -->|produce| ostate --> bi
-  state -->|cache + live view| api
+  console["consoles (Rust · Elm)"] -->|"POST /api/call (JWT) · GET /api/…"| api["elevator-api"]
+  api -->|produce| calls[("Kafka elevator-calls")] --> app["elevator-app (Pekko)"]
+  app -->|produce| state[("Kafka elevator-state")] -->|cache + live view| api
   state --> console
-  app -->|journal + projections| pg
-  api -->|"R2DBC read call_status"| pg
+  app -->|journal + projections| pg[("Postgres")] -->|R2DBC reads| api
 ```
 
-**Kafka topics** (all keyed by `elevatorName`): `elevator-calls` (api → app), and three app → out
-feeds `elevator-state` (api cache, consoles, BI), `elevator-order-state`, `elevator-call-state` (BI).
+Topics are keyed by `elevatorName`: `elevator-calls` (api → app) and app → out `elevator-state` (api/consoles/BI)
+plus `elevator-order-state` / `elevator-call-state` (BI only).
 
-### The four actors
+### The actors
 
-One elevator = **four actors**. Three **remember** (event-sourced — state is the fold of their
-events); the **Operator** is a stateless worker. `[evt]` = stored to the journal, `[pub]` = published
-to Kafka.
+One elevator = **four core actors**. Three **remember** (event-sourced — state is the fold of their events);
+the **Operator** is a stateless worker. Each move flows Coordinator → Manager → Controller → Operator and back.
 
-| Actor | State | Contract |
+| Actor | Owns | Key messages |
 |---|---|---|
-| **Coordinator** | `Map[CallId, Floor]` | owns **call status**. `Handle` → `[evt]CallReceived` `[pub]`PROGRESS → PassengerManager (identified) / Manager (anonymous); `AssignOrder` → `[evt]CallAssigned`; `MarkDone` → `[evt]CallDone` `[pub]`DONE |
-| **Manager** | `Map[OrderId, Order]` | owns **call ↔ order**. `Combine` → `[evt]OrderCreated\|Extended` `[pub]`PROGRESS → Coordinator + Controller; `MarkDone` → `[evt]OrderDone` `[pub]`DONE + frees each passenger |
-| **Controller** | `waiting · state · Set[Order]` | owns **movement**. `Process` → `[evt]OrderAccepted`; `ChooseNext` → `[evt]WaitingSet(true)` → Operator; `MarkExecuted` → `[evt]WaitingSet(false)+StateUpdated` `[pub]`elevator |
-| **Operator** | — (stateless) | one move. `Move` → no event → `Controller.MarkExecuted` |
+| **Coordinator** | call status (`Map[CallId, Floor]`) | `Handle`→`CallReceived` (PROGRESS); `AssignOrder`→`CallAssigned`; `MarkDone`→`CallDone` (DONE) |
+| **Manager** | call ↔ order (`Map[OrderId, Order]`) | `Combine`→`OrderCreated/Extended` (PROGRESS); `MarkDone`→`OrderDone` (DONE), frees passengers |
+| **Controller** | movement (`waiting · state · Set[Order]`) | `Process`→`OrderAccepted`; `ChooseNext`→`WaitingSet(true)`; `MarkExecuted`→`ElevatorStateUpdated` (+ publish) |
+| **Operator** | — (stateless) | `Move` → no event → `Controller.MarkExecuted` |
 
-The **Controller drives its own loop** — after each move it self-sends `ChooseNext`. The engine
-paces it (real travel time), not a timer.
+The Controller **drives its own loop**: after each move it self-sends `ChooseNext`. Pacing is real travel
+time — `Engine.cost` busy-sleeps (`SlowEngine` 2s, `FastEngine` 100ms), the system's only clock, not a timer.
+Because `ChooseNext`/`WaitingSet` are persisted, a crash mid-move re-issues the move on recovery — a blocking
+loop couldn't. Actors speak only domain types; `CallConsumer` maps `CallDto → Call` at the edge.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor C as Client
-    participant API as elevator-api
-    participant CC as CallConsumer
-    participant Co as Coordinator
-    participant Pm as PassengerManager
-    participant Mg as Manager
-    participant Ct as Controller
-    participant Op as Operator
+### The three patterns worth studying
 
-    C->>API: POST /api/call {id, e1, floor} (Bearer JWT)
-    API->>CC: produce CallDto → Kafka elevator-calls (batched)
-    Note over CC: checks processed_calls — skip if seen, else forward then mark id
-    CC->>Co: Handle([call])  ·  persist CallReceived → call_status = PROGRESS
-    Co->>Pm: Route(e1, call)  (identified passenger; anonymous calls skip to Manager)
-    Note over Pm: free → forward & mark busy · busy → freeze the call
-    Pm->>Mg: Combine([call])
-    Note over Mg: group by floor → Order f(elevator,floor)<br/>OrderCreated/Extended → order_status = PROGRESS
-    Mg->>Co: AssignOrder(callId, orderId)
-    Mg->>Ct: Process(orders)
-    loop until no orders left
-        Ct->>Ct: ChooseNext — persist WaitingSet(true)
-        Ct->>Op: Move(state, command)
-        Op->>Ct: MarkExecuted(newState)
-        Note over Ct: persist WaitingSet(false)+StateUpdated<br/>drop orders at newState.floor · publish state
-        Ct->>Mg: MarkDone(orderId) per floor reached → OrderDone → DONE
-        Mg->>Co: MarkDone(callId) per call → CallDone → DONE
-        Mg->>Pm: Free(passengerId) per passenger → release next frozen call
-    end
-    C->>API: GET /api/call/{id} → DONE
-```
+- **Scheduling** — the Controller picks the next stop with a pure **SCAN** (`NextFloorStrategy`): keep going
+  while a target is ahead, else reverse, else stop. `GroupCallsStrategy` does the same-floor grouping.
+- **One lift per passenger** — identified calls pass through a `PassengerManager` entity **keyed by
+  `passengerId`** (every other write actor is keyed by `elevatorName`). It enforces the invariant by
+  *ordering*, not rejecting: free → forward + mark busy; busy → **freeze** the call in a FIFO queue; freed
+  (on `OrderDone`) → release the next frozen call. Single-writer per passenger, so it holds across replicas.
+  The queue is event-sourced (a consumed call is gone from Kafka). Anonymous calls skip the gate.
+- **Move gate** — before each move the Controller **asks** a `SuspendManager` cluster **singleton** (you
+  can't block inside an event-sourced actor, so the answer returns as a command). Default policy: always
+  allow. If another car is already on the same floor it **holds** the second asker's reply for `SuspendDwell`
+  (3s) then releases it — a soft stagger, no livelock. Ask timeout `dwell + 2s`; on failure → `MoveRetry`.
 
-`ChooseNext` + `WaitingSet` make the move loop persisted messages, so a crash mid-move re-issues the
-move on recovery — a blocking loop cannot. Actors speak only domain types; `CallConsumer` maps
-`CallDto → Call` at the edge, so no DTOs leak inside.
+**Crash recovery.** Two handoffs *leave* the journal, so each has a guard. The **Controller** re-asks the
+suspender and re-issues the move on `RecoveryCompleted` (the latch is still set → no duplicate; the only move
+redelivery, no wall-clock watchdog). **Ingress** — `CallConsumer` **checks** `processed_calls` up front, forwards,
+then marks the id (offsets commit after); claim-last just reprocesses and the projections UPSERT by id.
+Don't confuse the three groupings: ingress dedup (by call **id**), same-floor grouping (by **floor**),
+passenger tally (by **person**).
 
-### Scheduling & the move gate
+### Read model (CQRS)
 
-The Controller picks the next move with a pure **SCAN** (`NextFloorStrategy.default`): keep going the
-same way while a target is ahead, else reverse, else stop. `GroupCallsStrategy` does the same-floor
-grouping. `Engine.cost` busy-spins to simulate travel — **the system's only pacing** (`SlowEngine`
-2s realistic, `FastEngine` 100ms for tests/demo). Only the app layer touches `core.engine`.
+The journal is the write-side source of truth. Three exactly-once Pekko projections (role-gated to `read-model`
+nodes) replay it into queryable tables — `ElevatorStateProjection → elevator_state_view`, `OrderStatusProjection
+→ order_status`, `CallStatusProjection → call_status`. So: live dashboard → Kafka `elevator-state` (push, "now"
+only); durable snapshot → `elevator_state_view`; "was call/order X done?" → `call_status` / `order_status`
+(what `GET /api/call/{id}` reads). The api still serves live state from its in-memory Kafka store, not the
+durable view — pointing it there is the next step.
 
-### The passenger gate — one lift per passenger
+## Config, test, ship
 
-A passenger can be inside only one lift at a time, so calls that identify a passenger pass through a
-`PassengerManager` **entity keyed by `passengerId`** (every other write actor is keyed by
-`elevatorName`; this is the one keyed by person). It sits between the Coordinator and the Manager and
-enforces the invariant by **ordering the calls**, not by rejecting them:
+**Config** — all app params live in one ConfigMap `elevator-config` (from `charts/elevator`); editing it
+hot-reloads in-process (~5s poll, no restart). The api validates calls — `400` on a bad floor
+(`ELEVATOR_MAXFLOOR`, 15) or unknown elevator (`ELEVATOR_ELEVATORS`, e1..e10); the app never validates, and a
+missing ConfigMap makes the api fail to start. `ELEVATOR_ENGINE` (fast/slow) and `ELEVATOR_BI_ENABLED` are hot.
 
-- **free** → forward the call to that lift's Manager and mark the passenger **busy**;
-- **busy** → **freeze** the call in a FIFO queue — no order is built, so no other lift picks the
-  passenger up while their current travel runs;
-- **freed** (the Manager's `OrderDone` frees each of the order's passengers) → release the **next**
-  frozen call to its lift, which becomes the next travel. Empty queue → the passenger is free again.
+**Test** — `./mvnw test` (unit: logic, strategy, evolution, recovery, serialization, auth) · `./mvnw verify`
+(+ Testcontainers IT: Spring + Kafka + Postgres). The Rust console is the e2e harness: `selftest`, `itest
+--count 20` (fire calls, poll to DONE, cross-check `kubectl` logs). A pre-commit hook runs `itest`
+(`git config core.hooksPath scripts/hooks`); it skips when kind is unreachable or with `SKIP_ITEST=1`.
 
-Because the entity is single-writer per passenger cluster-wide, this holds with multiple app replicas.
-Anonymous calls (no `passengerId`) carry no identity, so they skip the gate. The frozen queue is
-event-sourced: a consumed call is gone from Kafka, so it must survive a restart.
-
-Before each move the Controller **asks** a `SuspendManager` cluster **singleton** whether the car may
-proceed (you can't block inside an event-sourced actor, so the answer returns as a command). Default
-policy is **always allow**. If **another car is on the same floor**, it doesn't deny — it **holds**
-the reply for `SuspendDwell` (3s) then releases: both cars pause once, then both go (soft stagger, no
-livelock). Ask timeout is `dwell + 2s` so the delayed "go" beats a false `MoveRetry`.
-
-## Read model (CQRS)
-
-The journal is the source of truth (write side). Three exactly-once Pekko projections (role-gated to
-`read-model` nodes) replay it into queryable tables. Kafka `elevator-state` stays the **live,
-ephemeral** feed.
-
-```mermaid
-flowchart LR
-  j[("event journal<br/>Postgres — source of truth")]
-  j --> ep["ElevatorStateProjection"] --> sv[("elevator_state_view")]
-  j --> op["OrderStatusProjection"] --> os[("order_status")]
-  j --> cp["CallStatusProjection"] --> cs[("call_status")]
-  api["elevator-api"] -->|"GET /api/call/{id}"| cs
-```
-
-| Need | Read from |
-|---|---|
-| Live dashboard / console | Kafka `elevator-state` — push, sub-second, "now" only |
-| Durable snapshot / after restart | `elevator_state_view` — SQL-queryable |
-| "Was call/order X done?" | `call_status` / `order_status` — per-item lifecycle, indexed |
-
-> The api currently serves live `GET /api/elevator` from its in-memory Kafka-fed store, not from
-> `elevator_state_view`. Pointing it at the durable view is the next step.
-
-## Crash recovery
-
-Event sourcing rebuilds actor state by replaying the journal. Two handoffs **leave** the journal —
-to the stateless Operator and to the dedup table — so each needs a guard:
-
-- **Controller** — `WaitingSet(true)` is durable but the `Move` went to the stateless Operator. On
-  `RecoveryCompleted` the Controller re-asks the suspender and re-issues the move; the latch is still
-  set, so no duplicate. Ask fails → `MoveRetry`. **The only move redelivery — no wall-clock watchdog.**
-- **Ingress** — `CallConsumer` **checks** `processed_calls` up front to drop re-sent ids, forwards,
-  and only **then** marks the id (offset commits after). Claim-first would lose a call that crashed
-  between claim and commit; claim-last just reprocesses, and the exactly-once projection UPSERTs by id.
-
-**Three groupings — don't confuse them:** ingress dedup (`CallConsumer` + `processed_calls`, keyed by
-call **id**, drops Kafka redeliveries) · same-floor grouping (`Manager` + `GroupCallsStrategy`, keyed
-by **floor**) · passenger tally (`Manager` per order, keyed by **person** — `passengers` vs.
-`anonymous`, riding on `OrderStateDto`). The Coordinator itself is **not** idempotent; dedup lives at
-ingress and in the UPSERT.
-
----
-
-## Config (live-tunable)
-
-All app params live in one ConfigMap, `elevator-config` (rendered from `charts/elevator`). Editing it
-hot-reloads the tunables in-process — **no pod restart** (~5s poll).
-
-- **Call validation** — the api rejects `400` on a bad floor (`ELEVATOR_MAXFLOOR`, 15) or unknown
-  elevator (`ELEVATOR_ELEVATORS`, e1..e10). The api owns the limits; the app never validates. A
-  missing ConfigMap makes the api fail to start.
-- **Engine fast / slow** — `ELEVATOR_ENGINE`, hot-swapped on the next move (`kubectl edit configmap
-  elevator-config`). **BI on / off** — `ELEVATOR_BI_ENABLED`.
-
-## Test
-
-```bash
-./mvnw test          # unit: logic, strategy, event evolution, actor recovery, serialization, auth
-./mvnw verify        # + Testcontainers IT (boots Spring + Kafka + Postgres)
-```
-
-The Rust console is the end-to-end harness (`selftest` / `itest`, HTTP + `kubectl` log cross-check).
-**Commit gate:** a pre-commit hook runs `itest` and blocks on failure — enable once with
-`git config core.hooksPath scripts/hooks`. It skips when the kind cluster is unreachable, or with
-`SKIP_ITEST=1 git commit …`.
-
-## Run on a cluster (kind)
-
-Three tools, one job each — no overlap, no shell scripts.
+**Run on kind** — three tools, one job each, no shell scripts:
 
 | Tool | Owns |
 |---|---|
-| **Terraform** (`terraform/`) | kind cluster, Calico CNI, api TLS keystore secret, ghcr pull secret |
-| **Helm** (`charts/elevator/`) | every k8s object + the `engine` / `bi.enabled` / `seed` toggles |
-| **Skaffold** (`skaffold.yaml`) | build images → load into kind → deploy the chart → port-forward |
+| **Terraform** (`terraform/`) | kind cluster, Calico CNI, api TLS secret, ghcr pull secret |
+| **Helm** (`charts/elevator/`) | every k8s object + `engine` / `bi.enabled` / `seed` toggles |
+| **Skaffold** | build images → load into kind → deploy chart → port-forward |
 
 ```bash
 cd terraform && terraform init && terraform apply && cd ..   # provision once (writes the CA the console bundles)
-skaffold run                 # build + deploy   ·   or:  skaffold dev  (rebuild + port-forward :8080)
-skaffold run -p bi           # Spark BI on   ·   -p full → api:2 + BI (needs a bigger node)
-helm upgrade elevator charts/elevator --reuse-values --set config.engine=slow   # hot-swap the engine
+skaffold run                 # build + deploy   ·   skaffold dev = rebuild + port-forward :8080
+skaffold run -p bi           # Spark BI on   ·   -p full = api:2 + BI (needs a bigger node)
 ```
 
-Run `terraform apply` **before** Skaffold. Tear down with `terraform destroy` — **never** `kind
-delete`, or Terraform's state drifts. Prereqs: `terraform`, `helm`, `skaffold`, `kind`, `docker`,
-`kubectl`, `mvn`.
+`terraform apply` **before** Skaffold; tear down with `terraform destroy`, **never** `kind delete` (state drifts).
+Kafka and Postgres each get a PVC, so a restart keeps both the feed and the journal.
 
-Kafka and Postgres each get their own PVC in the chart, so a pod restart keeps both the live
-`elevator-state` feed and the journal (unlike the volume-less demo compose above).
+**BI** — `elevator-bi` is a standalone Spark **CronJob** (`bi.schedule` `*/15`, Scala 2.12 — Spark has no
+Scala 3 build): each tick writes **one detailed Parquet fact table** (`elevator-facts.parquet`, grain-tagged
+`ELEVATOR`/`ORDER`/`CALL` rows) on a shared `hostPath`. The api reads that single file via DuckDB and computes
+every stat as a **view** — mileage, orders-served, call processing time (avg/p50/p95), and the
+one-lift-per-passenger audit — all under `/api/stats`.
 
-**BI layer.** `elevator-bi` is a Spark **CronJob** (`bi.schedule`, default `*/15`); each tick a driver
-pod spawns 2 executors, does one pass, and exits. It writes **one detailed Parquet fact table**
-(`elevator-facts.parquet`) on a shared `hostPath` — the whole module is that single file, and the api
-computes every stat from it as **DuckDB views** (`BiViews`). It's **standalone** (own pom, outside the
-reactor) and pinned to **Scala 2.12** because Spark has no Scala 3 build.
+**Install the console** — the Rust console ships as a signed `.deb` from an apt repo on GitHub Pages
+(`https://twistedlady.github.io/elevator-system/apt`, published by `apt-repo.yml` on each
+`elevator-console-cli-v*` tag): add the keyring + `signed-by` source, then `apt install elevator-console-cli`.
 
-The fact table is grain-tagged (`FactTable`), a nullable-superset "one big table":
-- `ELEVATOR` — one row per lift with `floors_travelled` (mileage). This is the one aggregate the job
-  pre-folds, because its source is the `elevator-state` topic (offset-ordered floor deltas), which the
-  api's DuckDB layer can't read; everything else the api derives itself.
-- `ORDER` — one row per order (a lift's leg of service, from `order_status`) with lifecycle timing.
-- `CALL` — one row per passenger call (from `call_status` joined to `elevator-calls` for `passengerId`),
-  carrying its own received→done timing **and** the served window of its assigned order, so
-  per-passenger conflict detection needs only CALL rows.
+## CI/CD, versioning, build
 
-The api's views compute: **served** (`v_elevator_stats`, completed ORDER rows joined to mileage);
-**call processing time** (`v_call` per completed call, `v_latency_summary` for count/avg/min/max/p50/p95
-per elevator + a fleet-wide `ALL` row — served with sub-second precision since the fast engine moves a
-floor in 100ms); and the **one-lift-per-passenger audit** (`v_conflicts`), which self-joins CALL served
-windows to find a passenger overlapping on two lifts. A **frozen** call has no `order_id`, so it is never
-a served window and never a false positive — the `PassengerManager` gate keeps those apart. Note the
-timestamps are `now()` written by the read-side projections, so durations include a little projection
-lag on top of true end-to-end time.
+`ci.yml` (push + PR) gates `cd.yml` — a red build never ships. CI runs the JVM build (`validate → install
+-DskipITs → verify`, Temurin 21) and the Rust console (`fmt`, `clippy -D warnings`, `test`, `--release`) —
+Maven never compiles the console, so CI is its only gate. `cd.yml` is tag-only: a `v*` tag publishes
+`ghcr.io/<owner>/elevator-{app,api,console-web,bi}` + a Release, then `helm upgrade --install` on a self-hosted
+runner (cloud runners can't reach local kind). Versioning is one **`VERSION`** file, bumped by **release-please**
+from the squash-merged PR title (`fix:`→patch, `feat:`→minor); the pom uses `${revision}`.
 
-**Install the console via apt** — the Rust console ships as a signed `.deb` from an apt repo hosted
-on GitHub Pages, so it installs and later upgrades with plain apt:
-
-```bash
-sudo install -d -m0755 /etc/apt/keyrings
-curl -fsSL https://twistedlady.github.io/elevator-system/apt/elevator-console.gpg \
-  | sudo tee /etc/apt/keyrings/elevator-console.gpg >/dev/null
-echo "deb [signed-by=/etc/apt/keyrings/elevator-console.gpg] https://twistedlady.github.io/elevator-system/apt ./" \
-  | sudo tee /etc/apt/sources.list.d/elevator-console.list
-sudo apt update && sudo apt install elevator-console-cli
-# later, to upgrade to a newer release:
-sudo apt update && sudo apt upgrade elevator-console-cli
-```
-
-The repo is (re)published by the **APT repo** workflow (`.github/workflows/apt-repo.yml`) on every
-`elevator-console-cli-v*` tag — it builds the `.deb`, keeps the previously published versions,
-re-indexes, GPG-signs, and deploys to the `gh-pages` branch. It needs a one-time maintainer setup:
-the `APT_GPG_PRIVATE_KEY` repo secret (armored private key) and Pages enabled on `gh-pages`
-(see [Publishing the apt repo](#publishing-the-apt-repo)). Offline/local alternative:
-`cd elevator-console-cli && scripts/apt-repo.sh` builds the same repo under `target/apt-repo/` as a
-`file://` source.
-
----
-
-## CI / CD
-
-Two GitHub Actions workflows; **Build & Test** gates **Release & Deploy** — a red build never ships.
-
-- **Build & Test** (`ci.yml`, push + PR) — **jvm** (Temurin 21): `validate` → `install -DskipITs` →
-  `verify` (Testcontainers IT). **rust**: `fmt --check`, `clippy -D warnings`, `test`, `--release` —
-  Maven never compiles the console, so **CI is the only Rust gate**. **images** (PR only, no push).
-- **Release & Deploy** (`cd.yml`, tag-only via release-please) — a push to `main` never deploys. On a
-  `v*` tag: **publish** pushes `ghcr.io/<owner>/elevator-{app,api,console-web,bi}` (`:version` +
-  `latest`) + a GitHub Release, then **deploy** runs `helm upgrade --install` (images pinned) on a
-  self-hosted runner on the kind host (cloud runners can't reach local kind).
-- **APT repo** (`apt-repo.yml`, `elevator-console-cli-v*` tags + manual) — publishes the signed apt
-  repo to `gh-pages` (see [Publishing the apt repo](#publishing-the-apt-repo)).
-
-### Publishing the apt repo
-
-The `apt-repo.yml` workflow builds the console `.deb`, merges it with the versions already on
-`gh-pages`, re-indexes (`dpkg-scanpackages` + `apt-ftparchive`), GPG-signs the `Release`, and deploys
-to `gh-pages` — served by Pages at `https://<owner>.github.io/elevator-system/apt`. One-time setup:
-
-1. **Signing key** → add the armored **private** key as the `APT_GPG_PRIVATE_KEY` repo secret (and
-   `APT_GPG_PASSPHRASE` if it has one):
-   ```bash
-   gpg --armor --export-secret-keys apt@elevator-system.local | gh secret set APT_GPG_PRIVATE_KEY
-   ```
-2. **Enable Pages** → Settings → Pages → *Deploy from a branch* → `gh-pages` (root). The `gh-pages`
-   branch appears after the first workflow run, so run the workflow once first
-   (`gh workflow run "APT repo (GitHub Pages)"`), then enable Pages.
-
-Each later `elevator-console-cli-v*` release republishes automatically; clients just `apt upgrade`.
-
-## Versioning
-
-One version for the whole app in one file — **`VERSION`** at the repo root. You never edit it by
-hand; **release-please** bumps it from commit messages. Because the repo squash-merges, the **PR
-title** is what it reads (a CI check enforces Conventional Commits): `fix:` → patch, `feat:` /
-`feat!:` → minor, `chore:` / `docs:` / `refactor:` → no release on their own (pre-1.0).
-
-release-please keeps a **release PR** open that bumps `VERSION` + every module version (via
-`x-release-please-version` markers) + the changelog. Merge it → it tags `vX.Y.Z` → `cd.yml` publishes
-and deploys. `ci.yml` fails if any module version ≠ `VERSION`; `cd.yml` refuses a mismatched tag. Helm
-`Chart.yaml` version is packaging metadata, deliberately **not** in lockstep.
-
-## Build notes
-
-- Maven multi-module, Java 21 — `./mvnw package`. The Rust console is a separate `cargo` build behind
-  `-Pconsole` (opt-in). The Elm console builds with a project-local Node via `frontend-maven-plugin`
-  (`-Dnpm.skip=true` to skip it).
-- `elevator-bi` is outside the reactor: `./mvnw -f elevator-bi/pom.xml package`.
-- **Docs → PDF:** `./mvnw -Ppdf package` renders this README (Mermaid diagrams included) to
-  `target/README.pdf` via `scripts/md-to-pdf.sh`. Opt-in — it needs `pandoc`, Node (`npx`), and a
-  Chromium; a plain build never requires them.
-- `pekko-persistence-r2dbc` needs an explicit `org.postgresql:r2dbc-postgresql` dependency — missing
-  it fails only at runtime.
-- Renaming an actor message trait means also editing the string FQNs in `application.conf`
-  (`serialization-bindings`) — only runtime catches a mismatch.
-
-Source map: actors in `elevator-app/.../actors/`; protocol/events/logic/strategy in the matching
-`elevator-common-*` submodules; ingress dedup in `elevator-app/.../inbound/`; projections in
-`.../readside/`; the move gate in `SuspendManager.scala`; the passenger gate in
-`PassengerManager.scala`; JWT auth in `elevator-api/.../auth/`.
+Build with `./mvnw package` (Java 21); the Rust console is behind `-Pconsole`, `elevator-bi` is outside the
+reactor, `./mvnw -Ppdf package` renders this README to PDF. Build gotchas for agents live in `CLAUDE.md`.
