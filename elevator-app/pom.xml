@@ -58,6 +58,13 @@
             <artifactId>elevator-common-serializable</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- The boarding lab (pl.feelcodes.elevator.app.lab) drives the real Doorman with the
+             Simulator playing the passenger. Scala stdlib only, no Kafka/HTTP. -->
+        <dependency>
+            <groupId>pl.feelcodes.elevator</groupId>
+            <artifactId>elevator-sim</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.scala-lang</groupId>
