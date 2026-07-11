@@ -15,7 +15,7 @@ import reactor.core.publisher.Mono;
  * via DuckDB): how many times each elevator reached an ordered floor (= completed orders).
  */
 @RestController
-@RequestMapping("/api/served")
+@RequestMapping("/api/stats/served")
 @ConditionalOnProperty(prefix = "elevator.bi", name = "enabled", havingValue = "true", matchIfMissing = true)
 class ServedController {
 

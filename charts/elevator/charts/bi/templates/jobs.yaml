@@ -14,10 +14,12 @@ metadata:
 data:
   ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: {{ .Values.global.kafka.bootstrap | quote }}
   ELEVATOR_KAFKA_STATE_TOPIC: {{ .Values.global.kafka.stateTopic | quote }}
+  ELEVATOR_KAFKA_CALL_TOPIC: {{ .Values.global.kafka.callTopic | quote }}
   ELEVATOR_BI_SOURCE_JDBC_URL: "jdbc:postgresql://{{ .Values.global.postgres.host }}:5432/{{ .Values.global.postgres.database }}"
   ELEVATOR_PG_USER: {{ .Values.global.postgres.user | quote }}
   ELEVATOR_BI_ORDER_STATUS_TABLE: "order_status"
-  ELEVATOR_BI_PARQUET_PATH: "file:///data/elevators.parquet"
+  ELEVATOR_BI_CALL_STATUS_TABLE: "call_status"
+  ELEVATOR_BI_FACT_PARQUET_PATH: "file:///data/elevator-facts.parquet"
   ELEVATOR_BI_RUN_ONCE: "true"
 ---
 apiVersion: v1

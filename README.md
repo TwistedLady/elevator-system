@@ -40,7 +40,7 @@ Port **8080**. `POST /api/call` needs a Bearer JWT; everything else is open.
 | `GET /api/call/{id}` | Call lifecycle `PROGRESS → DONE`, or `404`. |
 | `POST /api/simulate` | Burst of 100 calls → `{runId, count, ids}`; `GET /api/simulate/progress?runId=` for the rollup. |
 | `GET /api/config`, `/api/version` | Fleet + max floor · running version. |
-| `GET /api/mileage`, `/api/served` | BI stats (`404` when BI is off). |
+| `GET /api/stats/…` | All BI under `/api/stats`: `/mileage` `/served` `/latency` (+`/calls`) `/conflicts` (`404` when BI is off). |
 | `GET /actuator/health` | Health incl. Kafka readiness. |
 
 **Auth.** Identity is proven, not claimed: `POST /api/call` sets `passengerId` from the token's `sub`;
@@ -61,7 +61,7 @@ strategy → dto`); app actors are **thin shells** over that pure logic.
 | `elevator-api` | Spring WebFlux | HTTP edge: REST/SSE, Kafka in/out, R2DBC reads, JWT. No actors. |
 | `elevator-sim` | Scala 3 | Load engine behind `POST /api/simulate`. |
 | `elevator-console-cli` / `-web` | Rust / Elm | Terminal / browser consoles. |
-| `elevator-bi` | Scala 2.12 / Spark | **Standalone** batch job → Parquet, read by the api via DuckDB. |
+| `elevator-bi` | Scala 2.12 / Spark | **Standalone** batch job → one Parquet fact table, read by the api via DuckDB. |
 
 ```mermaid
 flowchart LR
@@ -152,9 +152,10 @@ skaffold run -p bi           # Spark BI on   ·   -p full = api:2 + BI (needs a 
 Kafka and Postgres each get a PVC, so a restart keeps both the feed and the journal.
 
 **BI** — `elevator-bi` is a standalone Spark **CronJob** (`bi.schedule` `*/15`, Scala 2.12 — Spark has no
-Scala 3 build): each tick reads `elevator-state` (Kafka) for mileage and `order_status` (JDBC, `DONE`) for
-orders-served, overwrites `elevators.parquet` on a shared `hostPath` (the api reads it via DuckDB), and audits
-the one-lift-per-passenger invariant (`PassengerConflicts` → a parquet that should stay empty).
+Scala 3 build): each tick writes **one detailed Parquet fact table** (`elevator-facts.parquet`, grain-tagged
+`ELEVATOR`/`ORDER`/`CALL` rows) on a shared `hostPath`. The api reads that single file via DuckDB and computes
+every stat as a **view** — mileage, orders-served, call processing time (avg/p50/p95), and the
+one-lift-per-passenger audit — all under `/api/stats`.
 
 **Install the console** — the Rust console ships as a signed `.deb` from an apt repo on GitHub Pages
 (`https://twistedlady.github.io/elevator-system/apt`, published by `apt-repo.yml` on each
