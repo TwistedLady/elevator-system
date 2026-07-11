@@ -93,6 +93,10 @@ final class ProtocolSerializationTests extends AnyFunSuite, BeforeAndAfterAll:
     val msg = Doorman.Serve("lift-a", Floor(4))
     assert(roundTrip(msg) == msg)
 
+  test("Doorman.Boarded round-trips"):
+    val msg = Doorman.Boarded("lift-a", Floor(4), "alice")
+    assert(roundTrip(msg) == msg)
+
   test("Controller.DoorClosed round-trips"):
     val msg = Controller.DoorClosed(Floor(4))
     assert(roundTrip(msg) == msg)
