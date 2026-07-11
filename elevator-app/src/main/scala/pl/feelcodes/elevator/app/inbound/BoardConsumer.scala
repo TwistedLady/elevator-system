@@ -26,6 +26,12 @@ import scala.concurrent.ExecutionContext
 object BoardConsumer {
   private final case class ConsumerConf(bootstrapServers: String, groupId: String, boardTopic: String)
 
+  /** Decode a board record into the message the Doorman waits for. */
+  def decode(value: Array[Byte]): Doorman.Boarded = {
+    val dto = Json.decode(value, classOf[BoardDto])
+    Doorman.Boarded(dto.elevatorName, Floor(dto.floor), dto.passengerId)
+  }
+
   def run(system: ActorSystem[?],
           doormanProvider: String => EntityRef[Doorman.Command]): Unit = {
     given ActorSystem[?] = system
@@ -45,9 +51,9 @@ object BoardConsumer {
     val toDoorman: Flow[CommittableMessage[String, Array[Byte]], CommittableOffset, ?] =
       Flow[CommittableMessage[String, Array[Byte]]]
         .map { msg =>
-          val dto = Json.decode(msg.record.value(), classOf[BoardDto])
-          doormanProvider(dto.elevatorName) ! Doorman.Boarded(dto.elevatorName, Floor(dto.floor), dto.passengerId)
-          system.log.info("[board] {} @ floor {} by {}", dto.elevatorName, dto.floor, dto.passengerId)
+          val boarded = decode(msg.record.value())
+          doormanProvider(boarded.elevatorName) ! boarded
+          system.log.info("[board] {} @ floor {} by {}", boarded.elevatorName, boarded.floor.num, boarded.passengerId)
           msg.committableOffset
         }
 
