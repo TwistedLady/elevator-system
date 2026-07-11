@@ -24,7 +24,7 @@ final class BoardingLabTests extends ScalaTestWithActorTestKit with AnyWordSpecL
 
       val probe = createTestProbe[BoardingLab.Summary]()
       spawn(BoardingLab.LabDriver("lift-a", riders,
-        boardTimeout = 300.millis, thinkOf = _ => 20.millis, probe.ref))
+        boardTimeout = 300.millis, boardDelay = 20.millis, probe.ref))
 
       val summary = probe.receiveMessage(20.seconds)
 
@@ -40,7 +40,7 @@ final class BoardingLabTests extends ScalaTestWithActorTestKit with AnyWordSpecL
       val sim = Simulator(noop, Seq("lift-a"), maxFloor = 6, Random(3))
       val probe = createTestProbe[BoardingLab.Summary]()
       spawn(BoardingLab.LabDriver("lift-z", Nil,
-        boardTimeout = 100.millis, thinkOf = _ => 10.millis, probe.ref))
+        boardTimeout = 100.millis, boardDelay = 10.millis, probe.ref))
 
       val summary = probe.receiveMessage(5.seconds)
       summary.outcomes shouldBe empty

@@ -35,7 +35,7 @@ object BoardingLab:
     def apply(elevator: String,
               riders: List[Rider],
               boardTimeout: FiniteDuration,
-              thinkOf: Rider => FiniteDuration,
+              boardDelay: FiniteDuration,
               replyTo: ActorRef[Summary]): Behavior[Command] =
       Behaviors.setup { ctx =>
         Behaviors.withTimers { timers =>
@@ -64,7 +64,7 @@ object BoardingLab:
             Behaviors.receiveMessage {
               case DoorOpened(f) if f == floor =>
                 if rider.boards then
-                  timers.startSingleTimer(StepIn(f, rider.spec.id), thinkOf(rider))
+                  timers.startSingleTimer(StepIn(f, rider.spec.id), boardDelay)
                 Behaviors.same
 
               case StepIn(f, passenger) if f == floor =>
@@ -89,9 +89,9 @@ object BoardingLab:
   def guardian(elevator: String,
                riders: List[Rider],
                boardTimeout: FiniteDuration,
-               thinkOf: Rider => FiniteDuration): Behavior[Summary] =
+               boardDelay: FiniteDuration): Behavior[Summary] =
     Behaviors.setup { ctx =>
-      ctx.spawn(LabDriver(elevator, riders, boardTimeout, thinkOf, ctx.self), "driver")
+      ctx.spawn(LabDriver(elevator, riders, boardTimeout, boardDelay, ctx.self), "driver")
       Behaviors.receiveMessage { summary =>
         println(render(summary))
         Behaviors.stopped
@@ -120,6 +120,6 @@ object BoardingLab:
     val config = ConfigFactory.parseString("pekko.actor.provider = local")
       .withFallback(ConfigFactory.defaultReference())
     val system = ActorSystem(
-      guardian(elevator, riders, boardTimeout = 2.seconds, thinkOf = r => r.thinkMillis.millis),
+      guardian(elevator, riders, boardTimeout = 2.seconds, boardDelay = Simulator.BoardDelay),
       "boarding-lab", config)
     scala.concurrent.Await.ready(system.whenTerminated, 120.seconds)
