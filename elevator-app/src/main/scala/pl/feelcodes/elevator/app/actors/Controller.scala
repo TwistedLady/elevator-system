@@ -45,6 +45,11 @@ object Controller:
           operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, command)
         }
 
+      def publishState(s: State, suspended: Boolean): Unit =
+        publish(ElevatorStateDto(s.elevatorName,
+          s.elevatorState.direction.toString, s.elevatorState.motion.toString,
+          s.elevatorState.floor.num, suspended))
+
       EventSourcedBehavior[Command, Event, State](
         persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
         emptyState = ControllerLogic.State.initial(elevatorName),
@@ -70,12 +75,15 @@ object Controller:
 
             case ChooseNext(orders) =>
               if ControllerLogic.shouldAct(state, orders) then
-                Effect.persist(WaitingSet(true)).thenRun(s => requestMove(s))
+                Effect.persist(WaitingSet(true)).thenRun { s =>
+                  publishState(s, suspended = true)
+                  requestMove(s)
+                }
               else Effect.none
 
             case MoveDecision(allowed) =>
               if allowed then Effect.none.thenRun(s => issueMove(s))
-              else Effect.persist(WaitingSet(false))
+              else Effect.persist(WaitingSet(false)).thenRun(s => publishState(s, suspended = false))
 
             case MoveRetry =>
               Effect.persist(WaitingSet(false)).thenRun(s => context.self ! ChooseNext(s.orders))

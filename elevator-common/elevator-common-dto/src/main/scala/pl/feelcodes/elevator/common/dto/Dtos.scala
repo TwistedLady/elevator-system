@@ -13,7 +13,8 @@ final case class CallDto(@JsonProperty("id") id: String,
 final case class ElevatorStateDto(@JsonProperty("elevatorName") elevatorName: String,
                                   @JsonProperty("direction") direction: String,
                                   @JsonProperty("motion") motion: String,
-                                  @JsonProperty("floor") floor: Int) extends KeyedDto
+                                  @JsonProperty("floor") floor: Int,
+                                  @JsonProperty("suspended") suspended: Boolean = false) extends KeyedDto
 
 final case class DoorStateDto(@JsonProperty("elevatorName") elevatorName: String,
                               @JsonProperty("floor") floor: Int,

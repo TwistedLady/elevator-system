@@ -11,6 +11,9 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.apache.pekko.actor.typed.ActorRef
 import pl.feelcodes.elevator.app.actors.{Controller, Doorman, Manager, Operator, SuspendManager}
 import pl.feelcodes.elevator.common.core.domain.*
+import pl.feelcodes.elevator.common.dto.ElevatorStateDto
+
+import scala.jdk.CollectionConverters.*
 
 object ControllerRecoveryTests {
   val config = ConfigFactory
@@ -39,7 +42,9 @@ final class ControllerRecoveryTests
     with AnyWordSpecLike
     with Matchers {
 
-  private def newTestKit(suspend: ActorRef[SuspendManager.Command] = spawn(SuspendManager())) =
+  private def newTestKit(
+      suspend: ActorRef[SuspendManager.Command] = spawn(SuspendManager()),
+      publish: ElevatorStateDto => Unit = _ => ()) =
     val operatorProbe = createTestProbe[Operator.Command]()
     val managerProbe = createTestProbe[Manager.Command]()
     val doormanProbe = createTestProbe[Doorman.Command]()
@@ -51,7 +56,7 @@ final class ControllerRecoveryTests
       (name: String) => TestEntityRef(Doorman.TypeKey, name, doormanProbe.ref)
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, managerProvider, suspend, doormanProvider, _ => ())
+      Controller("lift-a", operatorProvider, managerProvider, suspend, doormanProvider, publish)
     )
     (kit, operatorProbe, managerProbe, doormanProbe)
 
@@ -77,6 +82,19 @@ final class ControllerRecoveryTests
 
       esTestKit.restart()
       esTestKit.getState() shouldBe before
+    }
+
+    "publish a suspended state while waiting on the gate, and clear it when the gate denies" in {
+      val published = new java.util.concurrent.ConcurrentLinkedQueue[ElevatorStateDto]()
+      val (esTestKit, _, _, _) = newTestKit(publish = published.add)
+      val order = orderAt("o-s", 3)
+
+      esTestKit.runCommand(Controller.Process(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNext(Set(order)))
+      published.asScala.exists(_.suspended) shouldBe true
+
+      esTestKit.runCommand(Controller.MoveDecision(false))
+      published.asScala.exists(dto => !dto.suspended) shouldBe true
     }
 
     "keep an outstanding (unserved) request after a crash" in {
