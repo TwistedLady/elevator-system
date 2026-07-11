@@ -86,7 +86,7 @@ jobs:
           [ -n "${APT_GPG_PASSPHRASE:-}" ] && SIGN+=(--passphrase "$APT_GPG_PASSPHRASE")
           "${SIGN[@]}" --armor --detach-sign -o Release.gpg Release
           "${SIGN[@]}" --clearsign -o InRelease Release
-          gpg --armor --export "$KEYID" > elevator-console.gpg
+          gpg --export "$KEYID" > elevator-console.gpg
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
