@@ -23,18 +23,19 @@ const COL_W: usize = 8;
 pub fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::vertical([
         Constraint::Length(3),
+        Constraint::Length(5),
         Constraint::Min(0),
         Constraint::Length(3),
     ])
     .split(frame.area());
 
     draw_header(frame, app, chunks[0]);
+    draw_sim(frame, app, chunks[1]);
     match app.view {
-        View::Chart => draw_chart(frame, app, chunks[1]),
-        View::Trend => draw_trend(frame, app, chunks[1]),
-        View::Sim => draw_sim(frame, app, chunks[1]),
+        View::Chart => draw_chart(frame, app, chunks[2]),
+        View::Trend => draw_trend(frame, app, chunks[2]),
     }
-    draw_footer(frame, app, chunks[2]);
+    draw_footer(frame, app, chunks[3]);
 }
 
 fn retro_block(title: &str) -> Block<'_> {
@@ -103,16 +104,7 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let mut cars: Vec<&ElevatorState> = app
-        .latest
-        .values()
-        .filter(|c| app.elevator_matches(&c.elevator_name))
-        .collect();
-    if cars.is_empty() {
-        let msg = format!("no elevators match /{}/", app.elevator_filter);
-        frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
-        return;
-    }
+    let mut cars: Vec<&ElevatorState> = app.latest.values().collect();
     cars.sort_by(|a, b| {
         crate::natural_key(&a.elevator_name).cmp(&crate::natural_key(&b.elevator_name))
     });
@@ -136,16 +128,10 @@ fn draw_chart(frame: &mut Frame, app: &App, area: Rect) {
                     .get(&c.elevator_name)
                     .map(|d| d.door_state.eq_ignore_ascii_case("open"))
                     .unwrap_or(false);
-                let door = if open { 'o' } else { 'x' };
-                let cell = center(
-                    &format!("[{}][{}]", car_glyph(&c.direction, &c.motion), door),
-                    COL_W,
-                );
-                let style = if open {
-                    Style::new().fg(Color::Yellow).bold()
-                } else {
-                    car_style(&c.direction, &c.motion)
-                };
+                let c1 = car_glyph(&c.direction, &c.motion, c.suspended);
+                let c2 = if open { ' ' } else { 'X' };
+                let cell = center(&format!("[{c1}{c2}]"), COL_W);
+                let style = car_style(&c.direction, &c.motion, c.suspended, open);
                 spans.push(Span::styled(cell, style));
             } else {
                 spans.push(Span::from(center("·", COL_W)).dark_gray());
@@ -170,7 +156,6 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
     let mut series: Vec<(String, Vec<(f64, f64)>)> = app
         .history
         .iter()
-        .filter(|(name, _)| app.elevator_matches(name))
         .map(|(name, pts)| {
             let mut v: Vec<(f64, f64)> = pts.iter().copied().collect();
             if let Some(state) = app.latest.get(name) {
@@ -179,11 +164,6 @@ fn draw_trend(frame: &mut Frame, app: &App, area: Rect) {
             (name.clone(), v)
         })
         .collect();
-    if series.is_empty() {
-        let msg = format!("no elevators match /{}/", app.elevator_filter);
-        frame.render_widget(Paragraph::new(msg.dim()).block(block), area);
-        return;
-    }
     series.sort_by(|a, b| crate::natural_key(&a.0).cmp(&crate::natural_key(&b.0)));
 
     let mut y_lo = f64::MAX;
@@ -254,8 +234,6 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     let rows = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
         Constraint::Min(0),
     ])
     .split(inner);
@@ -298,20 +276,15 @@ fn draw_sim(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(bar), rows[1]);
 
     let counts = format!(
-        "run {} · size {} · calls {} · done {done} · progress {prog} · pending {pending}",
+        "run {} · size {} · calls {} · done {done} · progress {prog} · pending {pending} · orders {} · first {} · last {}",
         if run_id.is_empty() { "…" } else { &run_id },
         sim.size(),
         sim.calls(),
-    );
-    frame.render_widget(Paragraph::new(counts.dark_gray()), rows[2]);
-
-    let meta = format!(
-        "orders {} · first {} · last {}",
         sim.orders(),
         hms(sim.first_call()),
         hms(sim.last_done()),
     );
-    frame.render_widget(Paragraph::new(meta.dark_gray()), rows[3]);
+    frame.render_widget(Paragraph::new(counts.dark_gray()), rows[2]);
 }
 
 fn hms(iso: Option<String>) -> String {
@@ -338,30 +311,14 @@ fn split_bar(done: u64, progress: u64, pending: u64, width: usize) -> (usize, us
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
     let block = retro_block("");
-    let content = match app.view {
-        View::Chart | View::Trend => {
-            let mut spans = vec![
-                Span::from("filter ▸ ").green().bold(),
-                Span::from(app.elevator_filter.clone()).white(),
-                Span::from("█").green(),
-            ];
-            if app.elevator_re_err {
-                spans.push(Span::from("  invalid regex").red());
-            }
-            spans.push(Span::from("   Enter: clear · Tab: switch · Esc: quit").dark_gray());
-            Line::from(spans)
-        }
-        View::Sim => {
-            let mut spans = vec![
-                Span::from("R").fg(Color::Black).bg(Color::Cyan).bold(),
-                Span::from(": run simulation · Tab: switch · Esc: quit").dark_gray(),
-            ];
-            if !app.message.is_empty() {
-                spans.push(Span::from(format!("   {}", app.message)).cyan());
-            }
-            Line::from(spans)
-        }
-    };
+    let mut spans = vec![
+        Span::from(" R ").fg(Color::Black).bg(Color::Cyan).bold(),
+        Span::from(": run sim · Tab: switch · Esc: quit").dark_gray(),
+    ];
+    if !app.message.is_empty() {
+        spans.push(Span::from(format!("   {}", app.message)).cyan());
+    }
+    let content = Line::from(spans);
     frame.render_widget(
         Paragraph::new(content)
             .block(block)
@@ -378,26 +335,35 @@ fn waiting_line(app: &App) -> Line<'static> {
     }
 }
 
-fn car_glyph(direction: &str, motion: &str) -> char {
+fn car_glyph(direction: &str, motion: &str, suspended: bool) -> char {
+    if suspended {
+        return 'S';
+    }
     if !motion.eq_ignore_ascii_case("moving") {
-        return 'X';
+        return ' ';
     }
     match direction.to_ascii_uppercase().as_str() {
         "UP" => '↑',
         "DOWN" => '↓',
-        _ => '•',
+        _ => ' ',
     }
 }
 
-fn car_style(direction: &str, motion: &str) -> Style {
-    if !motion.eq_ignore_ascii_case("moving") {
-        return Style::new().fg(Color::DarkGray);
+fn car_style(direction: &str, motion: &str, suspended: bool, open: bool) -> Style {
+    if suspended {
+        return Style::new().fg(Color::Yellow).bold();
     }
-    match direction.to_ascii_uppercase().as_str() {
-        "UP" => Style::new().fg(Color::Green).bold(),
-        "DOWN" => Style::new().fg(Color::Magenta).bold(),
-        _ => Style::new().fg(Color::White),
+    if motion.eq_ignore_ascii_case("moving") {
+        return match direction.to_ascii_uppercase().as_str() {
+            "UP" => Style::new().fg(Color::Green).bold(),
+            "DOWN" => Style::new().fg(Color::Magenta).bold(),
+            _ => Style::new().fg(Color::White),
+        };
     }
+    if open {
+        return Style::new().fg(Color::Cyan).bold();
+    }
+    Style::new().fg(Color::DarkGray)
 }
 
 fn center(s: &str, w: usize) -> String {

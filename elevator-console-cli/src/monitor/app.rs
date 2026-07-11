@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use regex::{Regex, RegexBuilder};
 use serde::Deserialize;
 
 pub const TREND_WINDOW_SECS: f64 = 60.0;
@@ -18,6 +17,8 @@ pub struct ElevatorState {
     pub direction: String,
     pub motion: String,
     pub floor: i32,
+    #[serde(default)]
+    pub suspended: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -128,17 +129,15 @@ impl SimRun {
 pub enum View {
     Chart,
     Trend,
-    Sim,
 }
 
 impl View {
-    pub const ALL: [View; 3] = [View::Chart, View::Trend, View::Sim];
+    pub const ALL: [View; 2] = [View::Chart, View::Trend];
 
     pub fn title(self) -> &'static str {
         match self {
             View::Chart => "CHART",
             View::Trend => "TREND",
-            View::Sim => "SIM",
         }
     }
 }
@@ -152,9 +151,6 @@ pub struct App {
     start_unix: i64,
     pub health: HealthSnapshot,
     pub backend_version: Option<String>,
-    pub elevator_filter: String,
-    pub elevator_re: Option<Regex>,
-    pub elevator_re_err: bool,
     pub sim: Option<SimRun>,
     pub message: String,
     pub should_quit: bool,
@@ -176,9 +172,6 @@ impl App {
                 .unwrap_or(0),
             health: HealthSnapshot::default(),
             backend_version: None,
-            elevator_filter: String::new(),
-            elevator_re: None,
-            elevator_re_err: false,
             sim: None,
             message: String::new(),
             should_quit: false,
@@ -224,31 +217,20 @@ impl App {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
-                return;
             }
             KeyCode::Esc => {
                 self.should_quit = true;
-                return;
             }
             KeyCode::Tab => {
                 self.cycle_view(1);
-                return;
             }
             KeyCode::BackTab => {
                 self.cycle_view(-1);
-                return;
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.start_sim();
             }
             _ => {}
-        }
-        match self.view {
-            View::Chart | View::Trend => self.on_key_elevator_filter(key),
-            View::Sim => self.on_key_sim(key),
-        }
-    }
-
-    fn on_key_sim(&mut self, key: KeyEvent) {
-        if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
-            self.start_sim();
         }
     }
 
@@ -294,52 +276,6 @@ impl App {
         });
         self.sim = Some(run);
         self.message = "starting a simulation…".to_string();
-    }
-
-    fn on_key_elevator_filter(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                self.elevator_filter.clear();
-                self.recompile_elevator_filter();
-            }
-            KeyCode::Backspace => {
-                self.elevator_filter.pop();
-                self.recompile_elevator_filter();
-            }
-            KeyCode::Char(c) => {
-                self.elevator_filter.push(c);
-                self.recompile_elevator_filter();
-            }
-            _ => {}
-        }
-    }
-
-    fn recompile_elevator_filter(&mut self) {
-        if self.elevator_filter.is_empty() {
-            self.elevator_re = None;
-            self.elevator_re_err = false;
-        } else {
-            match RegexBuilder::new(&self.elevator_filter)
-                .case_insensitive(true)
-                .build()
-            {
-                Ok(re) => {
-                    self.elevator_re = Some(re);
-                    self.elevator_re_err = false;
-                }
-                Err(_) => {
-                    self.elevator_re = None;
-                    self.elevator_re_err = true;
-                }
-            }
-        }
-    }
-
-    pub fn elevator_matches(&self, name: &str) -> bool {
-        match &self.elevator_re {
-            Some(re) => re.is_match(name),
-            None => true,
-        }
     }
 }
 
@@ -389,33 +325,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn view_cycles_through_the_three_tabs() {
+    fn view_cycles_through_the_two_tabs() {
         let mut app = App::new("http://localhost:8080");
         assert_eq!(app.view, View::Chart);
         app.cycle_view(1);
         assert_eq!(app.view, View::Trend);
         app.cycle_view(1);
-        assert_eq!(app.view, View::Sim);
-        app.cycle_view(1);
         assert_eq!(app.view, View::Chart);
         app.cycle_view(-1);
-        assert_eq!(app.view, View::Sim);
+        assert_eq!(app.view, View::Trend);
     }
 
     #[test]
-    fn tab_titles_are_the_three_uppercase_names() {
+    fn tab_titles_are_the_two_uppercase_names() {
         let titles: Vec<&str> = View::ALL.iter().map(|v| v.title()).collect();
-        assert_eq!(titles, vec!["CHART", "TREND", "SIM"]);
-    }
-
-    #[test]
-    fn elevator_filter_matches_by_regex_and_falls_back_to_all_when_empty() {
-        let mut app = App::new("http://localhost:8080");
-        assert!(app.elevator_matches("e1"));
-        app.elevator_filter = "e1".to_string();
-        app.recompile_elevator_filter();
-        assert!(app.elevator_matches("e1"));
-        assert!(!app.elevator_matches("e2"));
+        assert_eq!(titles, vec!["CHART", "TREND"]);
     }
 
     #[test]
