@@ -156,3 +156,47 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  e2e:
+    name: End-to-end (compose boot + console sim)
+    # Boots the WHOLE backend in containers and drives it with the real Rust console, so a broken
+    # sim or console can never reach main. The console itest fires a simulation and asserts every
+    # call reaches DONE; its kubectl log-checks are skipped when kubectl is absent (here it is).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: elevator-console-cli
+
+      - name: Build the console
+        working-directory: elevator-console-cli
+        run: cargo build --release
+
+      - name: Boot the backend (kafka + postgres + app + api)
+        run: docker compose -f docker-compose.demo.yml up -d --build
+
+      - name: Wait for the api to be healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
+              echo "api is UP"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::api did not become healthy in time"; exit 1
+
+      - name: Drive a simulation through the console (itest)
+        env:
+          ELEVATOR_API: http://localhost:8080
+        run: ./elevator-console-cli/target/release/elevator-console-cli itest --timeout 180 --out itest-report.json
+
+      - name: Backend logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.demo.yml logs --tail=250 app api
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.demo.yml down -v
