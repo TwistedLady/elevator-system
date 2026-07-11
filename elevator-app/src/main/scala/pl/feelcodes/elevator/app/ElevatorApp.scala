@@ -10,7 +10,7 @@ import org.apache.pekko.management.scaladsl.PekkoManagement
 import pl.feelcodes.elevator.app.actors.*
 import pl.feelcodes.elevator.common.core.domain.{Elevator, DoorState}
 import pl.feelcodes.elevator.common.dto.DoorStateDto
-import pl.feelcodes.elevator.app.inbound.{CallConsumer, CallDedup}
+import pl.feelcodes.elevator.app.inbound.{BoardConsumer, CallConsumer, CallDedup}
 import pl.feelcodes.elevator.app.outbound.Publishers
 import pl.feelcodes.elevator.app.readside.{CallStatusProjection, ElevatorStateProjection, OrderStatusProjection}
 
@@ -90,6 +90,7 @@ object ElevatorApp extends App {
 
         val dedup = CallDedup(ctx.system.settings.config)
         CallConsumer.run(ctx.system, coordinatorProvider, dedup)
+        BoardConsumer.run(ctx.system, doormanProvider)
 
         ElevatorStateProjection.init(ctx.system)
         OrderStatusProjection.init(ctx.system)
