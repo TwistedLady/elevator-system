@@ -191,7 +191,7 @@ pub fn run_itest(
 
 fn kubectl_available() -> bool {
     Command::new("kubectl")
-        .args(["version", "--client"])
+        .args(["get", "deployment", "elevator-app"])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)

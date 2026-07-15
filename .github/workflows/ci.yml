@@ -161,7 +161,8 @@ jobs:
     name: End-to-end (compose boot + console sim)
     # Boots the WHOLE backend in containers and drives it with the real Rust console, so a broken
     # sim or console can never reach main. The console itest fires a simulation and asserts every
-    # call reaches DONE; its kubectl log-checks are skipped when kubectl is absent (here it is).
+    # call reaches DONE; its kubectl log-checks skip themselves when no elevator-app deployment is
+    # reachable (as here — this runner has the kubectl client but no cluster).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
