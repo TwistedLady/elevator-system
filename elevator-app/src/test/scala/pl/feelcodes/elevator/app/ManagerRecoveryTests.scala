@@ -118,7 +118,7 @@ final class ManagerRecoveryTests
     }
 
     "rebuild its orders from the journal after a crash, preserving a merged floor order" in {
-      val (esTestKit, coordinatorProbe, controllerProbe) = newTestKit()
+      val (esTestKit, coordinatorProbe, controllerProbe, _) = newTestKit()
       esTestKit.runCommand(Manager.Combine(List(Call("c1", Floor(3)))))
       coordinatorProbe.expectMessageType[Coordinator.AssignOrder]
       controllerProbe.expectMessageType[Controller.Process]
