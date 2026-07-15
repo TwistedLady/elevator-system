@@ -457,7 +457,10 @@ mod tests {
 
     #[test]
     fn hms_takes_the_time_of_day_or_degrades_gracefully() {
-        assert_eq!(hms(Some("2026-07-10T12:34:56.789Z".to_string())), "12:34:56");
+        assert_eq!(
+            hms(Some("2026-07-10T12:34:56.789Z".to_string())),
+            "12:34:56"
+        );
         assert_eq!(hms(Some("no-time-here".to_string())), "no-time-here");
         assert_eq!(hms(None), "—");
     }
@@ -480,7 +483,13 @@ mod tests {
     #[test]
     fn car_style_dims_stopped_cars_and_colours_moving_ones() {
         assert_eq!(car_style("up", "stopped"), Style::new().fg(Color::DarkGray));
-        assert_eq!(car_style("up", "moving"), Style::new().fg(Color::Green).bold());
-        assert_eq!(car_style("down", "moving"), Style::new().fg(Color::Magenta).bold());
+        assert_eq!(
+            car_style("up", "moving"),
+            Style::new().fg(Color::Green).bold()
+        );
+        assert_eq!(
+            car_style("down", "moving"),
+            Style::new().fg(Color::Magenta).bold()
+        );
     }
 }
