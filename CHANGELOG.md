@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/TwistedLady/elevator-system/compare/v0.4.0...v0.5.0) (2026-07-15)
+
+
+### Features
+
+* passenger boarding — Doorman waits for a real step-in signal ([#85](https://github.com/TwistedLady/elevator-system/issues/85)) ([057c7b3](https://github.com/TwistedLady/elevator-system/commit/057c7b30090963fe8cc49f001b87941ae5343c52))
+
 ## [0.4.0](https://github.com/TwistedLady/elevator-system/compare/v0.3.1...v0.4.0) (2026-07-11)
 
 
