@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/TwistedLady/elevator-system/compare/v0.5.0...v0.6.0) (2026-07-15)
+
+
+### Features
+
+* reveal a suspended car on the state feed + console suspended/door glyphs ([#87](https://github.com/TwistedLady/elevator-system/issues/87)) ([a24ba4c](https://github.com/TwistedLady/elevator-system/commit/a24ba4c4adb8ac086373d6bf0a2254d0295ed393))
+
 ## [0.5.0](https://github.com/TwistedLady/elevator-system/compare/v0.4.0...v0.5.0) (2026-07-15)
 
 
