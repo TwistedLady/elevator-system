@@ -8,6 +8,7 @@ import org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.apache.pekko.actor.typed.ActorRef
 import pl.feelcodes.elevator.app.actors.{Controller, Doorman, Manager, Operator, SuspendManager}
 import pl.feelcodes.elevator.common.core.domain.*
 
@@ -38,7 +39,7 @@ final class ControllerRecoveryTests
     with AnyWordSpecLike
     with Matchers {
 
-  private def newTestKit() =
+  private def newTestKit(suspend: ActorRef[SuspendManager.Command] = spawn(SuspendManager())) =
     val operatorProbe = createTestProbe[Operator.Command]()
     val managerProbe = createTestProbe[Manager.Command]()
     val doormanProbe = createTestProbe[Doorman.Command]()
@@ -48,10 +49,9 @@ final class ControllerRecoveryTests
       (name: String) => TestEntityRef(Manager.TypeKey, name, managerProbe.ref)
     val doormanProvider =
       (name: String) => TestEntityRef(Doorman.TypeKey, name, doormanProbe.ref)
-    val suspendManager = spawn(SuspendManager())
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, managerProvider, suspendManager, doormanProvider, _ => ())
+      Controller("lift-a", operatorProvider, managerProvider, suspend, doormanProvider, _ => ())
     )
     (kit, operatorProbe, managerProbe, doormanProbe)
 
@@ -96,22 +96,19 @@ final class ControllerRecoveryTests
       esTestKit.getState().elevatorState.floor shouldBe Floor(4)
     }
 
-    "redeliver the in-flight move after a crash that happened while waiting for the Operator" in {
-      val (esTestKit, operatorProbe, _, _) = newTestKit()
+    "re-ask the SuspendManager for the move on recovery when it crashed while waiting" in {
+      val suspendProbe = createTestProbe[SuspendManager.Command]()
+      val (esTestKit, _, _, _) = newTestKit(suspendProbe.ref)
       val order = orderAt("o-3", 9)
 
       esTestKit.runCommand(Controller.Process(Set(order)))
       esTestKit.runCommand(Controller.ChooseNext(Set(order)))
       esTestKit.getState().waiting shouldBe true
-
-      esTestKit.runCommand(Controller.MoveDecision(true))
-      operatorProbe.expectMessageType[Operator.Move]
+      suspendProbe.expectMessageType[SuspendManager.MayMove]
 
       esTestKit.restart()
 
-      esTestKit.runCommand(Controller.MoveDecision(true))
-      val redelivered = operatorProbe.expectMessageType[Operator.Move]
-      redelivered.command shouldBe Command.Go(Direction.Up)
+      suspendProbe.expectMessageType[SuspendManager.MayMove]
     }
 
     "open the door on reaching a served floor and block moves until it closes" in {

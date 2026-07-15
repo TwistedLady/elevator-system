@@ -102,5 +102,15 @@ final class CoordinatorRecoveryTests
       val esTestKit = newTestKit()
       esTestKit.runCommand(Coordinator.MarkDone("c1")).event shouldBe CoordinatorEvents.CallDone("c1")
     }
+
+    "rebuild its call ledger from the journal after a crash" in {
+      val esTestKit = newTestKit()
+      esTestKit.runCommand(Coordinator.Handle(List(
+        Call("c1", Floor(3)), Call("c2", Floor(3)), Call("c3", Floor(5)))))
+      managerProbe.expectMessageType[Manager.Combine]
+      esTestKit.runCommand(Coordinator.MarkDone("c1"))
+
+      esTestKit.restart().state.calls shouldBe Map("c2" -> 3, "c3" -> 5)
+    }
   }
 }

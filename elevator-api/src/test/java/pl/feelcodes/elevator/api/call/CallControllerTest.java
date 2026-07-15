@@ -18,6 +18,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
 
@@ -81,6 +82,42 @@ class CallControllerTest {
                 .expectStatus().isOk();
 
         verify(callService).call(any(), eq("e1"), eq(3), eq("rider-0"));
+    }
+
+    @Test
+    void call_with_an_out_of_range_floor_is_rejected_and_never_reaches_the_service() {
+        client.mutateWith(mockJwt().jwt(jwt -> jwt.subject("rider-3")))
+                .post().uri("/api/call")
+                .header("Content-Type", "application/json")
+                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":999}")
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        verifyNoInteractions(callService);
+    }
+
+    @Test
+    void call_with_a_negative_floor_is_rejected() {
+        client.mutateWith(mockJwt().jwt(jwt -> jwt.subject("rider-3")))
+                .post().uri("/api/call")
+                .header("Content-Type", "application/json")
+                .bodyValue("{\"elevatorName\":\"e1\",\"floor\":-1}")
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        verifyNoInteractions(callService);
+    }
+
+    @Test
+    void call_for_an_unknown_elevator_is_rejected() {
+        client.mutateWith(mockJwt().jwt(jwt -> jwt.subject("rider-3")))
+                .post().uri("/api/call")
+                .header("Content-Type", "application/json")
+                .bodyValue("{\"elevatorName\":\"e99\",\"floor\":3}")
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        verifyNoInteractions(callService);
     }
 
     @Test

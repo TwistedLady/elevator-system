@@ -67,6 +67,7 @@
 
         <!-- Testing -->
         <scalatest.version>3.2.19</scalatest.version>
+        <scalatestplus.scalacheck.version>3.2.19.0</scalatestplus.scalacheck.version>
 
         <!-- Build plugins -->
         <scala.maven.plugin.version>4.9.2</scala.maven.plugin.version>

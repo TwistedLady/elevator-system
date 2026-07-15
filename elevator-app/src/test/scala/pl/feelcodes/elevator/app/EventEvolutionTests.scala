@@ -3,6 +3,7 @@ package pl.feelcodes.elevator.app
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.serialization.{SerializationExtension, Serializers}
+import org.apache.pekko.serialization.jackson.JacksonObjectMapperProvider
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import pl.feelcodes.elevator.common.core.domain.*
@@ -62,3 +63,19 @@ final class EventEvolutionTests extends AnyFunSuite, BeforeAndAfterAll:
     assert(roundTrip[ManagerEvents.Event](created) == created)
     assert(roundTrip[ManagerEvents.Event](extended) == extended)
     assert(roundTrip[ManagerEvents.Event](done) == done)
+
+  test("legacy OrderCreated/OrderExtended written before the passenger fields recover with empty defaults"):
+    val mapper = JacksonObjectMapperProvider(testKit.system).getOrCreate("jackson-cbor", None)
+
+    val legacyCreated = mapper.createObjectNode()
+    legacyCreated.put("orderId", "o-1")
+    legacyCreated.put("floor", 3)
+    legacyCreated.set("callIds", mapper.valueToTree(Array("c1", "c2")))
+    val created = mapper.readValue(mapper.writeValueAsBytes(legacyCreated), classOf[ManagerEvents.OrderCreated])
+    assert(created == ManagerEvents.OrderCreated("o-1", 3, Set("c1", "c2")))
+
+    val legacyExtended = mapper.createObjectNode()
+    legacyExtended.put("orderId", "o-1")
+    legacyExtended.set("callIds", mapper.valueToTree(Array("c3")))
+    val extended = mapper.readValue(mapper.writeValueAsBytes(legacyExtended), classOf[ManagerEvents.OrderExtended])
+    assert(extended == ManagerEvents.OrderExtended("o-1", Set("c3")))

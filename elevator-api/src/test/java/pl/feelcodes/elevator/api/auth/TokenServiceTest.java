@@ -39,4 +39,11 @@ class TokenServiceTest {
         assertThat(claims.getAudience()).containsExactly("elevator");
         assertThat(claims.getExpirationTime()).isAfter(new Date());
     }
+
+    @Test
+    void token_expiry_honours_the_configured_ttl() throws Exception {
+        var claims = SignedJWT.parse(service.issue("rider-7")).getJWTClaimsSet();
+        long ttlMillis = claims.getExpirationTime().getTime() - claims.getIssueTime().getTime();
+        assertThat(ttlMillis).isEqualTo(300_000L);
+    }
 }

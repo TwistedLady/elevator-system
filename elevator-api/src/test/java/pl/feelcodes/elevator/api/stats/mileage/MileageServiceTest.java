@@ -48,4 +48,20 @@ class MileageServiceTest {
 
         assertThat(service.byElevator("nope").block()).isNull();
     }
+
+    @Test
+    void allIsEmptyOnColdStartWhenNoParquetHasBeenWrittenYet() {
+        when(reader.all()).thenReturn(Flux.empty());
+
+        assertThat(service.all().collectList().block()).isEmpty();
+        assertThat(service.byElevator("e1").block()).isNull();
+    }
+
+    @Test
+    void dtoCarriesTheSnapshotTime() {
+        OffsetDateTime snapshot = OffsetDateTime.parse("2026-07-10T12:00:00Z");
+        when(reader.all()).thenReturn(Flux.just(new ElevatorStat("e1", 59, 3, snapshot)));
+
+        assertThat(service.byElevator("e1").block().updatedAt()).isEqualTo(snapshot);
+    }
 }

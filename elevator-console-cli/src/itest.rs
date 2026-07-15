@@ -254,7 +254,11 @@ impl LatencyStats {
                 avg: 0,
             };
         }
-        let pct = |p: f64| sorted[((sorted.len() as f64 * p) as usize).min(sorted.len() - 1)];
+        let pct = |p: f64| {
+            let n = sorted.len();
+            let rank = (p * n as f64).ceil() as usize;
+            sorted[rank.saturating_sub(1).min(n - 1)]
+        };
         let sum: u64 = sorted.iter().sum();
         Self {
             min: sorted[0],
@@ -343,6 +347,27 @@ mod tests {
     fn latency_stats_empty_is_all_zero() {
         let s = LatencyStats::from(&[]);
         assert_eq!((s.min, s.p50, s.p95, s.max, s.avg), (0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn latency_stats_even_length_uses_nearest_rank_no_upper_bias() {
+        let s = LatencyStats::from(&[10u64, 20, 30, 40]);
+        assert_eq!(s.p50, 20);
+        assert_eq!(s.p95, 40);
+        assert_eq!(s.max, 40);
+        assert_eq!(s.avg, 25);
+    }
+
+    #[test]
+    fn latency_stats_single_sample_reports_that_value_everywhere() {
+        let s = LatencyStats::from(&[42u64]);
+        assert_eq!((s.min, s.p50, s.p95, s.max, s.avg), (42, 42, 42, 42, 42));
+    }
+
+    #[test]
+    fn latency_stats_all_equal_samples() {
+        let s = LatencyStats::from(&[5u64, 5, 5]);
+        assert_eq!((s.min, s.p50, s.p95, s.max), (5, 5, 5, 5));
     }
 
     #[test]
