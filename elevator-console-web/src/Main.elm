@@ -9,12 +9,11 @@ import Api
 import Browser
 import Chart
 import Dict exposing (Dict)
-import Filter
 import Header
 import History
-import Html exposing (Html, button, div, input, main_, p, section, text)
-import Html.Attributes exposing (attribute, class, classList, placeholder, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html exposing (Html, button, div, main_, p, section, text)
+import Html.Attributes exposing (attribute, class, classList)
+import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode exposing (Value)
 import Log
@@ -26,6 +25,7 @@ import Types
     exposing
         ( BackendVersion(..)
         , Config
+        , DoorState
         , ElevatorState
         , Health(..)
         , Row
@@ -54,12 +54,12 @@ type alias Flags =
 type alias Model =
     { elevators : Dict String ElevatorState
     , histories : Dict String (List Int)
+    , doors : Dict String Bool
     , config : Config
     , health : Health
     , webVersion : String
     , backendVersion : BackendVersion
     , tab : Tab
-    , filter : String
     , theme : Theme
     , sim : Sim.Model
     }
@@ -69,12 +69,12 @@ init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { elevators = Dict.empty
       , histories = Dict.empty
+      , doors = Dict.empty
       , config = { maxFloor = 0, biEnabled = True }
       , health = HealthUnknown
       , webVersion = flags.version
       , backendVersion = VersionUnknown
       , tab = ChartTab
-      , filter = ""
       , theme =
             if flags.dark then
                 Dark
@@ -88,6 +88,7 @@ init flags =
         , Api.getConfig GotConfig
         , Api.getHealth GotHealth
         , Api.getVersion GotVersion
+        , Api.getDoors GotDoors
         , Log.info "connecting to SSE stream /api/elevator/stream"
         ]
     )
@@ -103,9 +104,9 @@ type Msg
     | GotVersion (Result Http.Error String)
     | PollHealth Time.Posix
     | PollConfig Time.Posix
+    | PollDoors Time.Posix
+    | GotDoors (Result Http.Error (List DoorState))
     | SelectTab Tab
-    | SetFilter String
-    | ClearFilter
     | RefreshHealth
     | RefreshVersion
     | SimMsg Sim.Msg
@@ -164,14 +165,17 @@ update msg model =
         PollConfig _ ->
             ( model, Api.getConfig GotConfig )
 
+        PollDoors _ ->
+            ( model, Api.getDoors GotDoors )
+
+        GotDoors (Ok doors) ->
+            ( { model | doors = Dict.fromList (List.map (\d -> ( d.name, d.open )) doors) }, Cmd.none )
+
+        GotDoors (Err _) ->
+            ( model, Log.debug "door feed fetch failed — keeping last known door state" )
+
         SelectTab tab ->
             ( { model | tab = tab }, Cmd.none )
-
-        SetFilter query ->
-            ( { model | filter = query }, Cmd.none )
-
-        ClearFilter ->
-            ( { model | filter = "" }, Cmd.none )
 
         RefreshHealth ->
             ( model, Api.getHealth GotHealth )
@@ -211,6 +215,7 @@ subscriptions model =
         , Ports.themeChanged ThemeChanged
         , Time.every 15000 PollHealth
         , Time.every 10000 PollConfig
+        , Time.every 1000 PollDoors
         , Sub.map SimMsg (Sim.subscriptions model.sim)
         ]
 
@@ -228,6 +233,7 @@ view model =
         , Header.warnbar model.webVersion model.backendVersion
         , main_ []
             [ tabbar model
+            , div [ class "sim-strip" ] [ Html.map SimMsg (Sim.view model.sim) ]
             , section [ class "panel" ] [ panel model ]
             ]
         ]
@@ -239,13 +245,7 @@ tabbar model =
         [ div [ class "tabs", attribute "role" "tablist" ]
             [ tabButton model ChartTab "CHART"
             , tabButton model TrendTab "TREND"
-            , tabButton model SimTab "SIM"
             ]
-        , if model.tab == SimTab then
-            text ""
-
-          else
-            filterBox model.filter
         ]
 
 
@@ -270,52 +270,21 @@ tabButton model tab label =
         [ text label ]
 
 
-filterBox : String -> Html Msg
-filterBox filter =
-    div [ class "filterbox" ]
-        (input
-            [ type_ "text"
-            , value filter
-            , onInput SetFilter
-            , placeholder "filter name — regex, e.g. e[1-3]"
-            , attribute "aria-label" "filter elevators by name"
-            ]
-            []
-            :: (if String.isEmpty filter then
-                    []
-
-                else
-                    [ button [ class "clear", onClick ClearFilter, attribute "aria-label" "clear filter" ] [ text "✕" ] ]
-               )
-        )
-
-
 panel : Model -> Html Msg
 panel model =
-    case model.tab of
-        SimTab ->
-            Html.map SimMsg (Sim.view model.sim)
-
-        ChartTab ->
-            chartPanel model Chart.view
-
-        TrendTab ->
-            chartPanel model Trend.view
-
-
-chartPanel : Model -> (List Row -> Int -> Theme -> Html Msg) -> Html Msg
-chartPanel model render =
     if model.config.maxFloor == 0 then
         emptyMsg "Loading configuration…"
 
     else if List.isEmpty (rows model) then
         emptyMsg "Waiting for elevator state…"
 
-    else if List.isEmpty (filteredRows model) then
-        emptyMsg ("No elevator matches “" ++ model.filter ++ "”.")
-
     else
-        render (filteredRows model) model.config.maxFloor model.theme
+        case model.tab of
+            ChartTab ->
+                Chart.view (rows model) model.doors model.config.maxFloor model.theme
+
+            TrendTab ->
+                Trend.view (rows model) model.config.maxFloor model.theme
 
 
 emptyMsg : String -> Html Msg
@@ -333,8 +302,3 @@ rows model =
                 , history = Dict.get state.name model.histories |> Maybe.withDefault []
                 }
             )
-
-
-filteredRows : Model -> List Row
-filteredRows model =
-    List.filter (\row -> Filter.matches model.filter row.state.name) (rows model)

@@ -1,6 +1,6 @@
 module Sim exposing (Model, Msg, init, subscriptions, update, view)
 
-{-| The SIM tab: one button runs a 10,000-call simulation (server-side, via POST /api/simulate),
+{-| The SIM tab: one button runs a simulation (server-side, via POST /api/simulate),
 then this tab polls GET /api/simulate/progress by run id every couple of seconds and draws the
 rolled-up summary — size, calls, orders, done, first-call / last-done — with a progress bar split
 by status. Self-contained — own Model/Msg/update/view/subscriptions; HTTP via Api (elm/http).
@@ -115,7 +115,7 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div [ class "sim" ]
-        [ button [ class "sim-run", onClick RunClicked ] [ text "Run 10k simulation" ]
+        [ button [ class "sim-run", onClick RunClicked ] [ text "Run simulation" ]
         , body model
         ]
 
@@ -126,7 +126,7 @@ body model =
         p [ class "sim-line bad" ] [ text "simulation could not be started" ]
 
     else if not model.started then
-        p [ class "sim-line muted" ] [ text "Press the button to run a 10,000-call simulation." ]
+        p [ class "sim-line muted" ] [ text "Press the button to run a simulation." ]
 
     else if model.size == 0 then
         p [ class "sim-line muted" ] [ text "starting…" ]

@@ -23,13 +23,25 @@ suite =
                     Decode.decodeString Types.elevatorStateDecoder
                         """{"tag":"E","elevatorName":"e1","direction":"Up","motion":"Moving","floor":4}"""
                         |> Expect.equal
-                            (Ok { tag = "E", name = "e1", direction = Up, motion = Moving, floor = 4 })
+                            (Ok { tag = "E", name = "e1", direction = Up, motion = Moving, floor = 4, suspended = False })
             , test "maps DOWN/STOPPED case-insensitively" <|
                 \_ ->
                     Decode.decodeString Types.elevatorStateDecoder
                         """{"elevatorName":"e1","direction":"down","motion":"stopped","floor":0}"""
                         |> Result.map (\s -> ( s.direction, s.motion ))
                         |> Expect.equal (Ok ( Down, Stopped ))
+            , test "defaults suspended to False when absent" <|
+                \_ ->
+                    Decode.decodeString Types.elevatorStateDecoder
+                        """{"elevatorName":"e1","direction":"Up","motion":"Moving","floor":4}"""
+                        |> Result.map .suspended
+                        |> Expect.equal (Ok False)
+            , test "reads suspended when present" <|
+                \_ ->
+                    Decode.decodeString Types.elevatorStateDecoder
+                        """{"elevatorName":"e1","direction":"Up","motion":"Stopped","floor":4,"suspended":true}"""
+                        |> Result.map .suspended
+                        |> Expect.equal (Ok True)
             , test "fails when elevatorName is missing" <|
                 \_ ->
                     Decode.decodeString Types.elevatorStateDecoder

@@ -1,4 +1,6 @@
-//! `itest` subcommand: fire calls through the api, poll status, then cross-check kubectl logs.
+//! `itest` subcommand: fire a simulation through the api, poll status, and (when kubectl is
+//! available) cross-check cluster logs. The pass/fail gate is pure HTTP — health UP and lost == 0 —
+//! so it runs against a plain docker-compose stack; the kubectl log checks are skipped when absent.
 use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -10,9 +12,46 @@ use regex::Regex;
 
 use crate::BoxErr;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Check {
+    Pass,
+    Fail,
+    Skip,
+}
+
+impl Check {
+    fn of(ok: bool) -> Self {
+        if ok {
+            Check::Pass
+        } else {
+            Check::Fail
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Check::Pass => "PASS",
+            Check::Fail => "FAIL",
+            Check::Skip => "skip",
+        }
+    }
+
+    fn mark(self) -> &'static str {
+        match self {
+            Check::Pass => "✅",
+            Check::Fail => "❌",
+            Check::Skip => "⏭️",
+        }
+    }
+}
+
+fn all_passed(checks: &[(String, Check)]) -> bool {
+    checks.iter().all(|(_, c)| *c != Check::Fail)
+}
+
 pub fn run_itest(
     api_base: &str,
-    count: u64,
+    _count: u64,
     timeout_secs: u64,
     out_path: &str,
     quiet: bool,
@@ -37,13 +76,13 @@ pub fn run_itest(
 
     let sent_ms = now_ms();
     let send_start = Instant::now();
-    let resp = crate::api::post_simulate(&agent, api_base, count)
+    let resp = crate::api::post_simulate(&agent, api_base)
         .map_err(|e| format!("cannot POST /api/simulate: {e}"))?;
     let send_secs = send_start.elapsed().as_secs_f64();
     let run_id = resp.run_id.clone();
-    let requested = resp.count;
+    let fired = resp.count;
     if !quiet {
-        eprintln!("[itest] fired {requested} calls in {send_secs:.2}s (run {run_id})");
+        eprintln!("[itest] fired {fired} calls in {send_secs:.2}s (run {run_id})");
     }
 
     let mut pending: BTreeSet<String> = resp.ids.iter().cloned().collect();
@@ -66,8 +105,17 @@ pub fn run_itest(
         0.0
     };
 
-    let api_log = kubectl_logs("elevator-api");
-    let app_log = kubectl_logs("elevator-app");
+    let kube = kubectl_available();
+    let api_log = if kube {
+        kubectl_logs("elevator-api")
+    } else {
+        String::new()
+    };
+    let app_log = if kube {
+        kubectl_logs("elevator-app")
+    } else {
+        String::new()
+    };
     let done_re = Regex::new(&format!(r"\[call status\] (sim-{run_id}-\S+) -> DONE")).unwrap();
     let api_done: BTreeSet<&str> = done_re
         .captures_iter(&api_log)
@@ -78,22 +126,34 @@ pub fn run_itest(
     let stream_failed = app_log.contains("Kafka stream failed");
     let mode = current_mode();
 
-    let checks: Vec<(String, bool)> = vec![
-        ("console: lost == 0".into(), lost == 0),
-        ("console: health UP".into(), health_ok),
+    let (api_done_check, app_moves_check) = if kube {
         (
-            format!("api log: >= {requested} calls confirmed DONE"),
-            api_done.len() as u64 >= requested,
+            Check::of(api_done.len() as u64 >= fired),
+            Check::of(app_moves > 0),
+        )
+    } else {
+        (Check::Skip, Check::Skip)
+    };
+    let checks: Vec<(String, Check)> = vec![
+        ("console: lost == 0".into(), Check::of(lost == 0)),
+        ("console: health UP".into(), Check::of(health_ok)),
+        (
+            format!("api log: >= {fired} calls confirmed DONE"),
+            api_done_check,
         ),
-        ("app log: elevators moved".into(), app_moves > 0),
-        ("app log: no 'Kafka stream failed'".into(), !stream_failed),
+        ("app log: elevators moved".into(), app_moves_check),
+        (
+            "app log: no 'Kafka stream failed'".into(),
+            Check::of(!stream_failed),
+        ),
     ];
-    let passed = checks.iter().all(|(_, ok)| *ok);
+    let passed = all_passed(&checks);
 
     let report = serde_json::json!({
         "run_id": run_id,
         "mode": mode,
-        "requests": requested,
+        "kubectl": kube,
+        "requests": fired,
         "done": done,
         "lost": lost,
         "send_secs": send_secs,
@@ -107,7 +167,7 @@ pub fn run_itest(
         "app_moves_observed": app_moves,
         "app_stream_failed": stream_failed,
         "lost_tags": pending.iter().take(20).collect::<Vec<_>>(),
-        "checks": checks.iter().map(|(n, ok)| serde_json::json!({"check": n, "ok": ok}))
+        "checks": checks.iter().map(|(n, c)| serde_json::json!({"check": n, "status": c.label()}))
             .collect::<Vec<_>>(),
         "verdict": if passed { "PASS" } else { "FAIL" },
     });
@@ -121,12 +181,20 @@ pub fn run_itest(
     if !passed {
         let failed: Vec<&str> = checks
             .iter()
-            .filter(|(_, ok)| !ok)
+            .filter(|(_, c)| *c == Check::Fail)
             .map(|(n, _)| n.as_str())
             .collect();
         return Err(format!("integration test FAILED: {}", failed.join("; ")).into());
     }
     Ok(())
+}
+
+fn kubectl_available() -> bool {
+    Command::new("kubectl")
+        .args(["get", "deployment", "elevator-app"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 fn poll_done(
@@ -207,7 +275,7 @@ fn current_mode() -> String {
     }
 }
 
-fn print_summary(report: &serde_json::Value, checks: &[(String, bool)]) {
+fn print_summary(report: &serde_json::Value, checks: &[(String, Check)]) {
     let lm = &report["latency_ms"];
     println!("\n================ INTEGRATION TEST REPORT ================");
     println!(
@@ -228,8 +296,8 @@ fn print_summary(report: &serde_json::Value, checks: &[(String, bool)]) {
         report["app_moves_observed"],
         report["app_stream_failed"]
     );
-    for (name, ok) in checks {
-        println!("   [{}] {name}", if *ok { "PASS" } else { "FAIL" });
+    for (name, c) in checks {
+        println!("   [{}] {name}", c.label());
     }
     println!(" VERDICT: {}", report["verdict"].as_str().unwrap_or("?"));
     println!("========================================================");
@@ -290,7 +358,7 @@ fn write_report(path: &str, report: &serde_json::Value) -> Result<(), BoxErr> {
     Ok(())
 }
 
-fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, bool)]) {
+fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, Check)]) {
     let md_path = json_path
         .strip_suffix(".json")
         .unwrap_or(json_path)
@@ -299,7 +367,7 @@ fn write_markdown(json_path: &str, r: &serde_json::Value, checks: &[(String, boo
     let lm = &r["latency_ms"];
     let rows: String = checks
         .iter()
-        .map(|(n, ok)| format!("| {n} | {} |\n", if *ok { "✅" } else { "❌" }))
+        .map(|(n, c)| format!("| {n} | {} |\n", c.mark()))
         .collect();
     let md = format!(
         "# Integration test report\n\n\
@@ -374,5 +442,27 @@ mod tests {
     fn strip_ansi_removes_colour_codes() {
         let coloured = "\x1b[31mERROR\x1b[0m done";
         assert_eq!(strip_ansi(coloured), "ERROR done");
+    }
+
+    #[test]
+    fn all_passed_ignores_skips_but_not_fails() {
+        let ok: Vec<(String, Check)> = vec![
+            ("health".into(), Check::Pass),
+            ("api log".into(), Check::Skip),
+        ];
+        assert!(all_passed(&ok));
+
+        let bad: Vec<(String, Check)> = vec![
+            ("health".into(), Check::Pass),
+            ("lost".into(), Check::Fail),
+            ("api log".into(), Check::Skip),
+        ];
+        assert!(!all_passed(&bad));
+    }
+
+    #[test]
+    fn check_of_maps_bool() {
+        assert_eq!(Check::of(true), Check::Pass);
+        assert_eq!(Check::of(false), Check::Fail);
     }
 }

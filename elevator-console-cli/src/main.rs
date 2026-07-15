@@ -31,7 +31,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Live TUI dashboard: Chart, Trend, and a Sim tab that runs a server-side 10k simulation.
+    /// Live TUI dashboard: Chart, Trend, and a Sim tab that runs a server-side simulation.
     Monitor,
     /// Send a single call.
     Call {
@@ -41,10 +41,7 @@ enum Command {
         floor: i32,
     },
     /// Trigger a server-side simulation (POST /api/simulate) and print the run id.
-    Simulate {
-        #[arg(long, default_value_t = 10_000)]
-        count: u64,
-    },
+    Simulate,
     /// Headless one-shot check: API health + live state, writes a pass/fail log.
     Selftest {
         #[arg(long, default_value_t = 8)]
@@ -77,7 +74,7 @@ fn main() {
     let result = match cli.command {
         Command::Monitor => monitor::run(&cli.api),
         Command::Call { elevator, floor } => run_call(&cli.api, &elevator, floor),
-        Command::Simulate { count } => run_simulate(&cli.api, count),
+        Command::Simulate => run_simulate(&cli.api),
         Command::Selftest { duration, log } => monitor::run_selftest(&cli.api, duration, &log),
         Command::Watch {
             refresh_ms,
@@ -107,8 +104,8 @@ fn run_call(api: &str, elevator: &str, floor: i32) -> Result<(), BoxErr> {
     Ok(())
 }
 
-fn run_simulate(api: &str, count: u64) -> Result<(), BoxErr> {
-    let resp = api::post_simulate(&api::agent(), api, count)?;
+fn run_simulate(api: &str) -> Result<(), BoxErr> {
+    let resp = api::post_simulate(&api::agent(), api)?;
     println!(
         "simulation started: run {} — {} calls fired by the api",
         resp.run_id, resp.count

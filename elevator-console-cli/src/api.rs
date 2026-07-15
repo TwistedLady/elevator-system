@@ -127,12 +127,8 @@ pub struct SimulateResponse {
     pub ids: Vec<String>,
 }
 
-pub fn post_simulate(
-    agent: &ureq::Agent,
-    api_base: &str,
-    count: u64,
-) -> Result<SimulateResponse, BoxErr> {
-    let url = format!("{api_base}/api/simulate?count={count}");
+pub fn post_simulate(agent: &ureq::Agent, api_base: &str) -> Result<SimulateResponse, BoxErr> {
+    let url = format!("{api_base}/api/simulate");
     let body = agent.post(&url).call()?.into_string()?;
     Ok(serde_json::from_str(&body)?)
 }

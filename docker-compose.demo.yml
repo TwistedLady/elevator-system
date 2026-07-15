@@ -80,6 +80,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ELEVATOR_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ELEVATOR_PG_HOST: postgres
+      ELEVATOR_BI_ENABLED: "false"   # no Spark/parquet in the demo — keep /actuator/health UP
 
   seed:
     build:
@@ -92,7 +93,7 @@ services:
         condition: service_started
     environment:
       ELEVATOR_API: "http://api:8080"
-    command: ["simulate", "--elevator-count", "4", "--max-floor", "10", "--count", "300"]
+    command: ["simulate"]
 
 volumes:
   pgdata:

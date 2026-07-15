@@ -11,6 +11,9 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.apache.pekko.actor.typed.ActorRef
 import pl.feelcodes.elevator.app.actors.{Controller, Doorman, Manager, Operator, SuspendManager}
 import pl.feelcodes.elevator.common.core.domain.*
+import pl.feelcodes.elevator.common.dto.ElevatorStateDto
+
+import scala.jdk.CollectionConverters.*
 
 object ControllerRecoveryTests {
   val config = ConfigFactory
@@ -39,7 +42,9 @@ final class ControllerRecoveryTests
     with AnyWordSpecLike
     with Matchers {
 
-  private def newTestKit(suspend: ActorRef[SuspendManager.Command] = spawn(SuspendManager())) =
+  private def newTestKit(
+      suspend: ActorRef[SuspendManager.Command] = spawn(SuspendManager()),
+      publish: ElevatorStateDto => Unit = _ => ()) =
     val operatorProbe = createTestProbe[Operator.Command]()
     val managerProbe = createTestProbe[Manager.Command]()
     val doormanProbe = createTestProbe[Doorman.Command]()
@@ -51,7 +56,7 @@ final class ControllerRecoveryTests
       (name: String) => TestEntityRef(Doorman.TypeKey, name, doormanProbe.ref)
     val kit = EventSourcedBehaviorTestKit[Controller.Command, Controller.Event, Controller.State](
       system,
-      Controller("lift-a", operatorProvider, managerProvider, suspend, doormanProvider, _ => ())
+      Controller("lift-a", operatorProvider, managerProvider, suspend, doormanProvider, publish)
     )
     (kit, operatorProbe, managerProbe, doormanProbe)
 
@@ -77,6 +82,24 @@ final class ControllerRecoveryTests
 
       esTestKit.restart()
       esTestKit.getState() shouldBe before
+    }
+
+    "reveal suspended only when genuinely held on the gate, not on a normal move request" in {
+      val published = new java.util.concurrent.ConcurrentLinkedQueue[ElevatorStateDto]()
+      val (esTestKit, _, _, _) = newTestKit(publish = published.add)
+      val order = orderAt("o-s", 3)
+
+      esTestKit.runCommand(Controller.Process(Set(order)))
+      esTestKit.runCommand(Controller.ChooseNext(Set(order)))
+      // asking the gate must NOT immediately mark the car suspended — that flashed [S] on normal moves
+      published.asScala.exists(_.suspended) shouldBe false
+
+      // only when the reveal timer fires (the gate is still holding the car) does it publish suspended
+      esTestKit.runCommand(Controller.RevealSuspended)
+      val held = published.asScala.filter(_.suspended).toList
+      held should not be empty
+      // a held car is stopped — never Moving-with-suspended
+      all(held.map(_.motion)) shouldBe "Stopped"
     }
 
     "keep an outstanding (unserved) request after a crash" in {

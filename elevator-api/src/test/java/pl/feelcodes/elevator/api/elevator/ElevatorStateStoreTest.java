@@ -14,8 +14,8 @@ class ElevatorStateStoreTest {
     @Test
     void streamsEachStateChangeAndKeepsTheLatest() {
         ElevatorStateStore store = new ElevatorStateStore();
-        ElevatorStateDto moving = new ElevatorStateDto("e1", "Up", "Moving", 3);
-        ElevatorStateDto stopped = new ElevatorStateDto("e1", "Down", "Stopped", 7);
+        ElevatorStateDto moving = new ElevatorStateDto("e1", "Up", "Moving", 3, false);
+        ElevatorStateDto stopped = new ElevatorStateDto("e1", "Down", "Stopped", 7, false);
 
         List<ElevatorStateDto> seen = new ArrayList<>();
         Disposable sub = store.changes().subscribe(seen::add);
@@ -32,7 +32,7 @@ class ElevatorStateStoreTest {
     @Test
     void ignoresNullNameOrState() {
         ElevatorStateStore store = new ElevatorStateStore();
-        store.put(null, new ElevatorStateDto("e1", "Up", "Moving", 1));
+        store.put(null, new ElevatorStateDto("e1", "Up", "Moving", 1, false));
         store.put("e1", null);
         assertThat(store.all()).isEmpty();
     }

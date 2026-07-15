@@ -1,7 +1,7 @@
-module Api exposing (getConfig, getHealth, getVersion, progress, simulate)
+module Api exposing (getConfig, getDoors, getHealth, getVersion, progress, simulate)
 
 import Http
-import Types exposing (Config, Health, SimProgress, SimulateResult)
+import Types exposing (Config, DoorState, Health, SimProgress, SimulateResult)
 
 
 {-| All URLs are relative so the same build works behind the dev proxy (vite → :8080) and when the
@@ -12,6 +12,14 @@ getConfig toMsg =
     Http.get
         { url = "/api/config"
         , expect = Http.expectJson toMsg Types.configDecoder
+        }
+
+
+getDoors : (Result Http.Error (List DoorState) -> msg) -> Cmd msg
+getDoors toMsg =
+    Http.get
+        { url = "/api/door"
+        , expect = Http.expectJson toMsg Types.doorsDecoder
         }
 
 
@@ -31,7 +39,7 @@ getVersion toMsg =
         }
 
 
-{-| Kick off a run — no body, so the api uses its default count (10000). -}
+{-| Kick off a run — no body; the api fires its fixed scenario and returns the run id and ids. -}
 simulate : (Result Http.Error SimulateResult -> msg) -> Cmd msg
 simulate toMsg =
     Http.post

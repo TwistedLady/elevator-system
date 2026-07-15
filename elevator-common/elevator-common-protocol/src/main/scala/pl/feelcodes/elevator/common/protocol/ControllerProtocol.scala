@@ -11,3 +11,4 @@ object ControllerProtocol:
   final case class DoorClosed(floor: Floor) extends Command
   final case class MoveDecision(allowed: Boolean) extends Command
   case object MoveRetry extends Command
+  case object RevealSuspended extends Command

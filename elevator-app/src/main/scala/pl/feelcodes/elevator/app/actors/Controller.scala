@@ -31,10 +31,13 @@ object Controller:
             doormanProvider: String => EntityRef[Doorman.Command],
             publish: ElevatorStateDto => Unit): Behavior[Command] =
     Behaviors.setup { context =>
+      Behaviors.withTimers { timers =>
 
       given Timeout = SuspendDwell.duration + 2.seconds
+      val SuspendRevealDelay = 500.millis
 
       def requestMove(s: State): Unit =
+        timers.startSingleTimer("suspend-reveal", RevealSuspended, SuspendRevealDelay)
         context.ask(suspendManager, SuspendManager.MayMove(s.elevatorName, s.elevatorState, _)) {
           case Success(SuspendManager.Decision(allowed)) => MoveDecision(allowed)
           case Failure(_)                                => MoveRetry
@@ -44,6 +47,18 @@ object Controller:
         ControllerLogic.nextCommand(s, s.orders).foreach { command =>
           operatorProvider(s.elevatorName) ! Operator.Move(s.elevatorName, s.elevatorState, command)
         }
+
+      def publishState(s: State, suspended: Boolean): Unit =
+        publish(ElevatorStateDto(s.elevatorName,
+          s.elevatorState.direction.toString, s.elevatorState.motion.toString,
+          s.elevatorState.floor.num, suspended))
+
+      // A car held on the gate is physically stopped (it hasn't issued the next move yet), so
+      // publish Stopped — never Moving-with-suspended, which would flash [↑] and S together.
+      def publishHeld(s: State): Unit =
+        publish(ElevatorStateDto(s.elevatorName,
+          s.elevatorState.direction.toString, Motion.Stopped.toString,
+          s.elevatorState.floor.num, suspended = true))
 
       EventSourcedBehavior[Command, Event, State](
         persistenceId = PersistenceId.of(TypeKey.name, elevatorName),
@@ -73,11 +88,16 @@ object Controller:
                 Effect.persist(WaitingSet(true)).thenRun(s => requestMove(s))
               else Effect.none
 
+            case RevealSuspended =>
+              Effect.none.thenRun(s => if s.waiting then publishHeld(s))
+
             case MoveDecision(allowed) =>
+              timers.cancel("suspend-reveal")
               if allowed then Effect.none.thenRun(s => issueMove(s))
-              else Effect.persist(WaitingSet(false))
+              else Effect.persist(WaitingSet(false)).thenRun(s => publishState(s, suspended = false))
 
             case MoveRetry =>
+              timers.cancel("suspend-reveal")
               Effect.persist(WaitingSet(false)).thenRun(s => context.self ! ChooseNext(s.orders))
         ,
         eventHandler = ControllerLogic.evolve
@@ -90,4 +110,5 @@ object Controller:
         case _: ElevatorStateUpdated => Set("controller-state")
         case _                       => Set.empty
       }.withRetention(RetentionCriteria.snapshotEvery(numberOfEvents = 100, keepNSnapshots = 2))
+      }
     }

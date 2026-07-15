@@ -2,6 +2,7 @@ module Types exposing
     ( BackendVersion(..)
     , Config
     , Direction(..)
+    , DoorState
     , ElevatorState
     , Health(..)
     , Motion(..)
@@ -13,6 +14,7 @@ module Types exposing
     , backendLabel
     , configDecoder
     , directionLabel
+    , doorsDecoder
     , elevatorStateDecoder
     , healthDecoder
     , healthLabel
@@ -37,6 +39,13 @@ type alias ElevatorState =
     , direction : Direction
     , motion : Motion
     , floor : Int
+    , suspended : Bool
+    }
+
+
+type alias DoorState =
+    { name : String
+    , open : Bool
     }
 
 
@@ -71,7 +80,6 @@ type BackendVersion
 type Tab
     = ChartTab
     | TrendTab
-    | SimTab
 
 
 type Theme
@@ -187,12 +195,31 @@ motionDecoder =
 
 elevatorStateDecoder : Decoder ElevatorState
 elevatorStateDecoder =
-    Decode.map5 ElevatorState
+    Decode.map6 ElevatorState
         (Decode.oneOf [ Decode.field "tag" Decode.string, Decode.succeed "" ])
         (Decode.field "elevatorName" Decode.string)
         (Decode.field "direction" directionDecoder)
         (Decode.field "motion" motionDecoder)
         (Decode.field "floor" Decode.int)
+        (Decode.oneOf [ Decode.field "suspended" Decode.bool, Decode.succeed False ])
+
+
+doorsDecoder : Decoder (List DoorState)
+doorsDecoder =
+    Decode.list doorDecoder
+
+
+doorDecoder : Decoder DoorState
+doorDecoder =
+    Decode.map2 DoorState
+        (Decode.field "elevatorName" Decode.string)
+        (Decode.field "doorState" doorOpenDecoder)
+
+
+doorOpenDecoder : Decoder Bool
+doorOpenDecoder =
+    Decode.string
+        |> Decode.map (\s -> String.toUpper s == "OPEN")
 
 
 configDecoder : Decoder Config

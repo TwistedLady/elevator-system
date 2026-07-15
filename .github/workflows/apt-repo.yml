@@ -11,7 +11,9 @@ name: APT repo (GitHub Pages)
 
 on:
   push:
-    tags: ["elevator-console-cli-v*"]
+    tags:
+      - "v*.*.*"                    # every release (release-please) republishes the .deb
+      - "elevator-console-cli-v*"   # console-only tag, if ever cut on its own
   workflow_dispatch:
 
 permissions:
