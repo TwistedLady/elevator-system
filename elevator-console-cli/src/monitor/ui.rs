@@ -439,23 +439,35 @@ mod tests {
     }
 
     #[test]
-    fn car_glyph_reflects_direction_and_motion() {
-        assert_eq!(car_glyph("UP", "moving"), '↑');
-        assert_eq!(car_glyph("down", "MOVING"), '↓');
-        assert_eq!(car_glyph("up", "stopped"), 'X');
-        assert_eq!(car_glyph("sideways", "moving"), '•');
+    fn car_glyph_reflects_direction_motion_and_suspension() {
+        assert_eq!(car_glyph("UP", "moving", false), '↑');
+        assert_eq!(car_glyph("down", "MOVING", false), '↓');
+        assert_eq!(car_glyph("up", "stopped", false), ' ');
+        assert_eq!(car_glyph("sideways", "moving", false), ' ');
+        assert_eq!(car_glyph("up", "moving", true), 'S');
     }
 
     #[test]
-    fn car_style_dims_stopped_cars_and_colours_moving_ones() {
-        assert_eq!(car_style("up", "stopped"), Style::new().fg(Color::DarkGray));
+    fn car_style_reflects_motion_suspension_and_door() {
         assert_eq!(
-            car_style("up", "moving"),
+            car_style("up", "stopped", false, false),
+            Style::new().fg(Color::DarkGray)
+        );
+        assert_eq!(
+            car_style("up", "moving", false, false),
             Style::new().fg(Color::Green).bold()
         );
         assert_eq!(
-            car_style("down", "moving"),
+            car_style("down", "moving", false, false),
             Style::new().fg(Color::Magenta).bold()
+        );
+        assert_eq!(
+            car_style("up", "moving", true, false),
+            Style::new().fg(Color::Yellow).bold()
+        );
+        assert_eq!(
+            car_style("up", "stopped", false, true),
+            Style::new().fg(Color::Cyan).bold()
         );
     }
 }
