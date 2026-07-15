@@ -46,3 +46,39 @@ class SimulatorTests extends AnyFunSuite, Matchers:
   test("rejects an empty fleet"):
     val (sender, _) = collecting()
     an[IllegalArgumentException] should be thrownBy Simulator(sender, Seq.empty, 15, Random(1))
+
+  test("rejects a noShowRate outside [0, 1]"):
+    val (sender, _) = collecting()
+    an[IllegalArgumentException] should be thrownBy Simulator(sender, fleet, 15, Random(1), noShowRate = 1.5)
+
+  test("boardingsFor returns only boarders at the given elevator and floor"):
+    val (sender, _) = collecting()
+    val sim = Simulator(sender, fleet, maxFloor = 15, Random(7))
+    val boarders = sim.boardingsFor("e1", 5)
+    boarders.foreach: b =>
+      b.elevator shouldBe "e1"
+      b.floor shouldBe 5
+    val expected = sim.riders.count(r => r.boards && r.spec.elevator == "e1" && r.spec.floor == 5)
+    boarders should have size expected
+    boarders.map(_.passengerId).toSet shouldBe
+      sim.riders.filter(r => r.boards && r.spec.elevator == "e1" && r.spec.floor == 5).map(_.spec.id).toSet
+
+  test("no-shows are excluded from boardings but still fired as calls"):
+    val (sender, fired) = collecting()
+    val sim = Simulator(sender, fleet, maxFloor = 15, Random(7), noShowRate = 1.0)
+    sim.run()
+    fired should have size Simulator.Riders
+    fleet.foreach: e =>
+      (1 to 15).foreach: f =>
+        sim.boardingsFor(e, f) shouldBe empty
+
+  test("everyone boards when noShowRate is zero"):
+    val (sender, _) = collecting()
+    val sim = Simulator(sender, fleet, maxFloor = 15, Random(7), noShowRate = 0.0)
+    val boarded = fleet.flatMap(e => (1 to 15).flatMap(f => sim.boardingsFor(e, f)))
+    boarded.map(_.passengerId).toSet shouldBe sim.riders.map(_.spec.id).toSet
+
+  test("the rider cohort is deterministic under a fixed seed"):
+    val (s1, _) = collecting()
+    val (s2, _) = collecting()
+    Simulator(s1, fleet, 15, Random(42)).riders shouldBe Simulator(s2, fleet, 15, Random(42)).riders
