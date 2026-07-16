@@ -34,6 +34,8 @@ app:
 api:
   replicas: 2
   tlsSecret: elevator-api-tls
+  serviceType: NodePort
+  nodePort: 30080
 
 config:
   maxFloor: 15
@@ -44,6 +46,8 @@ config:
 console-web:
   enabled: true
   replicas: 1
+  serviceType: NodePort
+  nodePort: 30081
 
 bi:
   enabled: true
