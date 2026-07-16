@@ -19,6 +19,10 @@ resource "kind_cluster" "elevator" {
         container_port = 30080
         host_port      = 8080
       }
+      extra_port_mappings {
+        container_port = 30081
+        host_port      = 8081
+      }
     }
   }
 }
