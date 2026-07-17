@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/TwistedLady/elevator-system/compare/v0.7.0...v0.7.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **cd:** drop kind load; let the cluster pull images via a refreshed GHCR secret ([#92](https://github.com/TwistedLady/elevator-system/issues/92)) ([7467d9f](https://github.com/TwistedLady/elevator-system/commit/7467d9f3bd8a63a1a359f44f31987177d24bc65c))
+
 ## [0.7.0](https://github.com/TwistedLady/elevator-system/compare/v0.6.0...v0.7.0) (2026-07-17)
 
 
