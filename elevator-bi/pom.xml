@@ -9,7 +9,7 @@
          Build it on its own:  mvn -f elevator-bi/pom.xml package  -->
     <groupId>pl.feelcodes.elevator</groupId>
     <artifactId>elevator-bi</artifactId>
-    <version>0.6.0</version> <!-- x-release-please-version -->
+    <version>0.7.0</version> <!-- x-release-please-version -->
     <packaging>jar</packaging>
     <name>elevator-bi</name>
     <description>Spark Structured Streaming BI: per-elevator mileage from the elevator-state topic</description>

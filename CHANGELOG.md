@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/TwistedLady/elevator-system/compare/v0.6.0...v0.7.0) (2026-07-17)
+
+
+### Features
+
+* **infra:** both consoles reachable with no port-forward (2nd host port + NodePorts) ([#89](https://github.com/TwistedLady/elevator-system/issues/89)) ([1e20872](https://github.com/TwistedLady/elevator-system/commit/1e20872f8c365ffd4f60ff6c69f6df9540316160))
+
 ## [0.6.0](https://github.com/TwistedLady/elevator-system/compare/v0.5.0...v0.6.0) (2026-07-15)
 
 
