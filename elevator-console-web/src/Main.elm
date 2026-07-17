@@ -234,9 +234,19 @@ view model =
         , main_ []
             [ tabbar model
             , div [ class "sim-strip" ] [ Html.map SimMsg (Sim.view model.sim) ]
-            , section [ class "panel" ] [ panel model ]
+            , section [ class "panel", attribute "data-title" (panelTitle model.tab) ] [ panel model ]
             ]
         ]
+
+
+panelTitle : Tab -> String
+panelTitle tab =
+    case tab of
+        ChartTab ->
+            "BUILDING"
+
+        TrendTab ->
+            "FLOOR OVER TIME"
 
 
 tabbar : Model -> Html Msg

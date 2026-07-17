@@ -1,4 +1,4 @@
-module Chart exposing (Palette, cellGlyph, floorAxis, palette, view)
+module Chart exposing (Palette, carGlyph, floorAxis, palette, view)
 
 {-| The CHART tab: a monospace "BUILDING" grid mirroring the Rust CLI. Rows are floors (top down),
 columns are elevators (natural-sorted); each occupied cell is a `[c1c2]` glyph — c1 is motion/suspend
@@ -125,10 +125,10 @@ carCell doors floor row =
                 Dict.get row.state.name doors |> Maybe.withDefault False
 
             glyph =
-                cellGlyph row.state.suspended doorOpen row.state.motion row.state.direction
+                carGlyph row.state.suspended doorOpen row.state.motion row.state.direction
 
             cls =
-                cellClass row.state.suspended doorOpen row.state.motion row.state.direction
+                carStyle row.state.suspended doorOpen row.state.motion row.state.direction
         in
         td [ class ("cell " ++ cls) ] [ text glyph ]
 
@@ -138,8 +138,8 @@ carCell doors floor row =
 
 {-| The `[c1c2]` glyph for an occupied cell. c1: `S` suspended, else `↑`/`↓` when moving, else space
 (stopped). c2: `X` when the door is closed, space when open. -}
-cellGlyph : Bool -> Bool -> Motion -> Direction -> String
-cellGlyph suspended doorOpen motion direction =
+carGlyph : Bool -> Bool -> Motion -> Direction -> String
+carGlyph suspended doorOpen motion direction =
     let
         c1 =
             if suspended then
@@ -166,8 +166,8 @@ cellGlyph suspended doorOpen motion direction =
     "[" ++ c1 ++ c2 ++ "]"
 
 
-cellClass : Bool -> Bool -> Motion -> Direction -> String
-cellClass suspended doorOpen motion direction =
+carStyle : Bool -> Bool -> Motion -> Direction -> String
+carStyle suspended doorOpen motion direction =
     if suspended then
         "suspended"
 
