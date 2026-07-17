@@ -1,10 +1,13 @@
 name: Console Release
 
-# Publishes the Rust console on its own tag namespace (elevator-console-cli-v*): a GitHub Release
-# (tarball + sha256, .deb) plus a GHCR image ghcr.io/<owner>/elevator-console-cli:<ver> and :latest.
+# Publishes the Rust console on every release-please tag (v*.*.*) — and a console-only tag if ever
+# cut: a GitHub Release (tarball + sha256, .deb) plus a GHCR image
+# ghcr.io/<owner>/elevator-console-cli:<ver> and :latest.
 on:
   push:
-    tags: ["elevator-console-cli-v*"]
+    tags:
+      - "v*.*.*"
+      - "elevator-console-cli-v*"
   workflow_dispatch:
 
 permissions:
@@ -37,7 +40,9 @@ jobs:
         name: Compute image coordinates
         run: |
           echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
-          echo "ver=${GITHUB_REF_NAME#elevator-console-cli-v}" >> "$GITHUB_OUTPUT"
+          ver="${GITHUB_REF_NAME#elevator-console-cli-v}"   # strip console-only prefix if present
+          ver="${ver#v}"                                    # strip the leading v on release-please tags
+          echo "ver=${ver}" >> "$GITHUB_OUTPUT"
 
       - name: Package tarball + checksum
         run: |
