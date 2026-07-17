@@ -1,5 +1,6 @@
 //! Blocking HTTP client for the elevator API — the console's only path to the system (never Kafka).
-//! TLS-only: verifies the api against the bundled self-signed CA.
+//! TLS-only: verifies the api against ELEVATOR_CA (a PEM path) if set, else the CA baked in at build
+//! time — so one published image/binary can trust any cluster.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,8 +48,8 @@ pub fn get_config(agent: &ureq::Agent, api_base: &str) -> Result<ElevatorConfig,
 
 pub fn tls_config() -> Arc<rustls::ClientConfig> {
     let mut roots = rustls::RootCertStore::empty();
-    let pem: &[u8] = include_bytes!("../certs/elevator-ca.crt");
-    let mut reader = std::io::BufReader::new(pem);
+    let pem: Vec<u8> = ca_pem();
+    let mut reader = std::io::BufReader::new(pem.as_slice());
     for cert in rustls_pemfile::certs(&mut reader).flatten() {
         let _ = roots.add(cert);
     }
@@ -60,6 +61,14 @@ pub fn tls_config() -> Arc<rustls::ClientConfig> {
     .with_root_certificates(roots)
     .with_no_client_auth();
     Arc::new(config)
+}
+
+fn ca_pem() -> Vec<u8> {
+    match std::env::var("ELEVATOR_CA") {
+        Ok(path) if !path.trim().is_empty() => std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("ELEVATOR_CA={path} could not be read: {e}")),
+        _ => include_bytes!("../certs/elevator-ca.crt").to_vec(),
+    }
 }
 
 #[derive(Serialize)]
