@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/TwistedLady/elevator-system/compare/v0.7.1...v0.8.0) (2026-07-17)
+
+
+### Features
+
+* **console:** runtime ELEVATOR_CA + publish the console image/binary/deb on every release ([#94](https://github.com/TwistedLady/elevator-system/issues/94)) ([06f519b](https://github.com/TwistedLady/elevator-system/commit/06f519b1f78d23b71585e39f60ec1e6a5c6969af))
+
 ## [0.7.1](https://github.com/TwistedLady/elevator-system/compare/v0.7.0...v0.7.1) (2026-07-17)
 
 
