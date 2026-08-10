@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/TwistedLady/elevator-system/compare/v0.7.1...v0.8.0) (2026-08-10)
+
+
+### Features
+
+* **console:** runtime ELEVATOR_CA + publish the console image/binary/deb on every release ([#94](https://github.com/TwistedLady/elevator-system/issues/94)) ([06f519b](https://github.com/TwistedLady/elevator-system/commit/06f519b1f78d23b71585e39f60ec1e6a5c6969af))
+* **optimizer:** greedy + probabilistic optimization lab for elevator dispatch ([#97](https://github.com/TwistedLady/elevator-system/issues/97)) ([43367ab](https://github.com/TwistedLady/elevator-system/commit/43367ab8737a7ad0452e3d6fdd419e50d89b79f0))
+
+
+### Bug Fixes
+
+* **console:** refresh the bundled CA to match the rebuilt cluster ([#96](https://github.com/TwistedLady/elevator-system/issues/96)) ([fd1f3f0](https://github.com/TwistedLady/elevator-system/commit/fd1f3f024f9e14005ae390a152fd31f8b1f8cdcf))
+
 ## [0.7.1](https://github.com/TwistedLady/elevator-system/compare/v0.7.0...v0.7.1) (2026-07-17)
 
 
