@@ -74,3 +74,22 @@ Description: Terminal dashboard and order sender for the elevator system, talkin
  A retro terminal dashboard for the elevator system. Monitors live elevator
  state and sends orders through the elevator-api HTTP edge.
 
+Package: elevator-console-cli
+Version: 0.8.0-1
+Architecture: amd64
+Maintainer: elevator-system
+Installed-Size: 2747
+Depends: libc6 (>= 2.39)
+Filename: ./elevator-console-cli_0.8.0-1_amd64.deb
+Size: 1100456
+MD5sum: 3678d20b699ffed9ee091fa771d4da2b
+SHA1: cc5de37ef3f952f83700af39789bc77ac84e6641
+SHA256: 4083c719d26f8f74e97672b20bfbbe9bf96e2c63f6c89e90d34dc1e5b46b28b1
+Section: utils
+Priority: optional
+Homepage: https://github.com/TwistedLady/elevator-system
+Description: Terminal dashboard and order sender for the elevator system, talking only to
+ the elevator-api HTTP edge
+ A retro terminal dashboard for the elevator system. Monitors live elevator
+ state and sends orders through the elevator-api HTTP edge.
+
